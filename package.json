@@ -1,0 +1,21 @@
+{
+  "name": "ai-crm",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "repo:check": "node scripts/check/verify-repository.mjs",
+    "contracts:check": "node scripts/check/verify-repository.mjs contracts && turbo run contracts:check",
+    "check": "pnpm repo:check && turbo run lint typecheck test contracts:check"
+  },
+  "devDependencies": {
+    "turbo": "2.10.5"
+  }
+}
