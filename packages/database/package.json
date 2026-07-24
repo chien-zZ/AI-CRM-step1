@@ -13,7 +13,7 @@
     "migrate": "node ../../scripts/migration/run.mjs"
   },
   "dependencies": {
-    "drizzle-orm": "0.44.3",
+    "drizzle-orm": "0.45.2",
     "pg": "8.16.3"
   }
 }

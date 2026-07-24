@@ -2,7 +2,45 @@
 
 - Status: completed
 - Owner: 当前会话（迁移序列单一 Owner）
+- Security patch branch: `codex/DAT-01-drizzle-security`
 - Allowed paths: `packages/database`、迁移工具、测试数据库 Fixture、相关迁移说明
+
+## 2026-07-24 安全维护补丁
+
+### 已知事实
+
+- `drizzle-orm@0.44.3` 受 GHSA-gpj5-g38j-94v9 影响；该漏洞允许未正确转义的 SQL 标识符造成 SQL 注入。
+- 官方修复版本为 `0.45.2`；当前 `pg@8.16.3`、`@types/pg@8.15.5` 和 `@opentelemetry/api@1.9.1` 满足其 Peer Dependency。
+- 数据库公共 API 只使用 `drizzle-orm/node-postgres` 的 `drizzle` 入口，本补丁不改变 Schema、SQL 迁移或数据库合同。
+
+### 允许的假设
+
+- 在现有公共 API、单元测试和 PostgreSQL 集成测试全部通过的前提下，`0.45.2` 与当前数据库运行时兼容。
+
+### 禁止的假设
+
+- 不把依赖升级解释为数据库 Schema 或迁移格式变更，不引入新的实体、字段、权限或业务规则。
+
+### 非目标
+
+- 不升级 `drizzle-kit`，不修改 SQL 迁移、数据库合同或其他 G2 工作包。
+
+### 补丁验证
+
+- `drizzle-orm` 从精确版本 `0.44.3` 升级到精确版本 `0.45.2`，锁文件不再解析旧版本。
+- 数据库包的 Build、Lint、Typecheck、Test 和 Contract Check 全部通过；单元测试为 10 通过、1 个 PostgreSQL 集成测试按默认配置跳过。
+- 隔离 PostgreSQL 集成测试 11/11 通过；测试容器、网络和 Volume 已清理。
+- `pnpm audit --prod` 报告 `No known vulnerabilities found`。
+- 全仓 `pnpm check` 通过，Turbo 任务为 140/140。
+
+### 补丁独立审查
+
+- Authorization: 无授权逻辑或授权接口变化；数据库包仍不裁决业务权限。
+- Idempotency: 无幂等键或处理语义变化；现有迁移重复执行与 Checksum 测试继续通过。
+- Transactions: 无事务代码变化；Commit、Rollback、嵌套事务与原错误传播测试继续通过。
+- Migrations: 无迁移文件、迁移登记 Schema 或自动同步行为变化；应用启动仍不执行迁移或 `drizzle-kit push`。
+- Observability: 无日志、Trace、指标或健康响应变化；未新增 SQL、参数或连接信息暴露。
+- Backward compatibility: 公共导出和运行时代码未变，Peer Dependency 兼容，数据库包与真实 PostgreSQL 回归门禁通过。
 
 ## 已知事实
 
