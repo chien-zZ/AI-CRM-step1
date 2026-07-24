@@ -10,4 +10,28 @@ Organization-derived grants should use effective assignments or explicit control
 
 External access distinguishes anonymous requests, restricted invitation capabilities, and authenticated Keycloak subjects. An invitation capability is not an identity and is never unioned with login permissions; see [ADR-0019](../../../docs/08-架构决策/ADR-0019-外部端分级访问与邀请授权.md).
 
+## Usage Boundaries
+
+- Use `check` when authorizing one concrete resource operation. A scoped permission requires a complete `resourceContext`; missing, undeclared, or extra dimensions fail closed.
+- Use `resolveDataScope` only to obtain structured constraints for a resource-owning repository. It rejects object context and never emits SQL, Prisma filters, table names, or executable expressions.
+- Use `batchCheck` for bounded independent checks. It preserves input order and the semantics of individual checks.
+- An Assignment grant applies only when callers explicitly select that active Assignment. Concurrent Assignments are never silently unioned. Person grants are explicit controlled exceptions, not inferred defaults.
+- Every result must pass through the required decision recorder. Recorder failure makes authorization unavailable, including when the policy evaluation would otherwise allow.
+
+## Cache And Policy Store
+
+Redis is an optional performance adapter, not an authorization fact source. Every operation loads and validates the authoritative immutable policy snapshot and computes a fresh result. Cached material is accepted only when it exactly matches that result; Redis failures or corrupted values cannot expand access. Policy-version keys isolate publication changes, and explicit invalidation is cleanup rather than a correctness dependency.
+
+`connectRedisAuthorizationCache` requires an explicit namespace, bounded TTL configuration in the engine, password supplied by the composing application, and `rediss://` by default. Plain `redis://` requires the explicit development-only flag. Cache connection failure disables that adapter at composition time; runtime cache errors fall back to fresh policy evaluation.
+
+The durable Policy Store and policy-management plane remain unresolved by ADR-0007. The current port and synthetic fixtures do not constitute a production policy database, publication workflow, administration API, or migration design.
+
+Run the real local Redis adapter check after the local Compose stack is healthy:
+
+```powershell
+pnpm --filter @ai-crm/platform-authorization test:integration
+```
+
+The test reads the generated local Secret file without printing its value. Set `AI_CRM_AUTHORIZATION_REDIS_PASSWORD_FILE` to override its location. If the local runtime Secret file does not exist, the integration suite is skipped.
+
 See [ADR-0007](../../../docs/08-架构决策/ADR-0007-自研轻量业务授权核心.md).

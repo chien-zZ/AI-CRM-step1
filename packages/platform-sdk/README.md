@@ -10,4 +10,6 @@ AI access is use-case-specific and provider-neutral. The SDK may submit approved
 
 Authorization access is exposed as stable check, batch-check, and structured data-scope operations. Domain modules do not depend on an authorization engine or receive vendor-specific policy objects.
 
+IAM-03 implements this boundary through `createPlatformAuthorizationClient`. The client exposes only Check, Batch Check, Data Scope Resolution, and the server-side denial assertion. Policy registration, role/grant storage, Redis caching, and decision recording remain behind the authorization module and are not SDK capabilities.
+
 The SDK is intentionally narrower than a general `shared-core`: it exposes platform capabilities but does not own UI state, generated HTTP models, or business-domain helpers. See [ADR-0003](../../docs/08-架构决策/ADR-0003-Monorepo应用与模块边界.md).
