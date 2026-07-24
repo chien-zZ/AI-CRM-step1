@@ -1,0 +1,43 @@
+openapi: 3.1.0
+info:
+  title: AI-CRM System API
+  version: 0.1.0
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      x-ai-crm-audiences: [internal]
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /health/ready:
+    get:
+      operationId: getReadiness
+      x-ai-crm-audiences: [internal]
+      responses:
+        "200":
+          description: The process is ready to accept work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: A required dependency is unavailable or incompatible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]

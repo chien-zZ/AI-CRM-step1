@@ -23,6 +23,7 @@ Thumbs.db
 .vscode/
 
 deploy/data/
+deploy/compose/.runtime/
 deploy/secrets/runtime/
 deploy/secrets/**/runtime/
 deploy/secrets/**/*.secret

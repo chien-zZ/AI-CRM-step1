@@ -1,0 +1,30 @@
+name: ai-crm-test
+
+services:
+  postgres: {}
+  redis: {}
+  rabbitmq: {}
+  keycloak: {}
+  flowable: {}
+  clamav: {}
+  nginx: {}
+
+secrets:
+  postgres_admin_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/postgres_admin_password
+  postgres_app_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/postgres_app_password
+  postgres_migration_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/postgres_migration_password
+  postgres_keycloak_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/postgres_keycloak_password
+  postgres_flowable_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/postgres_flowable_password
+  keycloak_bootstrap_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/keycloak_bootstrap_password
+  flowable_admin_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/flowable_admin_password
+  rabbitmq_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/rabbitmq_password
+  redis_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/redis_password

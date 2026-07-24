@@ -1,0 +1,7 @@
+asyncapi: 3.0.0
+info:
+  title: AI-CRM RabbitMQ Topology
+  version: 0.1.0
+  description: Business-neutral topology root. Channels are added only with reviewed event or job contracts.
+channels: {}
+operations: {}

@@ -1,0 +1,9 @@
+{
+  "generatedBy": "scripts/contracts/generate.mjs",
+  "sha256": {
+    "contracts/generated/external.openapi.json": "11fe5f1d6e653de2da95fbd8e8944a18f9d7eb0dfb14f11e41368913e14c98ae",
+    "contracts/generated/internal.openapi.json": "fb423553b783f5f5191c88d5ff2ddfbe5a0aefd87c0acd694a3af38b44e4ca5d",
+    "packages/api-client/src/external.ts": "48940beb26aac7e0fe1167149f0fc7fe7923a04cce37f869087f7aa1867ed98d",
+    "packages/api-client/src/index.ts": "d64f115253cff9242f98dfe8a1099b327df967dea55ab7e251bbf132a6af3560"
+  }
+}

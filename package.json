@@ -6,16 +6,39 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "preinstall": "node scripts/check/verify-runtime.mjs",
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "turbo run lint",
+    "lint": "eslint scripts --max-warnings 0 && turbo run lint",
     "typecheck": "turbo run typecheck",
-    "repo:check": "node scripts/check/verify-repository.mjs",
-    "contracts:check": "node scripts/check/verify-repository.mjs contracts && turbo run contracts:check",
-    "check": "pnpm repo:check && turbo run lint typecheck test contracts:check"
+    "repo:check": "node scripts/check/verify-runtime.mjs && node scripts/check/verify-repository.mjs && node scripts/check/check-boundaries.mjs && node --test scripts/check/*.test.mjs",
+    "contracts:generate": "node scripts/contracts/generate.mjs",
+    "contracts:check": "node scripts/check/verify-repository.mjs contracts && node scripts/contracts/generate.mjs --check && turbo run contracts:check",
+    "compose:check": "node scripts/check/verify-compose.mjs",
+    "compose:dev:prepare": "node scripts/bootstrap/compose-secrets.mjs dev",
+    "compose:test:prepare": "node scripts/bootstrap/compose-secrets.mjs test",
+    "compose:dev:up": "docker compose -p ai-crm-dev -f deploy/compose/compose.base.yml -f deploy/compose/compose.dev.yml up -d --wait",
+    "compose:dev:down": "docker compose -p ai-crm-dev -f deploy/compose/compose.base.yml -f deploy/compose/compose.dev.yml down",
+    "db:migrate": "pnpm --filter @ai-crm/database build && node scripts/migration/run.mjs",
+    "db:test:integration": "node scripts/check/run-database-integration.mjs",
+    "compose:test:integration": "node scripts/check/run-compose-integration.mjs",
+    "check": "pnpm repo:check && pnpm compose:check && node scripts/contracts/generate.mjs --check && turbo run build lint typecheck test contracts:check"
   },
   "devDependencies": {
-    "turbo": "2.10.5"
+    "@apidevtools/swagger-parser": "12.0.0",
+    "@asyncapi/parser": "3.4.0",
+    "@eslint/js": "9.32.0",
+    "@types/node": "24.1.0",
+    "@types/pg": "8.15.5",
+    "@vitest/coverage-v8": "3.2.4",
+    "ajv": "8.17.1",
+    "drizzle-kit": "0.31.4",
+    "eslint": "9.32.0",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.38.0",
+    "turbo": "2.10.5",
+    "vitest": "3.2.4",
+    "yaml": "2.8.0"
   }
 }

@@ -1,0 +1,7 @@
+{
+  "moduleOwner": "database",
+  "purpose": "Create the repository-owned migration history used by the dedicated migration step.",
+  "applicationCompatibility": ">=0.0.0",
+  "destructive": false,
+  "recovery": "Before production use, restore the reviewed empty-database recovery point. After later migrations exist, prefer a forward repair; do not drop migration history mechanically."
+}

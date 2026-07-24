@@ -1,0 +1,184 @@
+name: ai-crm
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: "1.00"
+        memory: 1G
+
+services:
+  postgres:
+    <<: *service-defaults
+    image: postgres:17.5-bookworm
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ai_crm_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+    secrets:
+      - postgres_admin_password
+      - postgres_migration_password
+      - postgres_app_password
+      - postgres_keycloak_password
+      - postgres_flowable_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init/postgres/010-create-databases.sh:/docker-entrypoint-initdb.d/010-create-databases.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ai_crm_admin -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    <<: *service-defaults
+    image: redis:7.4.5-alpine
+    entrypoint: [/bin/sh, /opt/ai-crm/redis-entrypoint.sh]
+    secrets: [redis_password]
+    volumes:
+      - redis-data:/data
+      - ./entrypoints/redis-entrypoint.sh:/opt/ai-crm/redis-entrypoint.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  rabbitmq:
+    <<: *service-defaults
+    image: rabbitmq:4.2.9-management
+    entrypoint: [/bin/sh, /opt/ai-crm/rabbitmq-entrypoint.sh]
+    secrets: [rabbitmq_password]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./entrypoints/rabbitmq-entrypoint.sh:/opt/ai-crm/rabbitmq-entrypoint.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  keycloak:
+    <<: *service-defaults
+    image: quay.io/keycloak/keycloak:26.3.1
+    entrypoint: [/bin/sh, /opt/ai-crm/keycloak-entrypoint.sh]
+    command: [start-dev, --import-realm, --health-enabled=true]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak_runtime
+      KC_BOOTSTRAP_ADMIN_USERNAME: dev_admin
+    secrets:
+      - postgres_keycloak_password
+      - keycloak_bootstrap_password
+    volumes:
+      - ../keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
+      - ./entrypoints/keycloak-entrypoint.sh:/opt/ai-crm/keycloak-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q '200 OK' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  flowable:
+    <<: *service-defaults
+    image: flowable/flowable-rest:7.2.0
+    entrypoint: [/bin/sh, /opt/ai-crm/flowable-entrypoint.sh]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flowable
+      SPRING_DATASOURCE_USERNAME: flowable_runtime
+      SERVER_PORT: "8080"
+      FLOWABLE_REST_APP_ADMIN_USER_ID: dev_flowable_admin
+      FLOWABLE_REST_APP_ADMIN_FIRST_NAME: Development
+      FLOWABLE_REST_APP_ADMIN_LAST_NAME: Administrator
+    secrets: [postgres_flowable_password, flowable_admin_password]
+    volumes:
+      - ./entrypoints/flowable-entrypoint.sh:/opt/ai-crm/flowable-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8080"]
+      interval: 15s
+      timeout: 10s
+      retries: 24
+      start_period: 90s
+
+  clamav:
+    <<: *service-defaults
+    image: clamav/clamav:1.4.3
+    volumes:
+      - clamav-data:/var/lib/clamav
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "printf 'PING\n' | nc 127.0.0.1 3310 | grep -q PONG"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
+
+  nginx:
+    <<: *service-defaults
+    image: nginx:1.28.0-alpine
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    volumes:
+      - ../nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
+    networks: [edge, backend]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/health/live]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+networks:
+  edge: {}
+  backend: {}
+
+volumes:
+  postgres-data: {}
+  redis-data: {}
+  rabbitmq-data: {}
+  clamav-data: {}
+
+secrets:
+  postgres_admin_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/postgres_admin_password
+  postgres_app_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/postgres_app_password
+  postgres_migration_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/postgres_migration_password
+  postgres_keycloak_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/postgres_keycloak_password
+  postgres_flowable_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/postgres_flowable_password
+  keycloak_bootstrap_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/keycloak_bootstrap_password
+  flowable_admin_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/flowable_admin_password
+  rabbitmq_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/rabbitmq_password
+  redis_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/redis_password

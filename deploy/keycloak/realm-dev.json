@@ -1,0 +1,11 @@
+{
+  "realm": "ai-crm-dev",
+  "enabled": true,
+  "displayName": "AI-CRM Development",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "users": [],
+  "clients": [],
+  "roles": { "realm": [] }
+}

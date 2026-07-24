@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -58,7 +58,22 @@ const premature = contractsOnly
   ? []
   : forbiddenDuringFoundation.filter((path) => existsSync(resolve(root, path)));
 
-if (missing.length > 0 || premature.length > 0) {
+const workspacePackages = contractsOnly
+  ? []
+  : [
+      ...["api", "worker", "workbench-web", "internal-mobile", "external-portal"].map((name) => `apps/${name}`),
+      ...["api-client", "config", "database", "eslint-config", "observability", "platform-sdk", "shared-ui", "test-config", "tsconfig"].map((name) => `packages/${name}`),
+      ...["ai-gateway", "app-registry", "audit", "auth-context", "authorization", "business-configuration", "eventing-outbox", "file-center", "form-schema", "integration-runtime", "notifications", "organization", "task-center", "workflow"].map((name) => `packages/platform-modules/${name}`),
+    ];
+const invalidPackages = workspacePackages.filter((path) => {
+  const packagePath = resolve(root, path, "package.json");
+  const entryPath = resolve(root, path, "src/index.ts");
+  if (!existsSync(packagePath) || !existsSync(entryPath)) return true;
+  const manifest = JSON.parse(readFileSync(packagePath, "utf8"));
+  return !["build", "lint", "typecheck", "test", "contracts:check"].every((name) => manifest.scripts?.[name]);
+});
+
+if (missing.length > 0 || premature.length > 0 || invalidPackages.length > 0) {
   if (missing.length > 0) {
     console.error("Missing required repository paths:");
     for (const path of missing) console.error(`- ${path}`);
@@ -67,6 +82,11 @@ if (missing.length > 0 || premature.length > 0) {
   if (premature.length > 0) {
     console.error("Premature business paths found during the foundation stage:");
     for (const path of premature) console.error(`- ${path}`);
+  }
+
+  if (invalidPackages.length > 0) {
+    console.error("Invalid workspace packages:");
+    for (const path of invalidPackages) console.error(`- ${path}`);
   }
 
   process.exit(1);

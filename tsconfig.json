@@ -1,0 +1,30 @@
+{
+  "files": [],
+  "references": [
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "apps/workbench-web" },
+    { "path": "apps/internal-mobile" },
+    { "path": "apps/external-portal" },
+    { "path": "packages/api-client" },
+    { "path": "packages/config" },
+    { "path": "packages/database" },
+    { "path": "packages/observability" },
+    { "path": "packages/platform-sdk" },
+    { "path": "packages/shared-ui" },
+    { "path": "packages/platform-modules/ai-gateway" },
+    { "path": "packages/platform-modules/app-registry" },
+    { "path": "packages/platform-modules/audit" },
+    { "path": "packages/platform-modules/auth-context" },
+    { "path": "packages/platform-modules/authorization" },
+    { "path": "packages/platform-modules/business-configuration" },
+    { "path": "packages/platform-modules/eventing-outbox" },
+    { "path": "packages/platform-modules/file-center" },
+    { "path": "packages/platform-modules/form-schema" },
+    { "path": "packages/platform-modules/integration-runtime" },
+    { "path": "packages/platform-modules/notifications" },
+    { "path": "packages/platform-modules/organization" },
+    { "path": "packages/platform-modules/task-center" },
+    { "path": "packages/platform-modules/workflow" }
+  ]
+}

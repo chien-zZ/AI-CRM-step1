@@ -1,0 +1,119 @@
+{
+  "components": {
+    "schemas": {
+      "HealthStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "AI-CRM API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The process is alive."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The process is ready to accept work."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok",
+                        "unavailable"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "A required dependency is unavailable or incompatible."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    }
+  },
+  "x-ai-crm-generated": true
+}
