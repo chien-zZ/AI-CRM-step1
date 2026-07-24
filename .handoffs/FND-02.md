@@ -27,7 +27,7 @@
 
 - `pnpm contracts:generate` 生成内部/外部 OpenAPI Bundle、两个 Client 入口和 SHA-256 Manifest。
 - `pnpm contracts:check` 通过 OpenAPI 3.1、JSON Schema 2020-12、版本化 `$id`、AsyncAPI 3.0 和受众声明校验。
-- 两次渲染结果一致；自动化测试篡改生成文件后检查明确失败并恢复原文件。
+- 两次渲染结果一致；自动化测试把生成制品复制到系统临时目录后实施篡改，检查明确失败且不修改真实工作树。
 - 外部 Bundle 的 `paths` 为空，外部 Client 操作列表为空，不包含两个内部健康端点。
 
 ## 独立审查

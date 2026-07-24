@@ -27,8 +27,9 @@
 ## 验证
 
 - `pnpm compose:check` 与 Docker Compose 合并配置检查通过。
-- 七组件隔离测试中 PostgreSQL、Redis、RabbitMQ、Keycloak、Flowable REST、ClamAV 和 Nginx 全部达到 Healthy。
+- 七组件隔离测试中 PostgreSQL、Redis、RabbitMQ、Keycloak、Flowable REST、ClamAV 和 Nginx 全部达到 Healthy；ClamAV 固定为已复验的 `1.4.5-debian` 补丁版本。
 - 测试结束后 7 个容器、4 个 Volume、2 个项目网络和系统临时 Secret 目录全部删除。
+- Compose 与 PostgreSQL 集成脚本为每次执行生成唯一 `ai-crm-test-g1-*-<run-id>` 项目名，并发运行不会相互清理资源。
 - 开发端口只绑定 `127.0.0.1`；测试 overlay 不发布端口。
 - 所有服务都有固定镜像、健康检查、资源上限、日志轮转和停止宽限期。
 

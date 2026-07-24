@@ -125,7 +125,7 @@ services:
 
   clamav:
     <<: *service-defaults
-    image: clamav/clamav:1.4.3
+    image: clamav/clamav:1.4.5-debian
     volumes:
       - clamav-data:/var/lib/clamav
     networks: [backend]

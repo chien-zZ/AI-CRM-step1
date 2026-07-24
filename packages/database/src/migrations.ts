@@ -8,7 +8,12 @@ const advisoryLock = 1_904_202_607;
 
 export interface MigrationMetadata {
   readonly applicationCompatibility: string;
+  readonly backfill: string;
+  readonly dataImpact: string;
   readonly destructive: boolean;
+  readonly destructiveApproval?: string;
+  readonly forwardFix: string;
+  readonly lockImpact: string;
   readonly moduleOwner: string;
   readonly purpose: string;
   readonly recovery: string;
@@ -44,8 +49,22 @@ export async function loadMigrations(directory: string): Promise<MigrationDefini
     if (!match?.[1]) throw new Error(`Invalid migration filename: ${name}.`);
     const sql = await readFile(resolve(directory, name), "utf8");
     const metadata = JSON.parse(await readFile(resolve(directory, name.replace(/\.sql$/, ".meta.json")), "utf8")) as MigrationMetadata;
-    if (!metadata.moduleOwner || !metadata.purpose || !metadata.applicationCompatibility || !metadata.recovery) {
+    const requiredText = [
+      metadata.moduleOwner,
+      metadata.purpose,
+      metadata.applicationCompatibility,
+      metadata.lockImpact,
+      metadata.dataImpact,
+      metadata.backfill,
+      metadata.recovery,
+      metadata.forwardFix,
+    ];
+    if (requiredText.some((value) => typeof value !== "string" || value.trim().length === 0)
+      || typeof metadata.destructive !== "boolean") {
       throw new Error(`Migration ${name} has incomplete review metadata.`);
+    }
+    if (metadata.destructive && (!metadata.destructiveApproval || metadata.destructiveApproval.trim().length === 0)) {
+      throw new Error(`Migration ${name} is destructive but has no approval metadata.`);
     }
     if (!metadata.destructive && /\b(drop|truncate)\b/i.test(sql)) {
       throw new Error(`Migration ${name} contains destructive SQL without approval metadata.`);

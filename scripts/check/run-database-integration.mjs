@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -15,7 +16,7 @@ await new Promise((resolveAvailable, reject) => {
 });
 
 const secretDirectory = await mkdtemp(resolve(tmpdir(), "ai-crm-g1-"));
-const project = "ai-crm-test-g1-postgres";
+const project = `ai-crm-test-g1-postgres-${randomUUID().slice(0, 8)}`;
 const pnpmCli = process.env.npm_execpath;
 if (!pnpmCli) throw new Error("pnpm CLI path is unavailable.");
 const environment = {

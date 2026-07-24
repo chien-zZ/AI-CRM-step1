@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 const secretDirectory = await mkdtemp(resolve(tmpdir(), "ai-crm-compose-g1-"));
-const project = "ai-crm-test-g1-compose";
+const project = `ai-crm-test-g1-compose-${randomUUID().slice(0, 8)}`;
 const environment = { ...process.env, AI_CRM_COMPOSE_SECRET_DIR: secretDirectory };
 const compose = [
   "compose", "-p", project,

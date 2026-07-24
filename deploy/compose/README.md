@@ -24,4 +24,6 @@ Delete an isolated test environment with `node scripts/bootstrap/cleanup-test-co
 
 `compose.postgres-test.yml` is a narrow DAT-01 integration overlay. It requires an explicit unused loopback port and must run under a unique `ai-crm-test-*` project; it is not a development or production definition.
 
-`pnpm db:test:integration` runs the empty-database migration test on loopback port 55432 by default. It creates a system-temporary Secret directory and a fixed isolated test project, then removes only that project and directory in its cleanup path. Set `AI_CRM_TEST_POSTGRES_PORT` to another unused loopback port when necessary.
+`pnpm db:test:integration` runs the empty-database migration test on loopback port 55432 by default. It creates a system-temporary Secret directory and a unique `ai-crm-test-g1-postgres-<run-id>` project, then removes only that project and directory in its cleanup path. Set `AI_CRM_TEST_POSTGRES_PORT` to another unused loopback port when necessary.
+
+`pnpm compose:test:integration` likewise uses a unique `ai-crm-test-g1-compose-<run-id>` project, so concurrent runs cannot remove each other's containers, networks, or Volumes.
