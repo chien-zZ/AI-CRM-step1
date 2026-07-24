@@ -10,5 +10,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "test": "vitest run --config ../../vitest.config.ts",
     "contracts:check": "node ../../scripts/check/verify-package.mjs"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/core": "2.10.0",
+    "@sentry/node": "10.67.0",
+    "pino": "10.3.1"
   }
 }
