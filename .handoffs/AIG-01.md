@@ -110,6 +110,14 @@
 
 Owner 修复后专项证据：AI Gateway lint/typecheck 通过，13/13 测试通过，Contracts 28/28 通过。等待原 Reviewer 对修复提交进行 Round 2 复查。
 
+## Independent Review Round 2 And Fixes
+
+- P2 顶层 `useCaseId` getter 在校验前执行：调用入口现只通过 own data descriptor 提取用途 ID，并在读取任何用户属性前拒绝顶层或继承访问器；回归证明 `getterReads=0`。
+- P2 Call Record 状态契约分支不互斥：V1 Schema 现在禁止成功记录携带失败字段，也禁止失败记录携带 Adapter/Proposal/Usage 成功字段；正反混合记录均有契约反例测试。
+- Owner 同源扩展修复：Authorizer、Budget 与 Adapter Port 返回值同样采用 descriptor-safe 精确解析，访问器和自定义原型不会被执行。
+
+Round 2 修复后证据：AI Gateway lint/typecheck 通过，14/14 测试通过，Contracts 28/28 通过，完整 `pnpm check` 140/140，`git diff --check` 通过。等待原 Reviewer Round 3 最终复查。
+
 ## Unresolved Questions
 
 - 首个真实用途、Owner、数据边界、Provider 地域/合同、模型/Prompt、预算、保留、授权和验收集尚未批准。

@@ -39,14 +39,30 @@
       "if": { "properties": { "status": { "const": "proposal_created" } }, "required": ["status"] },
       "then": {
         "properties": { "adapterVersion": {}, "authorizationDecisionId": {}, "costMicros": {}, "outputDigest": {}, "proposalId": {}, "tokenUsage": {} },
-        "required": ["adapterVersion", "authorizationDecisionId", "costMicros", "outputDigest", "proposalId", "tokenUsage"]
+        "required": ["adapterVersion", "authorizationDecisionId", "costMicros", "outputDigest", "proposalId", "tokenUsage"],
+        "not": {
+          "anyOf": [
+            { "properties": { "errorCategory": {} }, "required": ["errorCategory"] },
+            { "properties": { "errorCode": {} }, "required": ["errorCode"] },
+            { "properties": { "retryable": {} }, "required": ["retryable"] }
+          ]
+        }
       }
     },
     {
       "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
       "then": {
         "properties": { "errorCategory": {}, "errorCode": {}, "retryable": {} },
-        "required": ["errorCategory", "errorCode", "retryable"]
+        "required": ["errorCategory", "errorCode", "retryable"],
+        "not": {
+          "anyOf": [
+            { "properties": { "adapterVersion": {} }, "required": ["adapterVersion"] },
+            { "properties": { "costMicros": {} }, "required": ["costMicros"] },
+            { "properties": { "outputDigest": {} }, "required": ["outputDigest"] },
+            { "properties": { "proposalId": {} }, "required": ["proposalId"] },
+            { "properties": { "tokenUsage": {} }, "required": ["tokenUsage"] }
+          ]
+        }
       }
     }
   ],

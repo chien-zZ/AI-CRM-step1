@@ -103,6 +103,10 @@ describe("AI gateway fake", () => {
 
   it("rejects nested accessors and custom objects without executing getters", async () => {
     let getterReads = 0;
+    const topLevel = Object.defineProperty({}, "useCaseId", { enumerable: true, get: () => { getterReads += 1; return useCase.useCaseId; } });
+    await expect(setup().service.invoke(topLevel as never)).rejects.toMatchObject({ code: "ai_invalid_input" });
+    const inherited = Object.create(Object.defineProperty({}, "useCaseId", { get: () => { getterReads += 1; return useCase.useCaseId; } })) as object;
+    await expect(setup().service.invoke(inherited as never)).rejects.toMatchObject({ code: "ai_invalid_input" });
     const nested = Object.defineProperty({}, "syntheticText", { enumerable: true, get: () => { getterReads += 1; return "fixture"; } });
     await expect(setup().service.invoke({ ...metadata(), input: nested as never })).rejects.toMatchObject({ code: "ai_invalid_input" });
     expect(getterReads).toBe(0);
@@ -122,6 +126,17 @@ describe("AI gateway fake", () => {
     const badAdapter = createAiGatewayService({ adapter: { invoke: () => Promise.resolve(adapterResult as never) }, authorizer: { authorize: () => Promise.resolve({ allowed: true, decisionId: crypto.randomUUID() }) }, budget: { reserve: () => Promise.resolve({ allowed: true, reservationId: "fixture" }) }, callRecords: { record: () => Promise.resolve() }, useCases: [useCase] });
     await expect(badAdapter.invoke(metadata())).rejects.toMatchObject({ code: "ai_output_invalid" });
     expect(getterReads).toBe(0);
+  });
+
+  it("keeps success and failure call-record contract branches mutually exclusive", async () => {
+    const callSchema = JSON.parse(await readFile(new URL("../../../../contracts/ai/ai-call-record.v1.schema.json", import.meta.url), "utf8")) as object;
+    const validate = new Ajv2020({ strict: true }).compile(callSchema);
+    const successful = (await setup().service.invoke(metadata())).call;
+    expect(validate({ ...successful, errorCategory: "dependency", errorCode: "ai_adapter_unavailable", retryable: true })).toBe(false);
+    const failedRuntime = setup({ steps: [{ category: "ai_adapter_unavailable", kind: "error", retryable: true }] });
+    await expect(failedRuntime.service.invoke(metadata())).rejects.toMatchObject({ code: "ai_adapter_unavailable" });
+    const failed = failedRuntime.callRecords.record.mock.calls[0]?.[0];
+    expect(validate({ ...failed, adapterVersion: "fake.v1", costMicros: 1, outputDigest: "0".repeat(64), proposalId: crypto.randomUUID(), tokenUsage: { input: 1, output: 1, total: 2 } })).toBe(false);
   });
 
   it("isolates replayed results from caller mutation", async () => {

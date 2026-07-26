@@ -75,7 +75,10 @@ export function createAiGatewayService(options: {
   return {
     async invoke(input) {
       const rawInput: unknown = input;
-      const requestedId = typeof rawInput === "object" && rawInput !== null ? (rawInput as { readonly useCaseId?: unknown }).useCaseId : undefined;
+      if (typeof rawInput !== "object" || rawInput === null || Array.isArray(rawInput) || (Object.getPrototypeOf(rawInput) !== Object.prototype && Object.getPrototypeOf(rawInput) !== null)) throw new AiGatewayError("ai_invalid_input");
+      const useCaseDescriptor = Object.getOwnPropertyDescriptor(rawInput, "useCaseId");
+      if (useCaseDescriptor === undefined || useCaseDescriptor.get !== undefined || useCaseDescriptor.set !== undefined || !useCaseDescriptor.enumerable) throw new AiGatewayError("ai_invalid_input");
+      const requestedId = useCaseDescriptor.value as unknown;
       if (typeof requestedId !== "string") throw new AiGatewayError("ai_invalid_input");
       const useCase = useCases.get(requestedId);
       if (useCase === undefined || !useCase.registration.enabled) throw new AiGatewayError("ai_use_case_unavailable");
