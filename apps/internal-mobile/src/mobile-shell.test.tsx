@@ -16,7 +16,7 @@ vi.mock("@nutui/nutui-react-taro", () => ({
   CellGroup: ({ children }: PropsWithChildren) => <div>{children}</div>,
   Empty: ({ description, title }: { description: ReactNode; title: ReactNode }) => <div><div>{title}</div><div>{description}</div></div>,
   NavBar: ({ title }: { title: ReactNode }) => <header>{title}</header>,
-  NoticeBar: ({ content }: { content: ReactNode }) => <div role="note">{content}</div>,
+  NoticeBar: ({ content }: { content: string }) => <div role="note">{content}</div>,
   Tag: ({ children }: PropsWithChildren) => <span>{children}</span>,
 }));
 

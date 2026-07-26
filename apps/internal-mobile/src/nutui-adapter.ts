@@ -32,7 +32,7 @@ type NavBarProps = {
 };
 
 type NoticeBarProps = {
-  content: ReactNode;
+  content: string;
 };
 
 type TagProps = PropsWithChildren<{
