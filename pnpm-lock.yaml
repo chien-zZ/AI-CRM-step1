@@ -187,7 +187,17 @@ importers:
         specifier: 5.8.2
         version: 5.8.2
 
-  packages/platform-modules/business-configuration: {}
+  packages/platform-modules/business-configuration:
+    dependencies:
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../database
+      ajv:
+        specifier: 8.17.1
+        version: 8.17.1
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)
 
   packages/platform-modules/eventing-outbox:
     dependencies:
@@ -200,7 +210,17 @@ importers:
 
   packages/platform-modules/file-center: {}
 
-  packages/platform-modules/form-schema: {}
+  packages/platform-modules/form-schema:
+    dependencies:
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../database
+      ajv:
+        specifier: 8.17.1
+        version: 8.17.1
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)
 
   packages/platform-modules/integration-runtime: {}
 
