@@ -4,7 +4,7 @@
 - Branch: `task/PLT-03-file-center`
 - Owner: Agent B
 - Independent Reviewer: Agent D
-- Status: `RE_REVIEW`
+- Status: `G2_ACCEPTED`
 - Baseline: `6474690dffe2af0b8f73f76a1659733d94272d3e`
 - Migration lease: `0000000010`
 - Allowed paths: `packages/platform-modules/file-center/`, `contracts/files/`, `.handoffs/PLT-03.md`
@@ -130,5 +130,8 @@
 ## Independent Review
 
 - Round 1: five findings received (P1 × 3, P2 × 2); all fixed with behavior regression coverage.
-- Actionable findings: pending original Reviewer re-review.
-- G2 acceptance: pending zero-finding re-review and complete checks.
+- Round 2: original Reviewer re-reviewed exact candidate `795c282df69f4aedd48721e12cb028ab3e56b01f`; all five Round 1 findings are closed, new actionable findings are zero, and unresolved architecture/contract issues are zero.
+- Reviewer verification: unit/contract/adapter/package 25/25, PostgreSQL integration 5/5, contracts 28/28, `git diff --check`, clean worktree, and allowed-path audit all passed.
+- Review dimensions: Authorization, Idempotency, Transactions, Migrations, Observability/Audit, Backward Compatibility, Secrets, and Failure Modes have no unresolved findings. Migration `0000000010` is unchanged; the same-work-package `StorageAdapter.readObject` change has all call sites updated.
+- Actionable findings: zero.
+- G2 acceptance: accepted after the Round 2 zero-finding re-review on 2026-07-26.
