@@ -2,7 +2,7 @@ import type { WorkbenchPort } from "./workbench-port";
 
 const unavailableProductionPort: WorkbenchPort = {
   bootstrap: () => Promise.resolve({ kind: "maintenance" }),
-  logout: () => Promise.resolve(),
+  logout: () => Promise.resolve({ kind: "session-expired" }),
 };
 
 const lazyDevelopmentPort: WorkbenchPort = {

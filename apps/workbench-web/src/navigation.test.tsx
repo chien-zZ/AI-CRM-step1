@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchNavigation } from "./navigation";
+import { getNavigationSelection, matchNavigation } from "./navigation";
 
 describe("matchNavigation", () => {
   it("matches a nested location using the longest registered prefix", () => {
@@ -12,5 +12,12 @@ describe("matchNavigation", () => {
 
   it("does not match a partial path segment", () => {
     expect(matchNavigation("/tasks-extra")).toBeUndefined();
+  });
+
+  it("returns the selected leaf and its two-level navigation parent", () => {
+    expect(getNavigationSelection("/tasks/synthetic-reference")).toEqual({
+      openKeys: ["/coordination"],
+      selectedKey: "/tasks",
+    });
   });
 });

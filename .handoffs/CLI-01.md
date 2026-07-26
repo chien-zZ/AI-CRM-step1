@@ -51,10 +51,14 @@ Deliver the business-neutral PC workbench shell for CLI-01 without treating the 
 - Explicit 403, 404, 500, offline, session-expired, and maintenance presentations.
 - BFF login entry and a fail-closed production runtime port. Development-only/test-only fixture content is visibly labelled synthetic.
 - Master-detail platform collection layout, keyboard-focus treatment, accessible labels, empty states, and responsive behavior.
+- Fixed same-site `/auth/pc/login` construction with the authentication contract's bounded local `returnTo` rules; bootstrap data can no longer inject a login URL.
+- Explicit logout pending, error/retry, signed-out, and expired-session convergence; no logout Promise is discarded.
+- ProLayout receives longest-prefix leaf selection and parent open keys, including collection object deep links.
+- Route-specific lazy chunks and a manifest-driven bundle budget covering individual chunks, entry, static initial imports, and each lazy route's complete static import closure.
 
 ## Demo Reference Differences
 
-- Uses ProLayout `mix`/split navigation instead of copying the Demo's custom dual Sider implementation.
+- Uses ProLayout `mix`/split navigation instead of copying the Demo's custom dual Sider implementation. The reviewed implementation fixes the header at 48px, the secondary Sider at 184px, preserves explicit parent/leaf selection, and uses fluid content up to 1680px.
 - Removes the Demo's role switcher, global CRM search, clock, mail, calendar, business home, business counts, named people, department labels, SLA wording, AI assistant, and theme experiments.
 - Keeps the compact 48px-class workbench rhythm, two-level information hierarchy, master-detail pattern, URL-restorable context, and explicit feedback states.
 
@@ -73,7 +77,24 @@ Deliver the business-neutral PC workbench shell for CLI-01 without treating the 
 - Observability: no sensitive telemetry was added. Errors expose stable generic copy and no response body, token, cookie, or personal data.
 - Backward Compatibility: public `applicationId` export remains unchanged; root `/` redirects to `/workspace`.
 - Secrets: source, fixtures, URLs, and build configuration contain no credentials or real identifiers.
-- Failure Modes: loading, fetch failure, signed-out, expired, maintenance, offline, forbidden, missing route, and retry behaviors are explicit.
+- Failure Modes: loading, fetch failure, signed-out, expired, maintenance, offline, forbidden, missing route, login-return validation, logout pending/error/retry, and retry behaviors are explicit.
+
+## Independent Review Round 1 Remediation
+
+All entries below are implemented by the commit titled `CLI-01: resolve independent review findings`; the original Agent A reviewer must re-review them before G2 is considered.
+
+| Finding | Resolution | Regression evidence |
+|---|---|---|
+| P1 injectable `loginUrl` and unsafe `returnTo` | Removed `loginUrl` from `BootstrapResult`; `pcLoginUrl` always targets `/auth/pc/login` and mirrors the reviewed 512-character local-path restrictions. | `constructs only the fixed same-site login entry with a bounded local returnTo` |
+| P1 discarded logout Promise | `WorkbenchPort.logout` returns an explicit signed-out/session-expired result; Shell renders pending and retryable error states and converges Query session state only on success. | Pending/success and failure/retry logout tests |
+| P2 longest-prefix match not connected | ProLayout now receives normalized `location`, `menuProps.selectedKeys`, and parent `openKeys`; object deep-link routes render their owning collection. | ProLayout deep-link test plus navigation parent/leaf unit test |
+| P2 inconsistent tab/filter/page/selected | Collection state validates Tab/filter, clamps page, derives the selected item's page, and replaces invalid selection with an item in the current range; legal object deep links select their own Tab. | URL normalization and collection deep-link tests |
+| P2 offline notice covers header | Offline notice starts at the reviewed 48px fixed-header boundary with a lower stacking layer. | Executable CSS rule test |
+| P2 unclear hierarchy/desktop width | ProLayout remains the approved shell with mix/split hierarchy, 48px header token, 184px secondary Sider, explicit parent/leaf state, fluid content, and 1680px content ceiling. | ProLayout selection test and production build |
+| P2 icon-only logout/text overflow | Logout has Tooltip and accessible name; header, list title/status/summary, context, IDs, and detail values have bounded truncation or stable wrapping. | Tooltip/accessible-name test and long-text tests at 320px and 360px |
+| P3 monolithic bundle/no budget | Overview, collection, settings, and system states are distinct lazy entries; vendor groups use explicit-only manual chunks; build executes `check-bundle.mjs`. No Vite warning limit is raised or disabled. | Production build and manifest-driven bundle budget |
+
+The offline browser visual pass was attempted after these fixes, but the configured browser runtime reported no available browser instance. This is recorded as missing visual evidence, not treated as a pass.
 
 ## Required Verification
 
@@ -89,16 +110,16 @@ Deliver the business-neutral PC workbench shell for CLI-01 without treating the 
 - Workbench build: passed; Vite production output generated successfully.
 - Workbench lint: passed with the application-local TS/TSX typed ESLint configuration.
 - Workbench typecheck: passed.
-- Workbench tests: 2 files, 7 tests passed. Coverage includes longest-prefix routing, URL state recovery, all required runtime states, fail-closed maintenance, and BFF login entry.
+- Workbench tests: 3 files, 15 tests passed. Coverage includes longest-prefix shell selection, deep links, URL normalization, all required runtime states, fixed BFF login construction, logout pending/success/failure/retry, Tooltip/accessibility, fixed-header offline offset, and 320px/360px long text behavior.
 - Workbench contract/package check: passed.
 - Repository boundary check: passed after removing the cross-package ESLint configuration import.
-- Full `pnpm check`: passed, 140/140 Turbo tasks successful.
+- Full `pnpm check`: passed after Round 1 remediation, 140/140 Turbo tasks successful.
 - Production artifact scan: concrete development fixture identifiers and values are absent; the generic Fixture disclosure component remains intentionally available for injected non-production data.
-- Visual browser pass: not executed because no in-app browser instance was available in the current environment. Independent visual review remains required.
-- Build observation: initial JavaScript is about 1,163 KB minified / 379 KB gzip and Vite reports a chunk-size warning. Do not suppress the warning; profile ProLayout/Ant Design splitting during the integration performance pass.
+- Visual browser pass: attempted, but the browser runtime reported no available browser instance. Independent visual review remains required.
+- Bundle budget: passed without changing `chunkSizeWarningLimit`. Entry is 84,295 bytes; manifest static-initial import closure is 973,851 bytes. Complete route import closures are collection 1,160,077 bytes, overview 1,046,784 bytes, settings 988,237 bytes, and system state 975,139 bytes. The largest individual chunk is 493,550 bytes; all four route entries are independently lazy.
 
 ## Review Status
 
-- Owner self-review: complete with no open correctness, boundary, authorization, business-neutrality, accessibility-code, or failure-mode finding. Bundle size and browser visual verification are recorded above as follow-up evidence items.
-- Independent reviewer: Agent A, not yet started.
+- Owner self-review: Round 1 fixes implemented; scoped diff, business-neutrality, failure-mode, accessibility-code, bundle graph, and full repository checks pass with no open Owner finding.
+- Independent reviewer: Agent A reported the Round 1 findings above; same-reviewer re-review is pending.
 - G2 acceptance: not claimed.

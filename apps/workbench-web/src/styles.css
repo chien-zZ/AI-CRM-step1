@@ -21,26 +21,72 @@ body {
 }
 
 .ant-pro-page-container-children-container {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
   padding-block: 16px 24px !important;
 }
 
-.fixture-alert {
-  margin-bottom: 16px;
+.fixture-alert,
+.logout-alert {
+  margin: 0 24px 16px;
 }
 
-.overview-stats > .ant-card {
-  width: 210px;
+.fixture-alert {
+  margin-inline: 0;
+}
+
+.header-display-name {
+  display: inline-block;
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.session-controls {
+  min-width: 0;
+}
+
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(168px, 1fr));
+  gap: 12px;
+}
+
+.overview-stats > .ant-card,
+.context-card,
+.collection-list,
+.collection-detail {
   border-color: #e5e8eb;
 }
 
-.overview-stats .ant-statistic-content {
+.statistic-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.statistic-card > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.statistic-card strong {
   font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.statistic-icon {
+  color: #1677ff;
+  font-size: 20px;
 }
 
 .context-card {
-  max-width: 860px;
   margin-top: 16px;
-  border-color: #e5e8eb;
 }
 
 .master-detail {
@@ -49,18 +95,20 @@ body {
 }
 
 .collection-list {
-  width: min(360px, 38%);
+  width: clamp(300px, 29%, 380px);
   flex: 0 0 auto;
-  border-color: #e5e8eb;
 }
 
 .platform-list-item {
+  min-width: 0;
   border-block-end: 1px solid #f0f0f0;
 }
 
 .collection-item {
   width: 100%;
+  min-width: 0;
   padding: 12px;
+  overflow: hidden;
   color: inherit;
   text-align: start;
   background: transparent;
@@ -83,15 +131,45 @@ body {
   background: #e6f4ff;
 }
 
-.collection-item .ant-typography {
-  display: block;
+.collection-item-heading {
+  min-width: 0;
+  align-items: center;
+}
+
+.truncate-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stable-tag {
+  max-width: 45%;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-text {
+  display: -webkit-box;
   margin-top: 4px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.break-text,
+.stable-descriptions .ant-descriptions-item-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .collection-detail {
   min-width: 0;
   flex: 1;
-  border-color: #e5e8eb;
 }
 
 .full-state {
@@ -100,20 +178,38 @@ body {
 
 html[data-connectivity="offline"]::before {
   position: fixed;
-  z-index: 2000;
-  inset: 0 0 auto;
+  z-index: 999;
+  inset: 48px 0 auto;
+  min-height: 30px;
   padding: 6px 16px;
+  overflow-wrap: anywhere;
   color: #1f2329;
   font-size: 13px;
+  line-height: 18px;
   text-align: center;
   content: "网络已断开，当前操作不会被视为成功";
   background: #fff1b8;
   border-bottom: 1px solid #ffd666;
 }
 
+@media (max-width: 1024px) {
+  .overview-stats {
+    grid-template-columns: repeat(2, minmax(168px, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
   .ant-pro-page-container-children-container {
     padding-inline: 12px !important;
+  }
+
+  .fixture-alert,
+  .logout-alert {
+    margin-inline: 12px;
+  }
+
+  .fixture-alert {
+    margin-inline: 0;
   }
 
   .master-detail {
@@ -123,8 +219,23 @@ html[data-connectivity="offline"]::before {
   .collection-list {
     width: 100%;
   }
+}
 
-  .overview-stats > .ant-card {
-    width: 100%;
+@media (max-width: 420px) {
+  .overview-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .header-display-name {
+    max-width: 8ch;
+  }
+
+  .ant-result {
+    padding-inline: 16px;
+  }
+
+  .stable-descriptions .ant-descriptions-item-label,
+  .stable-descriptions .ant-descriptions-item-content {
+    padding-inline: 8px !important;
   }
 }

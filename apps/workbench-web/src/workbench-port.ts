@@ -3,6 +3,7 @@ export interface PlatformItem {
   title: string;
   status: string;
   summary: string;
+  tab: "active" | "history";
 }
 
 export interface PlatformCollection {
@@ -13,7 +14,7 @@ export interface PlatformCollection {
 }
 
 export type BootstrapResult =
-  | { kind: "signed-out"; loginUrl: string }
+  | { kind: "signed-out" }
   | { kind: "session-expired" }
   | { kind: "maintenance" }
   | {
@@ -26,5 +27,5 @@ export type BootstrapResult =
 
 export interface WorkbenchPort {
   bootstrap(): Promise<BootstrapResult>;
-  logout(): Promise<void>;
+  logout(): Promise<{ kind: "session-expired" | "signed-out" }>;
 }

@@ -6,7 +6,8 @@
   "exports": { ".": "./dist/index.js" },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/check-bundle.mjs",
+    "bundle:check": "node scripts/check-bundle.mjs",
     "preview": "vite preview",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",

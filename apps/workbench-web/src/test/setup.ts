@@ -16,6 +16,14 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
+class ResizeObserverStub implements ResizeObserver {
+  public disconnect(): void {}
+  public observe(): void {}
+  public unobserve(): void {}
+}
+
+globalThis.ResizeObserver = ResizeObserverStub;
+
 afterEach(() => {
   cleanup();
 });

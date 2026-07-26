@@ -48,3 +48,13 @@ export function matchNavigation(pathname: string): NavigationItem | undefined {
     .filter((item) => pathname === item.key || pathname.startsWith(`${item.key}/`))
     .sort((left, right) => right.key.length - left.key.length)[0];
 }
+
+export function getNavigationSelection(pathname: string): { openKeys: string[]; selectedKey?: string } {
+  const matched = matchNavigation(pathname);
+  if (matched === undefined) return { openKeys: [] };
+  const parent = navigation.find((item) => item.children?.some((child) => child.key === matched.key));
+  return {
+    openKeys: parent === undefined ? [] : [parent.key],
+    selectedKey: matched.key,
+  };
+}
