@@ -70,6 +70,7 @@ describe("retry and limiting", () => {
     expect(calculateBackoffMs(retryPolicy, 1, () => 1)).toBe(120);
     expect(shouldRetry(retryPolicy, 1, new IntegrationRuntimeError("rate_limited", { retryable: true }))).toBe(true);
     expect(shouldRetry(retryPolicy, 1, new IntegrationRuntimeError("authentication", { retryable: true }))).toBe(false);
+    expect(calculateBackoffMs({ ...retryPolicy, backoffMs: [3_600_000, 200], jitterRatio: 1 }, 1, () => 1)).toBe(3_600_000);
   });
 
   it("rejects excess concurrency without creating an unbounded queue", async () => {
@@ -115,6 +116,13 @@ describe("circuit breaker and executor", () => {
       halfOpenMaxCalls: 1,
       openMs: 100,
     });
+    await expect(breaker.execute(() => Promise.reject(new IntegrationRuntimeError("cancelled"))))
+      .rejects.toMatchObject({ category: "cancelled" });
+    expect(breaker.snapshot().state).toBe("closed");
+  });
+
+  it("does not count caller cancellation with the default circuit classifier", async () => {
+    const breaker = createCircuitBreaker({ failureThreshold: 1, halfOpenMaxCalls: 1, openMs: 100 });
     await expect(breaker.execute(() => Promise.reject(new IntegrationRuntimeError("cancelled"))))
       .rejects.toMatchObject({ category: "cancelled" });
     expect(breaker.snapshot().state).toBe("closed");
@@ -204,5 +212,17 @@ describe("circuit breaker and executor", () => {
     });
     const oneAttempt = { ...executionPolicy, retry: { ...retryPolicy, backoffMs: [], maxAttempts: 1 } };
     await expect(executor.execute(oneAttempt, () => Promise.resolve("accepted"))).resolves.toBe("accepted");
+  });
+
+  it("consumes an asynchronous observer rejection", async () => {
+    const executor = createIntegrationExecutor({
+      circuitBreaker: createCircuitBreaker({ failureThreshold: 2, halfOpenMaxCalls: 1, openMs: 1000 }),
+      concurrencyLimiter: createConcurrencyLimiter(1),
+      observer: { record: () => Promise.reject(new Error("telemetry unavailable")) },
+      rateLimiter: createFixedWindowRateLimiter(10, 1000),
+    });
+    const oneAttempt = { ...executionPolicy, retry: { ...retryPolicy, backoffMs: [], maxAttempts: 1 } };
+    await expect(executor.execute(oneAttempt, () => Promise.resolve("accepted"))).resolves.toBe("accepted");
+    await new Promise<void>((resolve) => { queueMicrotask(resolve); });
   });
 });

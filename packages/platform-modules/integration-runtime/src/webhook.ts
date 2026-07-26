@@ -60,6 +60,7 @@ export async function acceptVerifiedWebhook(
     !Number.isSafeInteger(options.allowedClockSkewMs) || options.allowedClockSkewMs < 0
     || !Number.isSafeInteger(options.replayRetentionMs) || options.replayRetentionMs < 1
     || !Number.isSafeInteger(options.maxBodyBytes) || options.maxBodyBytes < 1
+    || !(envelope.rawBody instanceof Uint8Array)
     || envelope.rawBody.byteLength > options.maxBodyBytes
     || envelope.signature.length < 1
     || envelope.signature.length > 8192
@@ -71,6 +72,9 @@ export async function acceptVerifiedWebhook(
   ) {
     throw new IntegrationRuntimeError("invalid_input");
   }
+
+  const rawBody = Uint8Array.from(envelope.rawBody);
+  const bodyDigest = createHash("sha256").update(rawBody).digest("hex");
 
   const now = options.now?.() ?? new Date();
   const signedAt = new Date(envelope.timestamp);
@@ -87,7 +91,7 @@ export async function acceptVerifiedWebhook(
   try {
     verified = await options.verifier.verify({
       nonce: envelope.nonce,
-      rawBody: envelope.rawBody,
+      rawBody,
       signature: envelope.signature,
       timestamp: envelope.timestamp,
       version: envelope.version,
@@ -95,7 +99,9 @@ export async function acceptVerifiedWebhook(
   } catch (error) {
     throw new IntegrationRuntimeError("signature_invalid", { cause: error });
   }
-  if (!verified) throw new IntegrationRuntimeError("signature_invalid");
+  if (!verified || createHash("sha256").update(rawBody).digest("hex") !== bodyDigest) {
+    throw new IntegrationRuntimeError("signature_invalid");
+  }
 
   const fingerprint = (kind: "event" | "nonce", value: string): string => createHash("sha256")
     .update(kind)
@@ -106,25 +112,30 @@ export async function acceptVerifiedWebhook(
     .digest("hex");
   let reservation: WebhookReplayReservation;
   try {
-    reservation = await options.replayStore.reserve({
+    const candidate: unknown = await options.replayStore.reserve({
       expiresAt: new Date(now.getTime() + options.replayRetentionMs).toISOString(),
       fingerprints: [fingerprint("event", envelope.eventId), fingerprint("nonce", envelope.nonce)],
     });
+    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) throw new Error("Replay store returned a malformed reservation.");
+    const keys = Object.keys(candidate);
+    if (!keys.includes("accepted") || keys.some((key) => key !== "accepted" && key !== "reservationId")) throw new Error("Replay store returned a malformed reservation.");
+    const accepted = (candidate as { readonly accepted?: unknown }).accepted;
+    const reservationId = (candidate as { readonly reservationId?: unknown }).reservationId;
+    if (typeof accepted !== "boolean" || (reservationId !== undefined && (typeof reservationId !== "string" || !stableIdentifier(reservationId)))) throw new Error("Replay store returned a malformed reservation.");
+    if (accepted && reservationId === undefined) throw new Error("Replay store omitted its reservation ID.");
+    if (!accepted && reservationId !== undefined) throw new Error("Rejected replay reservation unexpectedly returned an ID.");
+    reservation = accepted ? { accepted, reservationId: reservationId as string } : { accepted };
   } catch (error) {
-    if (error instanceof IntegrationRuntimeError) throw error;
     throw new IntegrationRuntimeError("upstream_unavailable", { cause: error, retryable: true });
   }
   if (!reservation.accepted) throw new IntegrationRuntimeError("replay_detected");
-  if (!reservation.reservationId || !stableIdentifier(reservation.reservationId)) {
-    throw new IntegrationRuntimeError("internal", { cause: new Error("Replay store did not return a valid reservation ID.") });
-  }
 
   return {
-    bodyDigest: createHash("sha256").update(envelope.rawBody).digest("hex"),
+    bodyDigest,
     eventId: envelope.eventId,
     protocolVersion: envelope.version,
     receivedAt: receivedAt.toISOString(),
-    reservationId: reservation.reservationId,
+    reservationId: reservation.reservationId as string,
     version: 1,
   };
 }

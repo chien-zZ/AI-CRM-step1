@@ -29,7 +29,7 @@ export interface IntegrationExecutionObserver {
     operationId: string;
     outcome: "failure" | "limited" | "success";
     retrying: boolean;
-  }>): void;
+  }>): Promise<void> | void;
 }
 
 export interface IntegrationExecutor {
@@ -53,7 +53,8 @@ export function createIntegrationExecutor(options: {
   const random = options.random ?? Math.random;
   const record = (event: Parameters<IntegrationExecutionObserver["record"]>[0]): void => {
     try {
-      options.observer?.record(event);
+      const pending = options.observer?.record(event);
+      if (pending !== undefined) void Promise.resolve(pending).catch(() => undefined);
     } catch {
       // Telemetry must never change the integration operation's result.
     }

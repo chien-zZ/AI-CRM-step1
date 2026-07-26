@@ -36,7 +36,7 @@ export function calculateBackoffMs(policy: RetryPolicy, attempt: number, random:
   const base = policy.backoffMs[attempt - 1] ?? 0;
   const boundedRandom = Math.min(1, Math.max(0, random()));
   const factor = 1 - policy.jitterRatio + (2 * policy.jitterRatio * boundedRandom);
-  return Math.round(base * factor);
+  return Math.min(3_600_000, Math.round(base * factor));
 }
 
 export function shouldRetry(policy: RetryPolicy, attempt: number, error: unknown): boolean {

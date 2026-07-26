@@ -15,6 +15,10 @@ export interface CircuitBreaker {
   snapshot(): Readonly<{ failures: number; halfOpenActive: number; openedAt?: number; state: CircuitState }>;
 }
 
+const DEFAULT_FAILURE_CATEGORIES = new Set<string>(["authentication", "connection", "invalid_response", "rate_limited", "timeout", "upstream_unavailable"]);
+const defaultFailureClassifier = (error: unknown): boolean => !(error instanceof IntegrationRuntimeError)
+  || DEFAULT_FAILURE_CATEGORIES.has(error.category);
+
 export function createCircuitBreaker(options: CircuitBreakerOptions): CircuitBreaker {
   if (
     !Number.isSafeInteger(options.failureThreshold) || options.failureThreshold < 1
@@ -60,7 +64,7 @@ export function createCircuitBreaker(options: CircuitBreakerOptions): CircuitBre
         }
         return result;
       } catch (error) {
-        if (options.countsAsFailure?.(error) ?? true) {
+        if ((options.countsAsFailure ?? defaultFailureClassifier)(error)) {
           failures += 1;
           if (probe || failures >= options.failureThreshold) open();
         }
