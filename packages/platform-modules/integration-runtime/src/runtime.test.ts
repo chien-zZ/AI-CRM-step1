@@ -150,6 +150,10 @@ describe("circuit breaker and executor", () => {
     });
     await expect(executor.execute({ ...executionPolicy, safety: "non_idempotent_write" }, () => Promise.resolve("unsafe")))
       .rejects.toMatchObject({ category: "invalid_input" });
+    await expect(executor.execute({ ...executionPolicy, safety: "unknown" as "read" }, () => Promise.resolve("unsafe")))
+      .rejects.toMatchObject({ category: "invalid_input" });
+    await expect(executor.execute({ ...executionPolicy, deadlines: { ...executionPolicy.deadlines, totalMs: 3_600_001 } }, () => Promise.resolve("unsafe")))
+      .rejects.toMatchObject({ category: "invalid_input" });
   });
 
   it("classifies expiry of the total operation budget as timeout", async () => {
@@ -167,5 +171,38 @@ describe("circuit breaker and executor", () => {
       });
       throw new IntegrationRuntimeError("cancelled");
     })).rejects.toMatchObject({ category: "timeout" });
+  });
+
+  it("keeps one total deadline across retries and backoff", async () => {
+    const sleep = vi.fn(async (_milliseconds: number, signal?: AbortSignal) => {
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) resolve();
+        else signal?.addEventListener("abort", () => {
+          resolve();
+        }, { once: true });
+      });
+      throw new IntegrationRuntimeError("cancelled");
+    });
+    const executor = createIntegrationExecutor({
+      circuitBreaker: createCircuitBreaker({ failureThreshold: 5, halfOpenMaxCalls: 1, openMs: 1000 }),
+      concurrencyLimiter: createConcurrencyLimiter(1),
+      rateLimiter: createFixedWindowRateLimiter(10, 1000),
+      sleep,
+    });
+    const policy = { ...executionPolicy, deadlines: { connectMs: 50, responseMs: 50, totalMs: 5 } };
+    await expect(executor.execute(policy, () => Promise.reject(new IntegrationRuntimeError("upstream_unavailable", { retryable: true }))))
+      .rejects.toMatchObject({ category: "timeout" });
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
+  it("does not let a failing observer alter operation success", async () => {
+    const executor = createIntegrationExecutor({
+      circuitBreaker: createCircuitBreaker({ failureThreshold: 2, halfOpenMaxCalls: 1, openMs: 1000 }),
+      concurrencyLimiter: createConcurrencyLimiter(1),
+      observer: { record: () => { throw new Error("telemetry unavailable"); } },
+      rateLimiter: createFixedWindowRateLimiter(10, 1000),
+    });
+    const oneAttempt = { ...executionPolicy, retry: { ...retryPolicy, backoffMs: [], maxAttempts: 1 } };
+    await expect(executor.execute(oneAttempt, () => Promise.resolve("accepted"))).resolves.toBe("accepted");
   });
 });

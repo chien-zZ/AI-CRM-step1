@@ -14,9 +14,9 @@
       "additionalProperties": false,
       "required": ["connectMs", "responseMs", "totalMs"],
       "properties": {
-        "connectMs": { "type": "integer", "minimum": 1 },
-        "responseMs": { "type": "integer", "minimum": 1 },
-        "totalMs": { "type": "integer", "minimum": 1 }
+        "connectMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "responseMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "totalMs": { "type": "integer", "minimum": 1, "maximum": 3600000 }
       }
     },
     "retry": {

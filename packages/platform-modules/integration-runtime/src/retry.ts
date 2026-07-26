@@ -15,7 +15,7 @@ export function validateRetryPolicy(policy: RetryPolicy): void {
   if (policy.backoffMs.length !== Math.max(0, policy.maxAttempts - 1)) {
     throw new IntegrationRuntimeError("invalid_input", { cause: new Error("backoffMs must define every retry delay.") });
   }
-  if (policy.backoffMs.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+  if (policy.backoffMs.some((value) => !Number.isSafeInteger(value) || value < 0 || value > 3_600_000)) {
     throw new IntegrationRuntimeError("invalid_input", { cause: new Error("backoffMs values must be non-negative integers.") });
   }
   if (!Number.isFinite(policy.jitterRatio) || policy.jitterRatio < 0 || policy.jitterRatio > 1) {

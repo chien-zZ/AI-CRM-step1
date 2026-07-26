@@ -16,9 +16,11 @@ export interface DeadlineBudget {
   dispose(): void;
 }
 
+export const MAX_DEADLINE_MS = 3_600_000;
+
 function positiveInteger(value: number, field: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new IntegrationRuntimeError("invalid_input", { cause: new Error(`${field} must be a positive integer.`) });
+  if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_DEADLINE_MS) {
+    throw new IntegrationRuntimeError("invalid_input", { cause: new Error(`${field} must be between 1 and 3600000.`) });
   }
 }
 

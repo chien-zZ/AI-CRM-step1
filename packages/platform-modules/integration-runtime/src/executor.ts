@@ -51,6 +51,13 @@ export function createIntegrationExecutor(options: {
 }): IntegrationExecutor {
   const now = options.now ?? Date.now;
   const random = options.random ?? Math.random;
+  const record = (event: Parameters<IntegrationExecutionObserver["record"]>[0]): void => {
+    try {
+      options.observer?.record(event);
+    } catch {
+      // Telemetry must never change the integration operation's result.
+    }
+  };
   const sleep = options.sleep ?? (async (milliseconds: number, signal?: AbortSignal): Promise<void> => {
     if (signal?.aborted) throw new IntegrationRuntimeError("cancelled");
     await new Promise<void>((resolve, reject) => {
@@ -74,7 +81,8 @@ export function createIntegrationExecutor(options: {
       operation: (context: IntegrationExecutionContext) => Promise<T>,
       signal?: AbortSignal,
     ): Promise<T> {
-      if (!/^[a-z][a-z0-9_.-]{2,79}$/.test(policy.operationId)) {
+      if (!/^[a-z][a-z0-9_.-]{2,79}$/.test(policy.operationId)
+        || !(["idempotent_write", "non_idempotent_write", "read"] as const).includes(policy.safety)) {
         throw new IntegrationRuntimeError("invalid_input");
       }
       validateRetryPolicy(policy.retry);
@@ -87,72 +95,80 @@ export function createIntegrationExecutor(options: {
         });
       }
 
-      for (let attempt = 1; attempt <= policy.retry.maxAttempts; attempt += 1) {
-        const startedAt = now();
-        const rate = options.rateLimiter.check();
-        if (!rate.allowed) {
-          const error = new IntegrationRuntimeError("rate_limited", { retryable: true });
-          options.observer?.record({
-            attempt,
-            category: error.category,
-            durationMs: Math.max(0, now() - startedAt),
-            operationId: policy.operationId,
-            outcome: "limited",
-            retrying: false,
-          });
-          throw error;
-        }
+      const budget = createDeadlineBudget(policy.deadlines, { now, ...(signal === undefined ? {} : { signal }) });
+      const classifyBudgetExpiry = (error: unknown): unknown => budget.signal.aborted && !signal?.aborted
+        ? new IntegrationRuntimeError("timeout", { cause: error, retryable: true })
+        : error;
+      try {
+        for (let attempt = 1; attempt <= policy.retry.maxAttempts; attempt += 1) {
+          const startedAt = now();
+          if (budget.signal.aborted) throw classifyBudgetExpiry(new IntegrationRuntimeError("cancelled"));
+          const rate = options.rateLimiter.check();
+          if (!rate.allowed) {
+            const error = new IntegrationRuntimeError("rate_limited", { retryable: true });
+            record({
+              attempt,
+              category: error.category,
+              durationMs: Math.max(0, now() - startedAt),
+              operationId: policy.operationId,
+              outcome: "limited",
+              retrying: false,
+            });
+            throw error;
+          }
 
-        try {
-          const value = await options.concurrencyLimiter.run(
-            async () => options.circuitBreaker.execute(async () => {
-              const budget = createDeadlineBudget(policy.deadlines, { now, ...(signal === undefined ? {} : { signal }) });
-              try {
-                const result = await operation({
-                  attempt,
-                  deadlineAt: budget.deadlineAt,
-                  runConnect: (phase) => budget.runPhase("connect", phase),
-                  runResponse: (phase) => budget.runPhase("response", phase),
-                  signal: budget.signal,
-                });
-                if (budget.signal.aborted && !signal?.aborted) {
-                  throw new IntegrationRuntimeError("timeout", { retryable: true });
+          try {
+            const value = await options.concurrencyLimiter.run(
+              async () => options.circuitBreaker.execute(async () => {
+                try {
+                  const result = await operation({
+                    attempt,
+                    deadlineAt: budget.deadlineAt,
+                    runConnect: (phase) => budget.runPhase("connect", phase),
+                    runResponse: (phase) => budget.runPhase("response", phase),
+                    signal: budget.signal,
+                  });
+                  if (budget.signal.aborted && !signal?.aborted) {
+                    throw new IntegrationRuntimeError("timeout", { retryable: true });
+                  }
+                  return result;
+                } catch (error) {
+                  throw classifyBudgetExpiry(error);
                 }
-                return result;
-              } catch (error) {
-                if (budget.signal.aborted && !signal?.aborted) {
-                  throw new IntegrationRuntimeError("timeout", { cause: error, retryable: true });
-                }
-                throw error;
-              } finally {
-                budget.dispose();
-              }
-            }),
-            signal,
-          );
-          options.observer?.record({
-            attempt,
-            durationMs: Math.max(0, now() - startedAt),
-            operationId: policy.operationId,
-            outcome: "success",
-            retrying: false,
-          });
-          return value;
-        } catch (error) {
-          const retrying = shouldRetry(policy.retry, attempt, error);
-          options.observer?.record({
-            attempt,
-            ...(error instanceof IntegrationRuntimeError ? { category: error.category } : { category: "unclassified" }),
-            durationMs: Math.max(0, now() - startedAt),
-            operationId: policy.operationId,
-            outcome: "failure",
-            retrying,
-          });
-          if (!retrying) throw error;
-          await sleep(calculateBackoffMs(policy.retry, attempt, random), signal);
+              }),
+              budget.signal,
+            );
+            record({
+              attempt,
+              durationMs: Math.max(0, now() - startedAt),
+              operationId: policy.operationId,
+              outcome: "success",
+              retrying: false,
+            });
+            return value;
+          } catch (caught) {
+            const error = classifyBudgetExpiry(caught);
+            const retrying = shouldRetry(policy.retry, attempt, error) && !budget.signal.aborted;
+            record({
+              attempt,
+              ...(error instanceof IntegrationRuntimeError ? { category: error.category } : { category: "unclassified" }),
+              durationMs: Math.max(0, now() - startedAt),
+              operationId: policy.operationId,
+              outcome: "failure",
+              retrying,
+            });
+            if (!retrying) throw error;
+            try {
+              await sleep(calculateBackoffMs(policy.retry, attempt, random), budget.signal);
+            } catch (error) {
+              throw classifyBudgetExpiry(error);
+            }
+          }
         }
+        throw new IntegrationRuntimeError("internal");
+      } finally {
+        budget.dispose();
       }
-      throw new IntegrationRuntimeError("internal");
     },
   };
 }
