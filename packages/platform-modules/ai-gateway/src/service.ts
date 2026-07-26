@@ -5,6 +5,19 @@ import { digest, invocationFingerprint, validateConfirmation, validateInvocation
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+const portObject = (value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Object.keys(descriptors);
+  if (required.some((key) => !Object.hasOwn(descriptors, key)) || keys.some((key) => !required.includes(key) && !optional.includes(key))) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
+  const result: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
+    result[key] = descriptor.value;
+  }
+  return result;
+};
+
 interface StoredProposal {
   readonly expiresAt: string;
   readonly outputDigest: string;
@@ -41,10 +54,11 @@ export function createAiGatewayService(options: {
     let decision: unknown;
     try { decision = await options.authorizer.authorize(request); }
     catch (error) { throw new AiGatewayError("ai_adapter_unavailable", { cause: error, retryable: true }); }
-    if (typeof decision !== "object" || decision === null || Array.isArray(decision) || Object.keys(decision).some((key) => key !== "allowed" && key !== "decisionId") || typeof (decision as { allowed?: unknown }).allowed !== "boolean" || typeof (decision as { decisionId?: unknown }).decisionId !== "string" || !UUID.test((decision as { decisionId: string }).decisionId)) {
+    const parsed = portObject(decision, ["allowed", "decisionId"]);
+    if (typeof parsed.allowed !== "boolean" || typeof parsed.decisionId !== "string" || !UUID.test(parsed.decisionId)) {
       throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
     }
-    return { allowed: (decision as { allowed: boolean }).allowed, decisionId: (decision as { decisionId: string }).decisionId.toLowerCase() };
+    return { allowed: parsed.allowed, decisionId: parsed.decisionId.toLowerCase() };
   };
   const recordCall = async (call: AiCallRecord): Promise<void> => {
     try { await options.callRecords.record(structuredClone(call)); }
@@ -90,8 +104,7 @@ export function createAiGatewayService(options: {
         } catch (error) {
           throw new AiGatewayError("ai_adapter_unavailable", { cause: error, retryable: true });
         }
-        if (typeof budget !== "object" || budget === null || Array.isArray(budget) || Object.keys(budget).some((key) => key !== "allowed" && key !== "reservationId")) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
-        const typedBudget = budget as { readonly allowed?: unknown; readonly reservationId?: unknown };
+        const typedBudget = portObject(budget, ["allowed"], ["reservationId"]);
         if (typeof typedBudget.allowed !== "boolean") throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
         if (!typedBudget.allowed) {
           if (typedBudget.reservationId !== undefined) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
@@ -107,11 +120,13 @@ export function createAiGatewayService(options: {
           if (error instanceof AiGatewayError) throw error;
           throw new AiGatewayError("ai_adapter_unavailable", { cause: error, retryable: true });
         }
-        if (typeof adapterResult !== "object" || adapterResult === null || Array.isArray(adapterResult) || Object.keys(adapterResult).some((key) => key !== "adapterVersion" && key !== "structuredOutput" && key !== "usage")) throw new AiGatewayError("ai_output_invalid");
-        const typedResult = adapterResult as { readonly adapterVersion?: unknown; readonly structuredOutput?: unknown; readonly usage?: unknown };
+        let typedResult: Record<string, unknown>;
+        try { typedResult = portObject(adapterResult, ["adapterVersion", "structuredOutput", "usage"]); }
+        catch (error) { throw new AiGatewayError("ai_output_invalid", { cause: error }); }
         const usage: unknown = typedResult.usage;
-        if (typeof usage !== "object" || usage === null || Array.isArray(usage) || Object.keys(usage).some((key) => key !== "costMicros" && key !== "inputTokens" && key !== "outputTokens")) throw new AiGatewayError("ai_output_invalid");
-        const typedUsage = usage as { readonly costMicros?: unknown; readonly inputTokens?: unknown; readonly outputTokens?: unknown };
+        let typedUsage: Record<string, unknown>;
+        try { typedUsage = portObject(usage, ["costMicros", "inputTokens", "outputTokens"]); }
+        catch (error) { throw new AiGatewayError("ai_output_invalid", { cause: error }); }
         if (!Number.isSafeInteger(typedUsage.inputTokens) || (typedUsage.inputTokens as number) < 0 || !Number.isSafeInteger(typedUsage.outputTokens) || (typedUsage.outputTokens as number) < 0 || !Number.isSafeInteger(typedUsage.costMicros) || (typedUsage.costMicros as number) < 0 || (typedUsage.inputTokens as number) + (typedUsage.outputTokens as number) > useCase.registration.maximumTokens || (typedUsage.costMicros as number) > useCase.registration.maximumCostMicros || typeof typedResult.adapterVersion !== "string" || !/^[a-z0-9][a-z0-9_.:-]{0,127}$/u.test(typedResult.adapterVersion)) {
           throw new AiGatewayError("ai_output_invalid");
         }

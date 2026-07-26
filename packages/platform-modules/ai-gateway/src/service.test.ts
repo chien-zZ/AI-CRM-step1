@@ -111,6 +111,17 @@ describe("AI gateway fake", () => {
     const schemaGetter = Object.defineProperty({}, "type", { enumerable: true, get: () => { getterReads += 1; return "string"; } });
     expect(() => createAiGatewayService({ adapter: createFakeModelAdapter({}), authorizer: { authorize: () => Promise.resolve({ allowed: true, decisionId: crypto.randomUUID() }) }, budget: { reserve: () => Promise.resolve({ allowed: true, reservationId: "fixture" }) }, callRecords: { record: () => Promise.resolve() }, useCases: [{ ...useCase, inputSchema: { ...inputSchema, properties: { syntheticText: schemaGetter } } }] })).toThrow(AiGatewayError);
     expect(getterReads).toBe(0);
+
+    const badAuthorization = setup();
+    badAuthorization.authorizer.authorize.mockResolvedValueOnce(Object.defineProperty({ allowed: true }, "decisionId", { enumerable: true, get: () => { getterReads += 1; return crypto.randomUUID(); } }) as never);
+    await expect(badAuthorization.service.invoke(metadata())).rejects.toMatchObject({ code: "ai_adapter_unavailable" });
+    const badBudget = setup();
+    badBudget.budget.reserve.mockResolvedValueOnce(Object.defineProperty({ allowed: true }, "reservationId", { enumerable: true, get: () => { getterReads += 1; return "fixture"; } }) as never);
+    await expect(badBudget.service.invoke(metadata())).rejects.toMatchObject({ code: "ai_adapter_unavailable" });
+    const adapterResult = Object.defineProperty({ adapterVersion: "fake.v1", structuredOutput: result.structuredOutput }, "usage", { enumerable: true, get: () => { getterReads += 1; return result.usage; } });
+    const badAdapter = createAiGatewayService({ adapter: { invoke: () => Promise.resolve(adapterResult as never) }, authorizer: { authorize: () => Promise.resolve({ allowed: true, decisionId: crypto.randomUUID() }) }, budget: { reserve: () => Promise.resolve({ allowed: true, reservationId: "fixture" }) }, callRecords: { record: () => Promise.resolve() }, useCases: [useCase] });
+    await expect(badAdapter.invoke(metadata())).rejects.toMatchObject({ code: "ai_output_invalid" });
+    expect(getterReads).toBe(0);
   });
 
   it("isolates replayed results from caller mutation", async () => {
