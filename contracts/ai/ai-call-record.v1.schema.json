@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/ai/v1/ai-call-record.schema.json",
+  "title": "Safe AI call metadata V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "callId", "operationId", "useCaseId", "resourceReference", "actorReference", "actorType", "status", "adapterAttempts", "dataClassification", "inputDigest", "traceId", "budgetPolicyVersion", "dataPolicyVersion", "inputSchemaVersion", "modelPolicyVersion", "outputSchemaVersion", "promptPolicyVersion"],
+  "properties": {
+    "version": { "const": 1 },
+    "callId": { "$ref": "#/$defs/uuid" },
+    "operationId": { "$ref": "#/$defs/uuid" },
+    "useCaseId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{2,127}$" },
+    "resourceReference": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "actorReference": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "actorType": { "enum": ["authenticated_subject", "system"] },
+    "authorizationDecisionId": { "$ref": "#/$defs/uuid" },
+    "status": { "enum": ["proposal_created", "failed"] },
+    "adapterAttempts": { "type": "integer", "minimum": 0, "maximum": 1 },
+    "dataClassification": { "const": "synthetic" },
+    "inputDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "outputDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "tokenUsage": { "type": "object", "additionalProperties": false, "required": ["input", "output", "total"], "properties": { "input": { "type": "integer", "minimum": 0 }, "output": { "type": "integer", "minimum": 0 }, "total": { "type": "integer", "minimum": 0 } } },
+    "costMicros": { "type": "integer", "minimum": 0 },
+    "proposalId": { "$ref": "#/$defs/uuid" },
+    "errorCategory": { "enum": ["authorization", "budget", "dependency", "output", "policy"] },
+    "errorCode": { "enum": ["ai_adapter_unavailable", "ai_budget_exceeded", "ai_confirmation_denied", "ai_data_policy_rejected", "ai_invalid_input", "ai_operation_conflict", "ai_output_invalid", "ai_proposal_expired", "ai_proposal_unavailable", "ai_use_case_unavailable"] },
+    "retryable": { "type": "boolean" },
+    "traceId": { "type": "string", "pattern": "^(?!0{32})[0-9a-f]{32}$" },
+    "adapterVersion": { "$ref": "#/$defs/versionReference" },
+    "budgetPolicyVersion": { "$ref": "#/$defs/versionReference" },
+    "dataPolicyVersion": { "$ref": "#/$defs/versionReference" },
+    "inputSchemaVersion": { "$ref": "#/$defs/versionReference" },
+    "modelPolicyVersion": { "$ref": "#/$defs/versionReference" },
+    "outputSchemaVersion": { "$ref": "#/$defs/versionReference" },
+    "promptPolicyVersion": { "$ref": "#/$defs/versionReference" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "proposal_created" } }, "required": ["status"] },
+      "then": {
+        "properties": { "adapterVersion": {}, "authorizationDecisionId": {}, "costMicros": {}, "outputDigest": {}, "proposalId": {}, "tokenUsage": {} },
+        "required": ["adapterVersion", "authorizationDecisionId", "costMicros", "outputDigest", "proposalId", "tokenUsage"],
+        "not": {
+          "anyOf": [
+            { "properties": { "errorCategory": {} }, "required": ["errorCategory"] },
+            { "properties": { "errorCode": {} }, "required": ["errorCode"] },
+            { "properties": { "retryable": {} }, "required": ["retryable"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": {
+        "properties": { "errorCategory": {}, "errorCode": {}, "retryable": {} },
+        "required": ["errorCategory", "errorCode", "retryable"],
+        "not": {
+          "anyOf": [
+            { "properties": { "adapterVersion": {} }, "required": ["adapterVersion"] },
+            { "properties": { "costMicros": {} }, "required": ["costMicros"] },
+            { "properties": { "outputDigest": {} }, "required": ["outputDigest"] },
+            { "properties": { "proposalId": {} }, "required": ["proposalId"] },
+            { "properties": { "tokenUsage": {} }, "required": ["tokenUsage"] }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "versionReference": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.:-]{0,127}$" }
+  }
+}
