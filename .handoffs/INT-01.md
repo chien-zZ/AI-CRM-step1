@@ -126,6 +126,12 @@ Agent B 对 `c7429c8` 完成只读独立 Review，提出五项可执行问题：
 
 Owner 在 `f2f85e8` 全部修复并补回归：进入异步验签前验证并复制原始字节、预计算摘要且拒绝 Verifier 修改；无效字节不会调用 ReplayStore；Store 所有异常统一映射为可重试 `upstream_unavailable` 并精确校验返回结构；同步和异步 Observer 故障都被吸收；有效抖动后退避上限固定为一小时；默认熔断只统计稳定 Provider/传输故障类别。专项证据为 25/25 tests、lint、typecheck 与 28/28 contracts checks 通过。等待同一 Agent B 复审，当前不得标记 G2。
 
+## Independent Re-review Acceptance
+
+Agent B 对 `f2f85e8` 和 handoff `7ecec28` 完成同一 Reviewer 复查，逐项重放五个 finding，确认全部关闭且没有新增 P0/P1/P2/P3。复查确认调用方与 Verifier 字节修改均不会污染已验证摘要或提前占用防重键；同步/异步 Observer 失败不改变结果且无未处理 rejection；ReplayStore 抛错和畸形返回失败关闭；最大有效抖动为 3,600,000 ms；默认熔断在调用方取消后保持关闭。
+
+最终证据：25/25 模块测试、包 lint/typecheck/contracts、仓库 contracts 28/28、完整 `pnpm check` 140/140 通过；只修改 integration-runtime、integration contracts 和任务 handoff，根 Lockfile、生成制品、`apps/api`、`apps/worker` 均无差异。Authorization/Migrations 不适用且已有依据；Idempotency、Transactions、Observability、Backward Compatibility、Secrets 和 Failure Modes 均无未关闭问题。状态为 `G2_ACCEPTED`，等待 Integration Owner 串行合并。
+
 ## Handoff Result
 
-Owner 已完成独立 Review Round 1 修复；等待同一 Reviewer 复查五项 finding 及新增覆盖面，不得提前标记 G2 accepted。
+独立 Review 与同一 Reviewer 复查均已完成，可执行 finding 为零；`G2_ACCEPTED`，等待 Integration Owner 串行合并。
