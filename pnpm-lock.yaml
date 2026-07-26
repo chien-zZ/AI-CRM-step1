@@ -155,7 +155,11 @@ importers:
         specifier: 10.3.1
         version: 10.3.1
 
-  packages/platform-modules/ai-gateway: {}
+  packages/platform-modules/ai-gateway:
+    dependencies:
+      ajv:
+        specifier: 8.17.1
+        version: 8.17.1
 
   packages/platform-modules/app-registry:
     dependencies:
