@@ -1,6 +1,6 @@
-import { Button, CellGroup, NavBar, NoticeBar, Tag } from "@nutui/nutui-react-taro";
 import { Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useState } from "react";
+import { Button, CellGroup, NavBar, NoticeBar, Tag } from "./nutui-adapter";
 import type { ReturnTypeOfAdapters } from "./types-internal";
 import { normalizeRouteState, sectionPath } from "./route-state";
 import { StatusView } from "./status-view";

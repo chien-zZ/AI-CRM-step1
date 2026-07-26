@@ -1,5 +1,5 @@
-import { Button, Empty } from "@nutui/nutui-react-taro";
 import { View } from "@tarojs/components";
+import { Button, Empty } from "./nutui-adapter";
 import type { MobileStatus } from "./workbench-port";
 
 const copy: Record<MobileStatus, { detail: string; title: string }> = {

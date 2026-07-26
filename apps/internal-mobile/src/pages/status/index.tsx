@@ -1,7 +1,7 @@
-import { NoticeBar } from "@nutui/nutui-react-taro";
 import { View } from "@tarojs/components";
 import { useState } from "react";
 import { createTaroH5Adapters } from "../../adapters";
+import { NoticeBar } from "../../nutui-adapter";
 import type { ReturnTypeOfAdapters } from "../../types-internal";
 import { normalizeStatus, sectionPath } from "../../route-state";
 import { StatusView } from "../../status-view";
