@@ -36,14 +36,14 @@
 
 ## Authorization, Audit And Idempotency
 
-- Draft writes, publication, activation and disablement require injected authorization and audit ports. Denied and failed attempts fail closed with stable errors.
+- Draft writes, publication, activation and termination require injected authorization and audit ports. Mutations perform a coarse resource-independent authorization check before any Store lookup, then repeat authorization with the resolved immutable Owner before changing facts. Denied and failed attempts fail closed with stable errors.
 - UUID operation IDs identify semantic writes. Stores atomically persist state, operation receipts and module-owned Outbox invalidation facts; changed payload reuse conflicts.
 - Read/validation calls consume an exact published version. Configuration resolution consumes explicit scopes and time and returns complete provenance.
 
 ## Transactions, Migrations And Recovery
 
 - Module Store transactions never escape their package. Publication/activation facts and their Outbox rows commit atomically.
-- Migrations are additive empty-schema migrations. Published rows have database update/delete guards; drafts remain mutable through optimistic revisions.
+- Migrations are additive empty-schema migrations. Published rows and activation/termination facts have database update/delete guards; drafts remain mutable through optimistic revisions. An open-ended activation is ended by appending an immutable termination fact, never by updating the activation row, and termination cannot be backdated before its recorded occurrence.
 - Before first application, review corrections may update reserved migrations. After application, repairs require newly reserved forward migrations; rollback retains published historical facts.
 
 ## Failure And Compatibility
@@ -60,13 +60,13 @@
 
 ### Owner Verification Evidence
 
-- `pnpm --filter @ai-crm/platform-form-schema typecheck`, `lint`, `test`: passed 2026-07-26; 6/6 executed tests passed and PostgreSQL-only tests were intentionally skipped in the unit command.
-- `pnpm --filter @ai-crm/platform-business-configuration typecheck`, `lint`, `test`: passed 2026-07-26; 7/7 executed tests passed and PostgreSQL-only tests were intentionally skipped in the unit command.
+- `pnpm --filter @ai-crm/platform-form-schema typecheck`, `lint`, `test`: passed 2026-07-26 after Review Round 1 repairs; 9/9 executed tests passed and PostgreSQL-only tests were intentionally skipped in the unit command.
+- `pnpm --filter @ai-crm/platform-business-configuration typecheck`, `lint`, `test`: passed 2026-07-26 after Review Round 1 repairs; 9/9 executed tests passed and PostgreSQL-only tests were intentionally skipped in the unit command.
 - `pnpm --filter @ai-crm/platform-form-schema test:integration`: passed 2026-07-26 against an isolated PostgreSQL 17.5 container; 2/2 tests passed.
-- `pnpm --filter @ai-crm/platform-business-configuration test:integration`: passed 2026-07-26 against an isolated PostgreSQL 17.5 container; 3/3 tests passed.
-- `pnpm contracts:check`: passed 2026-07-26; contract sources and generated artifacts were deterministic and valid.
-- `pnpm check`: passed 2026-07-26; 140/140 Turbo tasks passed.
-- `git diff --check`: passed 2026-07-26.
+- `pnpm --filter @ai-crm/platform-business-configuration test:integration`: passed 2026-07-26 against an isolated PostgreSQL 17.5 container; 4/4 tests passed, including immutable termination, historical resolution, duplicate replay, replacement serialization, and database guards.
+- `pnpm contracts:check`: passed 2026-07-26 after Review Round 1 repairs; contract sources and generated artifacts were deterministic and 28/28 package checks passed.
+- `pnpm check`: passed 2026-07-26 after Review Round 1 repairs; 140/140 Turbo tasks passed.
+- `git diff --check`: passed 2026-07-26 after Review Round 1 repairs.
 - No generated artifact, root Lockfile, application composition path, or file outside the PLT-02 ownership set was modified. The Integration Owner still owns the frozen-Lockfile merge window.
 
 ### Owner Self-review Round 1
@@ -85,6 +85,17 @@
 ### Independent Review
 
 - Reviewer: Agent D.
-- Round: pending.
-- Actionable findings: pending.
-- G2 decision: pending independent zero-finding review; Owner does not self-accept.
+- Round 1 findings:
+  - P1: form `date` and `date-time` validation accepted lexically valid but nonexistent Gregorian dates.
+  - P1: a structurally valid poisoned cache entry could be returned for the wrong scope or effective time without Store provenance.
+  - P1: an open-ended parameter activation had no immutable termination/replacement path.
+  - P2: resource mutations looked up Store state before authorization and could disclose resource existence through dependency behavior.
+- Round 1 repairs:
+  - Added strict Gregorian calendar validation, including leap years, month lengths, and bounded time components, with regression tests.
+  - Reduced cache data to a hint: requested scope/type/time are checked and the Store recomputes the effective activation/value/default; a cached result is used only when its full provenance hash matches the Store fact.
+  - Added additive V1 activation-termination contract and immutable termination facts. Scope advisory locks serialize termination and replacement; the effective end is the earlier of the original end and termination, and service, memory Store, PostgreSQL Store, and database constraints reject backdating.
+  - Added two-stage mutation authorization so a denied coarse check performs no Store lookup, followed by the existing Owner-aware authorization before mutation; regression tests cover both modules.
+- Round 1 repair self-review: Authorization, Idempotency, Transactions, Migrations, Observability, Backward Compatibility, Secrets and Failure Modes were rechecked. No remaining Owner finding was identified. The termination contract is additive; receipts and advisory locks preserve retry/concurrency behavior; no payload, Secret, provider, CRM rule, or mutable historical fact was introduced.
+- Round: Round 1 repairs complete; Round 2 requested from the same Reviewer.
+- Actionable findings: awaiting Round 2.
+- G2 decision: pending independent zero-finding re-review; Owner does not self-accept.

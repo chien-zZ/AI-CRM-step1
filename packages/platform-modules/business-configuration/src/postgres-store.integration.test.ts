@@ -65,6 +65,31 @@ suite("PostgreSQL business configuration", () => {
     await expect(runtime.execute("update business_configuration.parameter_values set value='4'::jsonb where parameter_key=$1 and value_version=1", [parameterKey])).rejects.toMatchObject({ code: "55000" });
     await expect(runtime.execute("delete from business_configuration.parameter_activations where activation_id=$1", [activationId])).rejects.toMatchObject({ code: "55000" });
   });
+
+  it("terminates an activation immutably and serializes replacement races", async () => {
+    if (!runtime) throw new Error("Business Configuration runtime is unavailable.");
+    const parameterKey = `platform.synthetic.${randomUUID().replaceAll("-", "")}`;
+    const instance = service(runtime);
+    await instance.registerParameter({ ...meta(), definition: definition(parameterKey) });
+    await instance.publishParameterValue({ ...meta(), parameterKey, value: 7 });
+    const scope = { scopeReference: "synthetic:termination", scopeType: "context.synthetic" };
+    const activationId = randomUUID();
+    await instance.activateParameter({ ...meta(), activationId, effectiveFrom: "2026-07-01T00:00:00.000Z", parameterKey, scope, valueVersion: 1 });
+    const termination = { ...meta(), activationId, effectiveTo: "2026-07-26T00:00:00.000Z", parameterKey, terminationId: randomUUID() };
+    const terminations = await Promise.all([instance.terminateParameterActivation(termination), instance.terminateParameterActivation(termination)]);
+    expect(terminations.map((result) => result.replayed).sort()).toEqual([false, true]);
+    await expect(instance.resolveParameter({ actor, at: "2026-07-10T00:00:00.000Z", parameterKey, scopes: [scope] })).resolves.toMatchObject({ activationId, value: 7 });
+    await expect(instance.resolveParameter({ actor, at: "2026-07-20T00:00:00.000Z", parameterKey, scopes: [scope] })).resolves.toMatchObject({ activationId, value: 7 });
+    await expect(instance.resolveParameter({ actor, at: "2026-07-27T00:00:00.000Z", parameterKey, scopes: [scope] })).rejects.toMatchObject({ code: "configuration_missing" });
+    const outcomes = await Promise.allSettled([
+      instance.activateParameter({ ...meta(), activationId: randomUUID(), effectiveFrom: termination.effectiveTo, parameterKey, scope, valueVersion: 1 }),
+      instance.activateParameter({ ...meta(), activationId: randomUUID(), effectiveFrom: termination.effectiveTo, parameterKey, scope, valueVersion: 1 }),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({ reason: { code: "configuration_overlap" } });
+    await expect(runtime.execute("update business_configuration.parameter_activation_terminations set effective_to='2026-07-16T00:00:00.000Z' where termination_id=$1", [termination.terminationId])).rejects.toMatchObject({ code: "55000" });
+    await expect(runtime.execute("delete from business_configuration.parameter_activation_terminations where termination_id=$1", [termination.terminationId])).rejects.toMatchObject({ code: "55000" });
+  });
 });
 
 const actor = { actorId: "system.synthetic", actorType: "system" as const };

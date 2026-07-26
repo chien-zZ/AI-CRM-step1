@@ -22,6 +22,13 @@ export function createFormSchemaService(store: FormSchemaStore, authorizer: Form
       throw new FormSchemaError("form_unavailable", { cause: error, retryable: true });
     }
   };
+  const authorizeBeforeLookup = async (meta: { actor: FormAuthorizationRequest["actor"]; operationId: string; reason: string; traceId: string }, action: string, authAction: FormAuthorizationRequest["action"], resourceId: string): Promise<void> => {
+    const auth = await authorize({ action: authAction, actor: meta.actor, resourceId });
+    if (!auth.allowed) {
+      await record({ action, actor: meta.actor, authorizationDecisionId: auth.decisionId, operationId: meta.operationId, reason: meta.reason, resourceId, result: "denied", traceId: meta.traceId });
+      throw new FormSchemaError("form_denied");
+    }
+  };
   const mutate = async <T>(meta: { actor: FormAuthorizationRequest["actor"]; operationId: string; reason: string; traceId: string }, action: string, authAction: FormAuthorizationRequest["action"], resourceId: string, ownerModule: string | undefined, work: () => Promise<T>): Promise<T> => {
     const auth = await authorize({ action: authAction, actor: meta.actor, ...(ownerModule === undefined ? {} : { ownerModule }), resourceId });
     const base = { action, actor: meta.actor, authorizationDecisionId: auth.decisionId, operationId: meta.operationId, reason: meta.reason, resourceId, traceId: meta.traceId };
@@ -66,6 +73,7 @@ export function createFormSchemaService(store: FormSchemaStore, authorizer: Form
       const jsonSchema = schema(parsed.values.jsonSchema);
       const uiSchema = ui(parsed.values.uiSchema, jsonSchema);
       if (expectedRevision > 0) {
+        await authorizeBeforeLookup(parsed, "form.draft.save", "form:manage", definitionId);
         const current = await findDraft(definitionId);
         if (!current || current.ownerModule !== ownerModule) throw new FormSchemaError("form_operation_conflict");
       }
@@ -76,6 +84,7 @@ export function createFormSchemaService(store: FormSchemaStore, authorizer: Form
       const parsed = command(input, ["definitionId", "expectedRevision"]);
       const definitionId = identifier(parsed.values.definitionId);
       const expectedRevision = positiveVersion(parsed.values.expectedRevision);
+      await authorizeBeforeLookup(parsed, "form.release.publish", "form:publish", definitionId);
       const draft = await findDraft(definitionId);
       if (!draft) throw new FormSchemaError("form_not_found");
       compileSchema(draft.jsonSchema);
@@ -89,6 +98,7 @@ export function createFormSchemaService(store: FormSchemaStore, authorizer: Form
       const definitionId = identifier(parsed.values.definitionId);
       const releaseVersion = positiveVersion(parsed.values.releaseVersion);
       if (typeof parsed.values.active !== "boolean") throw new FormSchemaError("form_invalid_input");
+      await authorizeBeforeLookup(parsed, "form.release.active", "form:publish", definitionId);
       const release = await findRelease(definitionId, releaseVersion);
       if (!release) throw new FormSchemaError("form_not_found");
       const active = parsed.values.active;

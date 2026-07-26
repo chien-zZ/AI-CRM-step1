@@ -103,6 +103,10 @@ describe("business configuration service", () => {
     await expect(instance.resolveParameter({ actor, at: now, parameterKey: "platform.synthetic.limit", scopes: [] })).resolves.toMatchObject({ source: "default", value: 5 });
     failingCache.get.mockResolvedValue({ parameterKey: "different.parameter", source: "default", value: 99, version: 1 });
     await expect(instance.resolveParameter({ actor, at: now, parameterKey: "platform.synthetic.limit", scopes: [] })).resolves.toMatchObject({ parameterKey: "platform.synthetic.limit", value: 5 });
+    failingCache.get.mockResolvedValue({ activationId: randomUUID(), definitionVersion: 1, effectiveFrom: "2027-01-01T00:00:00.000Z", parameterKey: "platform.synthetic.limit", scope: { scopeReference: "not-requested", scopeType: "context.primary" }, source: "activation", value: 99, valueVersion: 99, version: 1 });
+    await expect(instance.resolveParameter({ actor, at: now, parameterKey: "platform.synthetic.limit", scopes: [{ scopeReference: "requested", scopeType: "context.primary" }] })).resolves.toMatchObject({ source: "default", value: 5 });
+    failingCache.get.mockResolvedValue({ activationId: randomUUID(), definitionVersion: 1, effectiveFrom: "2026-07-01T00:00:00.000Z", parameterKey: "platform.synthetic.limit", scope: { scopeReference: "requested", scopeType: "context.primary" }, source: "activation", value: 99, valueVersion: 99, version: 1 });
+    await expect(instance.resolveParameter({ actor, at: now, parameterKey: "platform.synthetic.limit", scopes: [{ scopeReference: "requested", scopeType: "context.primary" }] })).resolves.toMatchObject({ source: "default", value: 5 });
     failingCache.invalidate.mockRejectedValueOnce(new Error("cache unavailable")).mockResolvedValueOnce(undefined);
     const event = { eventId: randomUUID(), eventType: "configuration.parameter.published" as const, occurredAt: now, resourceId: "platform.synthetic.limit", version: 1 };
     await expect(instance.handleInvalidation(event)).rejects.toMatchObject({ code: "configuration_unavailable", retryable: true });

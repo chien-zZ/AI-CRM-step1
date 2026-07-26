@@ -33,7 +33,7 @@ const configurationValue = (input: unknown): ConfigurationValue => {
   return invalid();
 };
 
-const cachedResolution = (input: unknown, expectedParameterKey: string, parameterDefinition: ParameterDefinition): ResolvedParameter | undefined => {
+const cachedResolution = (input: unknown, expectedParameterKey: string, parameterDefinition: ParameterDefinition, requestedScopes: readonly { readonly scopeReference: string; readonly scopeType: string }[], at: string): ResolvedParameter | undefined => {
   try {
     const parsed = object(input);
     if (parsed.source === "default") {
@@ -49,12 +49,15 @@ const cachedResolution = (input: unknown, expectedParameterKey: string, paramete
       const effectiveFrom = date(result.effectiveFrom);
       const effectiveTo = result.effectiveTo === undefined ? undefined : date(result.effectiveTo);
       if (effectiveTo !== undefined && effectiveTo <= effectiveFrom) return undefined;
+      const parsedScope = scope(result.scope);
+      if (!requestedScopes.some((candidate) => candidate.scopeType === parsedScope.scopeType && candidate.scopeReference === parsedScope.scopeReference)) return undefined;
+      if (!parameterDefinition.allowedScopes.some((candidate) => candidate.scopeType === parsedScope.scopeType) || effectiveFrom > at || (effectiveTo !== undefined && at >= effectiveTo)) return undefined;
       const parsedValue = value(configurationValue(result.value), parameterDefinition.valueType);
       if (!compile(parameterDefinition)(parsedValue)) return undefined;
       return {
         activationId: uuid(result.activationId), definitionVersion: 1, effectiveFrom,
         ...(effectiveTo === undefined ? {} : { effectiveTo }), parameterKey: expectedParameterKey,
-        scope: scope(result.scope), source: "activation", value: parsedValue,
+        scope: parsedScope, source: "activation", value: parsedValue,
         valueVersion: version(result.valueVersion), version: 1,
       };
     }
@@ -85,6 +88,13 @@ export function createBusinessConfigurationService(
       await audit.record(input);
     } catch (error) {
       throw new BusinessConfigurationError("configuration_unavailable", { cause: error, retryable: true });
+    }
+  };
+  const authorizeBeforeLookup = async (meta: { actor: ConfigurationAuthorizationRequest["actor"]; operationId: string; reason: string; traceId: string }, action: string, authAction: ConfigurationAuthorizationRequest["action"], resourceId: string): Promise<void> => {
+    const auth = await authorize({ action: authAction, actor: meta.actor, resourceId });
+    if (!auth.allowed) {
+      await record({ action, actor: meta.actor, authorizationDecisionId: auth.decisionId, operationId: meta.operationId, reason: meta.reason, resourceId, result: "denied", traceId: meta.traceId });
+      throw new BusinessConfigurationError("configuration_denied");
     }
   };
   const mutate = async <T>(
@@ -133,6 +143,7 @@ export function createBusinessConfigurationService(
       const expectedRevision = version(parsed.values.expectedRevision, true);
       const items = itemList(parsed.values.items);
       if (expectedRevision > 0) {
+        await authorizeBeforeLookup(parsed, "configuration.dictionary.draft.save", "configuration:manage", dictionaryId);
         let current;
         try {
           current = await store.findDictionaryDraft(dictionaryId);
@@ -148,6 +159,7 @@ export function createBusinessConfigurationService(
       const parsed = command(input, ["dictionaryId", "expectedRevision"]);
       const dictionaryId = id(parsed.values.dictionaryId);
       const expectedRevision = version(parsed.values.expectedRevision);
+      await authorizeBeforeLookup(parsed, "configuration.dictionary.publish", "configuration:publish", dictionaryId);
       let draft;
       try {
         draft = await store.findDictionaryDraft(dictionaryId);
@@ -181,6 +193,7 @@ export function createBusinessConfigurationService(
     publishParameterValue: async (input) => {
       const parsed = command(input, ["parameterKey", "value"]);
       const parameterKey = id(parsed.values.parameterKey);
+      await authorizeBeforeLookup(parsed, "configuration.parameter.publish", "configuration:publish", parameterKey);
       const parameterDefinition = await findDefinition(parameterKey);
       const typedValue = value(parsed.values.value, parameterDefinition.valueType);
       if (!compile(parameterDefinition)(typedValue)) throw new BusinessConfigurationError("configuration_invalid_input");
@@ -191,6 +204,7 @@ export function createBusinessConfigurationService(
       const fields = ["activationId", "effectiveFrom", "parameterKey", "scope", "valueVersion", ...(Object.hasOwn(raw, "effectiveTo") ? ["effectiveTo"] : [])];
       const parsed = command(input, fields);
       const parameterKey = id(parsed.values.parameterKey);
+      await authorizeBeforeLookup(parsed, "configuration.parameter.activate", "configuration:activate", parameterKey);
       const parameterDefinition = await findDefinition(parameterKey);
       const parsedScope = scope(parsed.values.scope);
       const valueVersion = version(parsed.values.valueVersion);
@@ -200,6 +214,19 @@ export function createBusinessConfigurationService(
       if (!parameterDefinition.allowedScopes.some((allowed) => allowed.scopeType === parsedScope.scopeType) || (effectiveTo !== undefined && effectiveTo <= effectiveFrom)) throw new BusinessConfigurationError("configuration_invalid_input");
       const activation = { activationId, effectiveFrom, ...(effectiveTo === undefined ? {} : { effectiveTo }), parameterKey, scope: parsedScope, valueVersion };
       return mutate(parsed, "configuration.parameter.activate", "configuration:activate", parameterKey, parameterDefinition.ownerModule, () => store.activate({ activation, event: event("configuration.activation.changed", parameterKey), fingerprint: hash(activation), operationId: parsed.operationId }));
+    },
+    terminateParameterActivation: async (input) => {
+      const parsed = command(input, ["activationId", "effectiveTo", "parameterKey", "terminationId"]);
+      const parameterKey = id(parsed.values.parameterKey);
+      await authorizeBeforeLookup(parsed, "configuration.parameter.activation.terminate", "configuration:activate", parameterKey);
+      const parameterDefinition = await findDefinition(parameterKey);
+      const activationId = uuid(parsed.values.activationId);
+      const terminationId = uuid(parsed.values.terminationId);
+      const effectiveTo = date(parsed.values.effectiveTo);
+      const occurredAt = clock().toISOString();
+      if (effectiveTo < occurredAt) throw new BusinessConfigurationError("configuration_invalid_input");
+      const termination = { activationId, effectiveTo, parameterKey, terminationId };
+      return mutate(parsed, "configuration.parameter.activation.terminate", "configuration:activate", parameterKey, parameterDefinition.ownerModule, () => store.terminateActivation({ ...termination, event: event("configuration.activation.changed", parameterKey), fingerprint: hash(termination), occurredAt, operationId: parsed.operationId }));
     },
     resolveParameter: async (input) => {
       const parsed = exact(input, ["actor", "at", "parameterKey", "scopes"]);
@@ -213,9 +240,9 @@ export function createBusinessConfigurationService(
       if (!auth.allowed) throw new BusinessConfigurationError("configuration_denied");
       const cacheKey = hash({ at, parameterKey, scopes: [...scopes].sort((left, right) => left.scopeType.localeCompare(right.scopeType)) });
       const parameterDefinition = await findDefinition(parameterKey);
+      let cached: ResolvedParameter | undefined;
       try {
-        const cached = cachedResolution(await cache.get(cacheKey), parameterKey, parameterDefinition);
-        if (cached) return structuredClone(cached);
+        cached = cachedResolution(await cache.get(cacheKey), parameterKey, parameterDefinition, scopes, at);
       } catch {
         // PostgreSQL remains the source of truth when the cache is unavailable or corrupt.
       }
@@ -246,7 +273,7 @@ export function createBusinessConfigurationService(
       } catch {
         // Cache population is best effort; the resolved database fact remains valid.
       }
-      return structuredClone(result);
+      return structuredClone(cached !== undefined && hash(cached) === hash(result) ? cached : result);
     },
     handleInvalidation: async (input) => {
       const value = exact(input, ["eventId", "eventType", "occurredAt", "resourceId", "version"]);
