@@ -1,0 +1,244 @@
+name: ai-crm-prod-a
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+
+services:
+  postgres:
+    <<: *service-defaults
+    image: ${AI_CRM_POSTGRES_IMAGE:?immutable PostgreSQL image is required}
+    user: postgres
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ai_crm_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+    secrets: [postgres_admin_password, postgres_app_password, postgres_migration_password, postgres_keycloak_password, postgres_flowable_password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../init/postgres/010-create-databases.sh:/docker-entrypoint-initdb.d/010-create-databases.sh:ro
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:5432:5432"]
+    networks: [state]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ai_crm_admin -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_POSTGRES_CPU_LIMIT:?required}", memory: "${AI_CRM_POSTGRES_MEMORY_LIMIT:?required}" }
+
+  redis:
+    <<: *service-defaults
+    image: ${AI_CRM_REDIS_IMAGE:?immutable Redis image is required}
+    user: redis
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    entrypoint: [/bin/sh, /opt/ai-crm/redis-entrypoint.sh]
+    secrets: [redis_password]
+    volumes:
+      - redis-data:/data
+      - ./redis-entrypoint.sh:/opt/ai-crm/redis-entrypoint.sh:ro
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:6379:6379"]
+    networks: [state]
+    healthcheck:
+      test: [CMD-SHELL, "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_REDIS_CPU_LIMIT:?required}", memory: "${AI_CRM_REDIS_MEMORY_LIMIT:?required}" }
+
+  rabbitmq:
+    <<: *service-defaults
+    image: ${AI_CRM_RABBITMQ_IMAGE:?immutable RabbitMQ image is required}
+    user: rabbitmq
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    entrypoint: [/bin/sh, /opt/ai-crm/rabbitmq-entrypoint.sh]
+    secrets: [rabbitmq_password]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq-entrypoint.sh:/opt/ai-crm/rabbitmq-entrypoint.sh:ro
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:5672:5672"]
+    networks: [state]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_RABBITMQ_CPU_LIMIT:?required}", memory: "${AI_CRM_RABBITMQ_MEMORY_LIMIT:?required}" }
+
+  keycloak:
+    <<: *service-defaults
+    image: ${AI_CRM_KEYCLOAK_IMAGE:?immutable Keycloak image is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    entrypoint: [/bin/sh, /opt/ai-crm/keycloak-entrypoint.sh]
+    command: [start, --optimized, --health-enabled=true, --proxy-headers=xforwarded]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak_runtime
+      KC_HOSTNAME: https://${AI_CRM_PUBLIC_HOST:?public host is required}
+    secrets: [postgres_keycloak_password]
+    volumes: [./keycloak-entrypoint.sh:/opt/ai-crm/keycloak-entrypoint.sh:ro]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [state, app]
+    healthcheck:
+      test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q '200 OK' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_KEYCLOAK_CPU_LIMIT:?required}", memory: "${AI_CRM_KEYCLOAK_MEMORY_LIMIT:?required}" }
+
+  flowable:
+    <<: *service-defaults
+    image: ${AI_CRM_FLOWABLE_IMAGE:?immutable Flowable image is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    entrypoint: [/bin/sh, /opt/ai-crm/flowable-entrypoint.sh]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flowable
+      SPRING_DATASOURCE_USERNAME: flowable_runtime
+      SERVER_PORT: "8080"
+      FLOWABLE_REST_APP_ADMIN_USER_ID: ${AI_CRM_FLOWABLE_ADMIN_REFERENCE:?required}
+    secrets: [postgres_flowable_password, flowable_admin_password]
+    volumes: [../entrypoints/flowable-entrypoint.sh:/opt/ai-crm/flowable-entrypoint.sh:ro]
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [state]
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8080"]
+      interval: 15s
+      timeout: 10s
+      retries: 24
+      start_period: 90s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_FLOWABLE_CPU_LIMIT:?required}", memory: "${AI_CRM_FLOWABLE_MEMORY_LIMIT:?required}" }
+
+  clamav:
+    <<: *service-defaults
+    image: ${AI_CRM_CLAMAV_IMAGE:?immutable ClamAV image is required}
+    volumes: [clamav-data:/var/lib/clamav]
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:3310:3310"]
+    networks: [state]
+    healthcheck:
+      test: [CMD-SHELL, "printf 'PING\n' | nc 127.0.0.1 3310 | grep -q PONG"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_CLAMAV_CPU_LIMIT:?required}", memory: "${AI_CRM_CLAMAV_MEMORY_LIMIT:?required}" }
+
+  api:
+    <<: *service-defaults
+    image: ${AI_CRM_API_IMAGE:?digest-pinned API image is required}
+    read_only: true
+    user: ${AI_CRM_APPLICATION_UID_GID:?application uid:gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    tmpfs: [/tmp]
+    environment:
+      NODE_ENV: production
+      AI_CRM_RELEASE: ${AI_CRM_RELEASE_ID:?release id is required}
+      AI_CRM_KEYCLOAK_ISSUER: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}
+      AI_CRM_PC_OIDC_CLIENT_ID: ${AI_CRM_PC_OIDC_CLIENT_ID:?required}
+      AI_CRM_OIDC_API_AUDIENCE: ${AI_CRM_OIDC_API_AUDIENCE:?required}
+      AI_CRM_PC_OIDC_REDIRECT_URI: https://${AI_CRM_PUBLIC_HOST:?public host is required}/bff/auth/callback
+      AI_CRM_PC_ALLOWED_ORIGIN: https://${AI_CRM_PUBLIC_HOST:?public host is required}
+      AI_CRM_REDIS_URL: redis://${AI_CRM_STATE_HOST:?state host is required}:6379
+      AI_CRM_PC_OIDC_CLIENT_SECRET_FILE: /run/secrets/pc_oidc_client_secret
+      AI_CRM_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      AI_CRM_PC_SESSION_ENCRYPTION_KEY_FILE: /run/secrets/pc_session_encryption_key
+      AI_CRM_PC_SESSION_INDEX_KEY_FILE: /run/secrets/pc_session_index_key
+      AI_CRM_PC_SESSION_ENCRYPTION_KEY_ID: ${AI_CRM_PC_SESSION_ENCRYPTION_KEY_ID:?required}
+      AI_CRM_PC_LOGIN_TRANSACTION_TTL_SECONDS: ${AI_CRM_PC_LOGIN_TRANSACTION_TTL_SECONDS:?required}
+      AI_CRM_PC_SESSION_IDLE_TTL_SECONDS: ${AI_CRM_PC_SESSION_IDLE_TTL_SECONDS:?required}
+      AI_CRM_PC_SESSION_ABSOLUTE_TTL_SECONDS: ${AI_CRM_PC_SESSION_ABSOLUTE_TTL_SECONDS:?required}
+      AI_CRM_PC_OIDC_TIMEOUT_SECONDS: ${AI_CRM_PC_OIDC_TIMEOUT_SECONDS:?required}
+      AI_CRM_PC_REFRESH_LEASE_TTL_MS: ${AI_CRM_PC_REFRESH_LEASE_TTL_MS:?required}
+      AI_CRM_REDIS_CONNECT_TIMEOUT_MS: ${AI_CRM_REDIS_CONNECT_TIMEOUT_MS:?required}
+    secrets: [pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:${AI_CRM_API_PORT_A:?host A API port is required}:3000"]
+    networks: [app]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_API_CPU_LIMIT:?required}", memory: "${AI_CRM_API_MEMORY_LIMIT:?required}" }
+
+  edge:
+    <<: *service-defaults
+    image: ${AI_CRM_EDGE_IMAGE:?digest-pinned edge image is required}
+    read_only: true
+    user: ${AI_CRM_EDGE_UID:?edge uid is required}:${AI_CRM_EDGE_GID:?edge gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
+    tmpfs:
+      - /etc/nginx/conf.d:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+      - /var/cache/nginx:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+      - /var/run:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+      - /tmp:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+    environment:
+      AI_CRM_PUBLIC_HOST: ${AI_CRM_PUBLIC_HOST:?required}
+      AI_CRM_API_HOST_A: ${AI_CRM_API_HOST_A:?required}
+      AI_CRM_API_PORT_A: ${AI_CRM_API_PORT_A:?required}
+      AI_CRM_API_HOST_B: ${AI_CRM_API_HOST_B:?required}
+      AI_CRM_API_PORT_B: ${AI_CRM_API_PORT_B:?required}
+      AI_CRM_KEYCLOAK_PRIVATE_HOST: keycloak
+    secrets: [tls_certificate, tls_private_key]
+    volumes: [../../nginx/nginx.production.conf.template:/etc/nginx/templates/default.conf.template:ro]
+    ports: ["80:8080", "443:8443"]
+    networks: [edge, app]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/health/live]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_EDGE_CPU_LIMIT:?required}", memory: "${AI_CRM_EDGE_MEMORY_LIMIT:?required}" }
+
+networks:
+  edge: {}
+  app: {}
+  state: {}
+
+volumes:
+  postgres-data: { name: ai-crm-prod-a-postgres-data }
+  redis-data: { name: ai-crm-prod-a-redis-data }
+  rabbitmq-data: { name: ai-crm-prod-a-rabbitmq-data }
+  clamav-data: { name: ai-crm-prod-a-clamav-data }
+
+secrets:
+  postgres_admin_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_admin_password" }
+  postgres_app_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_app_password" }
+  postgres_migration_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_migration_password" }
+  postgres_keycloak_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_keycloak_password" }
+  postgres_flowable_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_flowable_password" }
+  redis_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/redis_password" }
+  rabbitmq_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_password" }
+  flowable_admin_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/flowable_admin_password" }
+  pc_oidc_client_secret: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_oidc_client_secret" }
+  pc_session_encryption_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_encryption_key" }
+  pc_session_index_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_index_key" }
+  tls_certificate: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/tls_certificate" }
+  tls_private_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/tls_private_key" }

@@ -8,10 +8,16 @@ const base = await parseCompose("deploy/compose/compose.base.yml");
 const dev = await parseCompose("deploy/compose/compose.dev.yml");
 const test = await parseCompose("deploy/compose/compose.test.yml");
 const authTest = await parseCompose("deploy/compose/compose.auth-test.yml");
+const productionA = await parseCompose("deploy/compose/production/compose.host-a.yml");
+const productionB = await parseCompose("deploy/compose/production/compose.host-b.yml");
 const keycloakRealm = JSON.parse(await readFile(resolve(root, "deploy/keycloak/realm-dev.json"), "utf8"));
 const keycloakEntrypoint = await readFile(resolve(root, "deploy/compose/entrypoints/keycloak-entrypoint.sh"), "utf8");
 const secretBootstrap = await readFile(resolve(root, "scripts/bootstrap/compose-secrets.mjs"), "utf8");
 const clientSecretRotation = await readFile(resolve(root, "scripts/bootstrap/rotate-keycloak-client-secret.mjs"), "utf8");
+const productionNginx = await readFile(resolve(root, "deploy/nginx/nginx.production.conf.template"), "utf8");
+const productionRedisEntrypoint = await readFile(resolve(root, "deploy/compose/production/redis-entrypoint.sh"), "utf8");
+const productionRabbitEntrypoint = await readFile(resolve(root, "deploy/compose/production/rabbitmq-entrypoint.sh"), "utf8");
+const productionKeycloakEntrypoint = await readFile(resolve(root, "deploy/compose/production/keycloak-entrypoint.sh"), "utf8");
 const required = ["postgres", "redis", "rabbitmq", "keycloak", "flowable", "clamav", "nginx"];
 const errors = [];
 
@@ -78,6 +84,81 @@ for (const [name, service] of Object.entries(authTest.services ?? {})) {
   for (const port of service.ports ?? []) {
     if (!String(port).startsWith("127.0.0.1:")) errors.push(`${name} publishes a non-loopback authentication test port.`);
   }
+}
+
+const productionDefinitions = [
+  ["host-a", productionA, "ai-crm-prod-a", ["api", "clamav", "edge", "flowable", "keycloak", "postgres", "rabbitmq", "redis"]],
+  ["host-b", productionB, "ai-crm-prod-b", ["api", "edge", "worker"]],
+];
+for (const [host, definition, project, expectedServices] of productionDefinitions) {
+  if (definition.name !== project) errors.push(`${host} must use the independent Compose project ${project}.`);
+  const actualServices = Object.keys(definition.services ?? {}).sort();
+  if (actualServices.length !== expectedServices.length || actualServices.some((name, index) => name !== expectedServices[index])) {
+    errors.push(`${host} has an unexpected production service placement.`);
+  }
+  for (const [name, service] of Object.entries(definition.services ?? {})) {
+    if (typeof service.image !== "string" || !/^\$\{AI_CRM_[A-Z0-9_]+_IMAGE:\?[^}]+\}$/u.test(service.image)) {
+      errors.push(`${host}/${name} must receive its reviewed immutable image reference explicitly.`);
+    }
+    if (!service.healthcheck) errors.push(`${host}/${name} must define a healthcheck.`);
+    if (!service.logging?.options?.["max-size"] || !service.logging?.options?.["max-file"]) errors.push(`${host}/${name} must rotate logs.`);
+    if (!service.deploy?.resources?.limits?.memory || !service.deploy?.resources?.limits?.cpus) errors.push(`${host}/${name} must require resource limits.`);
+    if (!service.stop_grace_period) errors.push(`${host}/${name} must define graceful stop behavior.`);
+    if (service.privileged === true || service.volumes?.some((volume) => String(volume).includes("/var/run/docker.sock"))) {
+      errors.push(`${host}/${name} must not be privileged or mount the Docker Socket.`);
+    }
+    if (!service.security_opt?.includes("no-new-privileges:true") || !service.cap_drop?.includes("ALL")) {
+      errors.push(`${host}/${name} must drop capabilities and prevent privilege escalation.`);
+    }
+    for (const port of service.ports ?? []) {
+      const value = String(port);
+      if (name === "edge") {
+        if (value !== "80:8080" && value !== "443:8443") errors.push(`${host}/edge has an unexpected public port.`);
+      } else if (!value.startsWith("${AI_CRM_PRIVATE_BIND_ADDRESS:?")) {
+        errors.push(`${host}/${name} must bind published ports to the reviewed private address.`);
+      }
+    }
+    if ((service.secrets?.length ?? 0) > 0 && !service.group_add?.includes("${AI_CRM_SECRET_GID:?secret reader gid is required}")) {
+      errors.push(`${host}/${name} must receive only the approved supplementary Secret-reader group.`);
+    }
+  }
+  for (const [name, secret] of Object.entries(definition.secrets ?? {})) {
+    if (typeof secret?.file !== "string" || !secret.file.startsWith("${AI_CRM_SECRET_ROOT:?")) {
+      errors.push(`${host} Secret ${name} must be a target-host file reference.`);
+    }
+  }
+  const productionText = JSON.stringify(definition);
+  if (/\blatest\b/iu.test(productionText) || /(?:^|[/\\])\.env(?:$|["'])/iu.test(productionText)) {
+    errors.push(`${host} must not use latest images or a production .env file.`);
+  }
+}
+for (const [host, definition] of [["host-a", productionA], ["host-b", productionB]]) {
+  for (const name of ["api", "edge", ...(host === "host-b" ? ["worker"] : [])]) {
+    const service = definition.services?.[name];
+    if (service?.read_only !== true || typeof service.user !== "string") {
+      errors.push(`${host}/${name} application container must be read-only and non-root.`);
+    }
+  }
+  const edgeTmpfs = definition.services?.edge?.tmpfs?.map(String) ?? [];
+  for (const directory of ["/etc/nginx/conf.d", "/var/cache/nginx", "/var/run", "/tmp"]) {
+    const mount = edgeTmpfs.find((value) => value.startsWith(`${directory}:`));
+    if (!mount || !mount.includes("uid=${AI_CRM_EDGE_UID:?") || !mount.includes("gid=${AI_CRM_EDGE_GID:?") || !mount.includes("mode=0750")) {
+      errors.push(`${host}/edge must provide a UID/GID-scoped writable tmpfs for ${directory}.`);
+    }
+  }
+}
+if (!productionNginx.includes("access_log /dev/stdout safe_technical") ||
+  /log_format[^;]*\$(?:request(?:\s|['"])|request_uri|args|remote_addr)/u.test(productionNginx)) {
+  errors.push("Production Nginx access logs must exclude URL/query/IP content and use bounded technical fields.");
+}
+for (const [name, entrypoint] of [["Redis", productionRedisEntrypoint], ["RabbitMQ", productionRabbitEntrypoint]]) {
+  if (!entrypoint.includes('${#password}') || !entrypoint.includes("*[!A-Za-z0-9_-]*") || entrypoint.includes("console.log")) {
+    errors.push(`${name} production entrypoint must validate its Secret without emitting it.`);
+  }
+}
+if (productionKeycloakEntrypoint.includes("start-dev") || productionKeycloakEntrypoint.includes("realm-dev") ||
+  !productionKeycloakEntrypoint.includes("/run/secrets/postgres_keycloak_password")) {
+  errors.push("Production Keycloak must not reuse the development Realm/import mode and must read its database credential from a file.");
 }
 
 const serialized = JSON.stringify(base);

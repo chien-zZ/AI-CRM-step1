@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "2026.07.26.1",
+  "environment": "staging",
+  "operatorRef": "synthetic-operator",
+  "approverRef": "synthetic-approver",
+  "images": {
+    "api": "registry.example.invalid/ai-crm/api:2026.07.26.1@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "edge": "registry.example.invalid/ai-crm/edge:2026.07.26.1@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "worker": "registry.example.invalid/ai-crm/worker:2026.07.26.1@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "postgres": "postgres:17.5-bookworm",
+    "redis": "redis:7.4.5-alpine",
+    "rabbitmq": "rabbitmq:4.2.9-management",
+    "keycloak": "quay.io/keycloak/keycloak:26.3.1",
+    "flowable": "flowable/flowable-rest:7.2.0",
+    "clamav": "clamav/clamav:1.4.5-debian"
+  },
+  "artifacts": {
+    "contracts": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "generatedManifest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "migrationHead": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "configuration": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "hosts": [
+    {
+      "id": "host-a",
+      "project": "ai-crm-prod-a",
+      "services": ["edge", "api", "postgres", "redis", "rabbitmq", "keycloak", "flowable", "clamav"]
+    },
+    {
+      "id": "host-b",
+      "project": "ai-crm-prod-b",
+      "services": ["edge", "api", "worker"]
+    }
+  ],
+  "gates": {
+    "pnpmCheck": { "evidenceRef": "evidence://synthetic/ci/pnpm-check", "evidenceDigest": "sha256:8111111111111111111111111111111111111111111111111111111111111111" },
+    "contracts": { "evidenceRef": "evidence://synthetic/ci/contracts", "evidenceDigest": "sha256:8222222222222222222222222222222222222222222222222222222222222222" },
+    "migrations": { "evidenceRef": "evidence://synthetic/ci/migrations", "evidenceDigest": "sha256:8333333333333333333333333333333333333333333333333333333333333333" },
+    "integrationAndE2e": { "evidenceRef": "evidence://synthetic/ci/integration-e2e", "evidenceDigest": "sha256:8444444444444444444444444444444444444444444444444444444444444444" },
+    "stagingSmoke": { "evidenceRef": "evidence://synthetic/staging/smoke", "evidenceDigest": "sha256:8555555555555555555555555555555555555555555555555555555555555555" },
+    "secretFiles": { "evidenceRef": "evidence://synthetic/security/secret-files", "evidenceDigest": "sha256:8666666666666666666666666666666666666666666666666666666666666666" },
+    "observability": { "evidenceRef": "evidence://synthetic/operations/observability", "evidenceDigest": "sha256:8777777777777777777777777777777777777777777777777777777777777777" },
+    "restorePoint": { "evidenceRef": "evidence://synthetic/recovery/restore-point", "evidenceDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888" },
+    "workerDrain": { "evidenceRef": "evidence://synthetic/runtime/worker-drain", "evidenceDigest": "sha256:8999999999999999999999999999999999999999999999999999999999999999" },
+    "rollback": { "evidenceRef": "evidence://synthetic/release/rollback", "evidenceDigest": "sha256:8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    "manualApproval": { "evidenceRef": "evidence://synthetic/approval/manual", "evidenceDigest": "sha256:8bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+  }
+}
