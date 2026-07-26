@@ -7,6 +7,7 @@
 - Allowed paths: `packages/platform-modules/notifications/**`, `contracts/notifications/**`, `contracts/http/modules/notifications.openapi.yaml`, `.handoffs/PRC-03.md`
 - Migration lease: `0000000009`
 - Dependencies: PRC-01, PRC-02, ASY-01 and the accepted notification ADR/baseline documents
+- Current status: `INDEPENDENT_REVIEW`
 
 ## Known Facts
 
@@ -102,5 +103,8 @@
 - `pnpm exec turbo run build lint typecheck test contracts:check`: 140/140 tasks passed.
 - `git diff --check`: passed.
 - `open-code-review` CLI is installed, but `ocr llm test` could not run because no OCR LLM endpoint/credential is configured. No credential was invented; Owner completed a manual diff and review-matrix pass.
-- `pnpm contracts:check` and the umbrella `pnpm check` remain pending the Integration Owner's exclusive generated OpenAPI/API Client/manifest and Lockfile window. PRC-03 does not modify those shared files before that lease.
-- Source candidate commit, post-generation verification, independent review rounds, final commit, and timestamps are appended after completion.
+- Source candidate: `d96a4a8`.
+- Integration Owner generated-artifact/Lockfile commit: `ee04db2` (generated internal OpenAPI, manifest, generated API Client operations, and `mustache@4.2.0` Lockfile resolution). Frozen offline install passed in that window.
+- Post-generation `pnpm check`: 140/140 tasks passed on 2026-07-26; repository checks, Compose checks, generated-contract integrity, build, lint, typecheck, tests, and package contract checks all passed.
+- Owner final review found no remaining executable finding in the task-owned paths. Shared generated files and Lockfile were inspected read-only after the Integration Owner commit.
+- Independent review rounds, final accepted commit, and G2 evidence are appended only after the same Reviewer reports zero actionable findings.
