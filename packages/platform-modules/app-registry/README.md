@@ -1,5 +1,9 @@
 # Application Registry
 
-Owns registered applications, navigation entries, routes, enablement, and required permission codes for the workbench shell.
+Owns stable business-neutral application, navigation, and route IDs, audience, enablement, relative route templates, and permission references for client shells. It contains no CRM applications, roles, grants, display copy, arbitrary URLs, or external provider identifiers.
 
-Notification and task deep links use registered application and route identifiers plus non-sensitive resource references. They never store arbitrary URLs or imply authorization; the target route and API recheck current permissions.
+Every management mutation requires an Actor, UUID operation ID, bounded reason, Trace ID, explicit server-side authorization, and attempted/final audit calls. The audit port treats `(operationId, result)` as its idempotency key so a successful state mutation followed by audit dependency failure can be retried without repeating the mutation. State and the operation receipt commit in one local transaction; concurrent duplicates serialize by operation ID and changed payload reuse fails closed.
+
+Registry loads query the requested audience at the repository boundary, remove disabled entries, and authorize current application and route permission references. An external load cannot retrieve internal registrations. Task and Notification deep links contain only registered application/route IDs and a bounded opaque resource reference. Resolution checks current audience, application/route enablement, allowed source, and target authorization every time; an old link cannot bypass disablement. The returned path remains a registered relative template and is not an authorization decision.
+
+Migration `0000000006` is additive and creates an empty `app_registry` schema with referential constraints. Application rollback retains stable IDs; repairs use a forward migration. The module migration command accepts only `DATABASE_MIGRATION_URL_FILE` and is not an application startup hook.

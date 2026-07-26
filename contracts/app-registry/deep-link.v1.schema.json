@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/app-registry/v1/deep-link.schema.json",
+  "title": "Registered Deep Link V1",
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "source", "applicationId", "routeId", "resourceReference"],
+  "properties": {
+    "version": { "const": 1 },
+    "source": { "enum": ["task", "notification"] },
+    "applicationId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "routeId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "resourceReference": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[A-Za-z0-9_.:-]+$" }
+  }
+}

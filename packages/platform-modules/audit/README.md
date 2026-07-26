@@ -1,5 +1,11 @@
 # Audit
 
-Owns append-only audit events describing actor, action, resource, result, reason, changes, and trace context. Audit records are separate from application logs.
+Owns explicit append-only security facts with Actor/effective workforce context, Action, Resource, Result, Reason, controlled Before/After changes, and W3C Trace correlation. Facts are never inferred from Pino, Sentry, traces, request bodies, or log keywords.
 
-Audit records are durable business-security evidence and are not emitted to Pino or Sentry as a substitute. A `trace_id` may safely correlate approved records with technical diagnostics, but observability retention, sampling, and access policy never govern audit retention. See [ADR-0022](../../../docs/08-架构决策/ADR-0022-第一阶段轻量可观测性基线.md).
+`createAuditService` accepts only action-specific field policies. Non-sensitive scalar differences are bounded; sensitive fields disclose only `changed: true`. Credentials, cookies, tokens, raw payloads, prompts, customer content, and unbounded values are forbidden. The sensitive-read entry authorizes the current actor against the target record and durably records denied, failed, or successful access before data can escape.
+
+The PostgreSQL store uses the module-owned `audit` schema. Records and operation receipts are protected by database triggers from UPDATE/DELETE. An operation UUID plus semantic fingerprint makes retries and concurrent duplicates safe; a changed semantic payload fails closed. The first audit ID and occurrence time remain authoritative on replay even when a retry carries a new Trace or generated ID.
+
+Migration `0000000005` is additive and creates empty structures. Application rollback retains evidence; repairs use a new forward migration. The module migration command requires `DATABASE_MIGRATION_URL_FILE` and is never called during application startup.
+
+Audit records are durable security evidence and are separate from application logs. Observability sampling and retention never govern audit retention. Concrete retention, break-glass access, export, and cryptographic sealing remain governance decisions outside PLT-01.

@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "audit",
+  "purpose": "Create append-only security audit records and idempotency receipts with database-enforced mutation rejection.",
+  "applicationCompatibility": ">=0.0.0",
+  "lockImpact": "Creates a new module-owned schema, tables, indexes, function, triggers, and grants only; no existing application table is rewritten or locked.",
+  "dataImpact": "Creates empty audit structures. No inferred log facts, identities, permissions, or business data are inserted.",
+  "backfill": "Not required. Existing logs are intentionally not converted into audit facts.",
+  "destructive": false,
+  "recovery": "Roll back the application while retaining audit evidence. Restore a pre-migration recovery point only before records are accepted; never drop populated audit history.",
+  "forwardFix": "Append a reviewed audit-owned migration. Existing audit records and this migration remain immutable."
+}
