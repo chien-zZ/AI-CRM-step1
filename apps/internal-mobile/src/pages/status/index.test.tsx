@@ -13,8 +13,11 @@ vi.mock("@tarojs/components", () => ({
 
 vi.mock("@nutui/nutui-react-taro", () => ({
   Button: ({ children, onClick }: PropsWithChildren<{ onClick?: () => void }>) => <button onClick={onClick}>{children}</button>,
+  CellGroup: ({ children }: PropsWithChildren) => <div>{children}</div>,
   Empty: ({ description, title }: { description: ReactNode; title: ReactNode }) => <div><div>{title}</div><div>{description}</div></div>,
+  NavBar: ({ title }: { title: ReactNode }) => <div>{title}</div>,
   NoticeBar: ({ content }: { content: ReactNode }) => <div role="note">{content}</div>,
+  Tag: ({ children }: PropsWithChildren) => <span>{children}</span>,
 }));
 
 function adapters(): ReturnTypeOfAdapters {
