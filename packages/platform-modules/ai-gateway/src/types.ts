@@ -1,3 +1,5 @@
+import type { AiGatewayErrorCode } from "./errors.js";
+
 export type JsonValue = boolean | number | string | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 export interface AiActor {
@@ -87,27 +89,48 @@ export interface AiProposal {
   readonly version: 1;
 }
 
-export interface AiCallRecord {
-  readonly adapterVersion: string;
+interface AiCallRecordBase {
+  readonly actorReference: string;
+  readonly actorType: AiActor["actorType"];
+  readonly adapterAttempts: number;
+  readonly authorizationDecisionId?: string;
   readonly budgetPolicyVersion: string;
   readonly callId: string;
-  readonly costMicros: number;
   readonly dataClassification: "synthetic";
   readonly dataPolicyVersion: string;
   readonly inputDigest: string;
   readonly inputSchemaVersion: string;
   readonly modelPolicyVersion: string;
   readonly operationId: string;
-  readonly outputDigest: string;
   readonly outputSchemaVersion: string;
   readonly promptPolicyVersion: string;
-  readonly proposalId: string;
   readonly resourceReference: string;
-  readonly status: "proposal_created";
-  readonly tokenUsage: { readonly input: number; readonly output: number; readonly total: number };
   readonly traceId: string;
   readonly useCaseId: string;
   readonly version: 1;
+}
+
+export interface AiSuccessfulCallRecord extends AiCallRecordBase {
+  readonly adapterVersion: string;
+  readonly authorizationDecisionId: string;
+  readonly costMicros: number;
+  readonly outputDigest: string;
+  readonly proposalId: string;
+  readonly status: "proposal_created";
+  readonly tokenUsage: { readonly input: number; readonly output: number; readonly total: number };
+}
+
+export interface AiFailedCallRecord extends AiCallRecordBase {
+  readonly errorCategory: "authorization" | "budget" | "dependency" | "output" | "policy";
+  readonly errorCode: AiGatewayErrorCode;
+  readonly retryable: boolean;
+  readonly status: "failed";
+}
+
+export type AiCallRecord = AiSuccessfulCallRecord | AiFailedCallRecord;
+
+export interface AiCallRecordPort {
+  record(call: AiCallRecord): Promise<void>;
 }
 
 export interface ConfirmAiProposalCommand {
@@ -139,5 +162,5 @@ export interface AiProposalConfirmation {
 
 export interface AiGatewayService {
   confirm(command: ConfirmAiProposalCommand): Promise<AiProposalConfirmation>;
-  invoke(command: InvokeAiCommand): Promise<{ readonly call: AiCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }>;
+  invoke(command: InvokeAiCommand): Promise<{ readonly call: AiSuccessfulCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }>;
 }

@@ -1,6 +1,6 @@
 # AIG-01 AI Gateway Fake
 
-- Status: `SELF_REVIEW`
+- Status: `RE_REVIEW`
 - Branch: `task/AIG-01-ai-gateway-fake`
 - Owner: Agent D
 - Independent Reviewer: Agent B
@@ -49,6 +49,7 @@
 - Use Case Policy V1：用途 Owner、启用状态、输入/输出 JSON Schema、版本引用及硬上限。
 - AI Proposal V1：结构化输出、摘要、过期时间和不可执行语义。
 - AI Call Record V1：安全版本引用、摘要、Token/成本、Proposal 和 Trace 引用，不含完整内容。
+- `AiCallRecordPort`：成功与失败调用均写入安全记录；记录包含受限 Actor/Application 引用、授权决策引用、尝试次数、策略/Schema 版本和固定失败分类，不含完整内容。
 - AI Proposal Confirmation V1：实际认证主体、资源/操作/Trace 引用、决定和 `domainCommandExecuted: false`。
 - 公共 TypeScript API 提供注册、调用、确认、稳定错误和 Port；Fake 只从 `./testing` 子入口导出。
 
@@ -58,20 +59,20 @@
 
 ## Idempotency, Retry And Failure
 
-- 同一 operation ID 的相同语义调用共享执行并重放；语义变化返回 `ai_operation_conflict`，Trace 不参与业务语义指纹。
+- 同一 operation ID 的相同语义调用共享执行；执行开始后的成功或失败结果均保持稳定，失败重放不会再次预留预算或调用 Adapter；语义变化返回 `ai_operation_conflict`，Trace 不参与业务语义指纹。
 - 同一确认 operation ID 共享在途授权和结果；返回对象均隔离复制，调用方修改不会污染重放。
 - 本任务不自动重试 Adapter，避免在结果未知时重复费用；Provider 重试留给已批准策略与 `integration-runtime`。
 - 未注册/停用、无权、预算拒绝、数据策略拒绝、畸形外部 Port 结果、输出超限/Schema 错误、Proposal 不存在/过期和操作冲突均失败关闭。
 
 ## Authorization And Audit
 
-- 调用和确认分别重新授权同一用途与资源引用；Authorizer 返回值精确校验并要求 UUID decision ID。
+- 调用和确认分别重新授权同一用途与资源引用；Authorizer 返回值精确校验并要求 UUID decision ID。成功 Call Record 保存该决策引用，失败发生在有效裁决后时同样保存。
 - 人工确认只允许 `authenticated_subject`，确认事实记录实际主体和安全上下文引用。
 - AI 调用记录不替代领域审计；本任务无管理员发布/重放入口。正式命令必须由拥有模块再次读取状态、授权并审计。
 
 ## Observability And Secrets
 
-- Call Record 只包含摘要、版本、受限引用、Token/成本和 Trace；错误只暴露固定代码与 retryable 标志。
+- Call Record 只包含摘要、版本、受限 Actor/Application 与授权决策引用、尝试次数、Token/成本或固定失败分类以及 Trace；错误只暴露固定代码与 retryable 标志。
 - 模块不读取、保存或记录 Secret；禁止字段扫描覆盖 Prompt、Token、Cookie、Session、Credential、Request/Response 等键。
 - 生产日志、指标、Sentry 和 Trace Adapter 留给组合任务，且不得接收完整输入/输出。
 
@@ -99,6 +100,15 @@
 - Failure Modes：拒绝、冲突、过期、预算、畸形端口、超限和结构失败均有稳定错误并失败关闭。
 
 自审修复包括：规范化对象中的 `undefined` 指纹缺陷、JSON 纯对象/访问器边界、Authorizer/Budget/Adapter 精确返回校验、Call Record 契约字段缺失、并发确认重复授权、系统主体可确认、确认事实缺少实际主体/上下文、重放对象可被调用方修改，以及确认/用途契约覆盖不足。
+
+## Independent Review Round 1 And Fixes
+
+- P1 失败 operation 被删除：已改为保留同一 fingerprint 的稳定失败 Promise；回归证明相同 operation/不同 Trace 不再次预算或调用，语义变化仍冲突。
+- P1 失败调用无安全记录：新增注入式 `AiCallRecordPort` 与 V1 失败记录契约，保存固定错误分类、重试标志、尝试次数、安全引用和相关版本，不保存内容。
+- P2 成功记录缺少主体和授权上下文：成功/失败记录增加有界 `actorReference`、`actorType` 和可用时的 `authorizationDecisionId`。
+- P2 嵌套访问器会被执行：在规范化、字节计算、Schema 扫描和 Ajv 编译前递归验证普通对象、数据描述符和稠密数组；输入与 Schema 回归均证明 `getterReads=0`，自定义原型失败关闭。
+
+Owner 修复后专项证据：AI Gateway lint/typecheck 通过，13/13 测试通过，Contracts 28/28 通过。等待原 Reviewer 对修复提交进行 Round 2 复查。
 
 ## Unresolved Questions
 

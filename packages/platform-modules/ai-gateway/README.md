@@ -8,9 +8,10 @@ The first stage contains only contracts, Fake Adapter conventions, synthetic fix
 
 ## First-stage runtime
 
-- `createAiGatewayService` accepts an explicit registered-use-case list plus authorization, budget, and model ports.
+- `createAiGatewayService` accepts an explicit registered-use-case list plus authorization, budget, model, and safe call-record ports.
 - Invocation accepts only `synthetic` structured JSON, validates exact runtime envelopes and JSON Schema 2020-12 input/output, and returns a non-authoritative proposal plus safe call metadata.
-- Operation IDs provide process-local in-flight and replay protection. Returned values are cloned so callers cannot mutate later replays.
+- Operation IDs provide process-local in-flight and replay protection. Once execution begins, both success and failure become stable for that operation ID, so an unknown or failed model attempt is never charged or invoked again in-process. Returned values are cloned so callers cannot mutate later replays.
+- Safe call records contain bounded actor/application and authorization-decision references, policy/schema versions, attempt count, trace metadata, and either proposal usage metadata or a fixed failure category. They never contain structured input/output, Prompt, response, credentials, or provider payloads.
 - Confirmation accepts only an authenticated subject, reauthorizes against the same use case/resource, checks expiry, and returns a non-authoritative confirmation fact. It never executes a domain command.
 - `./testing` exposes a deterministic Fake Adapter. Fixtures must remain synthetic.
 

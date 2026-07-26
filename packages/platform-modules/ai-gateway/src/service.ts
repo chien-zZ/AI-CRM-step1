@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AiGatewayError } from "./errors.js";
-import type { AiBudgetPort, AiCallRecord, AiGatewayService, AiModelAdapter, AiProposal, AiProposalConfirmation, AiAuthorizer } from "./types.js";
+import type { AiBudgetPort, AiCallRecord, AiCallRecordPort, AiGatewayService, AiModelAdapter, AiProposal, AiProposalConfirmation, AiAuthorizer, AiSuccessfulCallRecord } from "./types.js";
 import { digest, invocationFingerprint, validateConfirmation, validateInvocation, validateOutput, validateUseCase, type ValidatedUseCase } from "./validation.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -13,13 +13,14 @@ interface StoredProposal {
   readonly useCaseId: string;
 }
 
-const cloneInvocation = (value: { readonly call: AiCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }) => structuredClone(value);
+const cloneInvocation = (value: { readonly call: AiSuccessfulCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }) => structuredClone(value);
 const cloneConfirmation = (value: AiProposalConfirmation) => structuredClone(value);
 
 export function createAiGatewayService(options: {
   readonly adapter: AiModelAdapter;
   readonly authorizer: AiAuthorizer;
   readonly budget: AiBudgetPort;
+  readonly callRecords: AiCallRecordPort;
   readonly clock?: () => Date;
   readonly id?: () => string;
   readonly useCases: readonly unknown[];
@@ -32,18 +33,29 @@ export function createAiGatewayService(options: {
     if (useCases.has(validated.registration.useCaseId)) throw new AiGatewayError("ai_invalid_input");
     useCases.set(validated.registration.useCaseId, validated);
   }
-  const operations = new Map<string, { readonly fingerprint: string; readonly result: Promise<{ readonly call: AiCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }> }>();
+  const operations = new Map<string, { readonly fingerprint: string; readonly result: Promise<{ readonly call: AiSuccessfulCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }> }>();
   const proposals = new Map<string, StoredProposal>();
   const confirmations = new Map<string, { readonly fingerprint: string; readonly result: Promise<AiProposalConfirmation> }>();
 
-  const authorize = async (request: Parameters<AiAuthorizer["authorize"]>[0]): Promise<void> => {
+  const authorize = async (request: Parameters<AiAuthorizer["authorize"]>[0]): Promise<{ readonly allowed: boolean; readonly decisionId: string }> => {
     let decision: unknown;
     try { decision = await options.authorizer.authorize(request); }
     catch (error) { throw new AiGatewayError("ai_adapter_unavailable", { cause: error, retryable: true }); }
     if (typeof decision !== "object" || decision === null || Array.isArray(decision) || Object.keys(decision).some((key) => key !== "allowed" && key !== "decisionId") || typeof (decision as { allowed?: unknown }).allowed !== "boolean" || typeof (decision as { decisionId?: unknown }).decisionId !== "string" || !UUID.test((decision as { decisionId: string }).decisionId)) {
       throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
     }
-    if (!(decision as { allowed: boolean }).allowed) throw new AiGatewayError(request.action === "ai:confirm" ? "ai_confirmation_denied" : "ai_use_case_unavailable");
+    return { allowed: (decision as { allowed: boolean }).allowed, decisionId: (decision as { decisionId: string }).decisionId.toLowerCase() };
+  };
+  const recordCall = async (call: AiCallRecord): Promise<void> => {
+    try { await options.callRecords.record(structuredClone(call)); }
+    catch (error) { throw new AiGatewayError("ai_adapter_unavailable", { cause: error, retryable: true }); }
+  };
+  const failedCategory = (error: AiGatewayError): "authorization" | "budget" | "dependency" | "output" | "policy" => {
+    if (error.code === "ai_use_case_unavailable" || error.code === "ai_confirmation_denied") return "authorization";
+    if (error.code === "ai_budget_exceeded") return "budget";
+    if (error.code === "ai_output_invalid") return "output";
+    if (error.code === "ai_data_policy_rejected" || error.code === "ai_invalid_input") return "policy";
+    return "dependency";
   };
 
   return {
@@ -62,8 +74,16 @@ export function createAiGatewayService(options: {
         return cloneInvocation({ ...replay, replayed: true });
       }
 
-      const execution = (async (): Promise<{ readonly call: AiCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }> => {
-        await authorize({ action: "ai:invoke", actor: command.actor, resourceReference: command.resourceReference, useCaseId: command.useCaseId });
+      const execution = (async (): Promise<{ readonly call: AiSuccessfulCallRecord; readonly proposal: AiProposal; readonly replayed: boolean }> => {
+        const callId = id();
+        if (!UUID.test(callId)) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
+        const inputDigest = digest(command.input);
+        let adapterAttempts = 0;
+        let authorizationDecisionId: string | undefined;
+        try {
+        const authorization = await authorize({ action: "ai:invoke", actor: command.actor, resourceReference: command.resourceReference, useCaseId: command.useCaseId });
+        authorizationDecisionId = authorization.decisionId;
+        if (!authorization.allowed) throw new AiGatewayError("ai_use_case_unavailable");
         let budget: unknown;
         try {
           budget = await options.budget.reserve({ budgetPolicyVersion: useCase.registration.budgetPolicyVersion, maximumCostMicros: useCase.registration.maximumCostMicros, maximumTokens: useCase.registration.maximumTokens, operationId: command.operationId, useCaseId: command.useCaseId });
@@ -81,6 +101,7 @@ export function createAiGatewayService(options: {
 
         let adapterResult: unknown;
         try {
+          adapterAttempts += 1;
           adapterResult = await options.adapter.invoke({ dataClassification: command.dataClassification, modelPolicyVersion: useCase.registration.modelPolicyVersion, operationId: command.operationId, structuredInput: command.input, useCaseId: command.useCaseId });
         } catch (error) {
           if (error instanceof AiGatewayError) throw error;
@@ -98,24 +119,38 @@ export function createAiGatewayService(options: {
         const now = clock();
         if (!Number.isFinite(now.getTime())) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
         const proposalId = id();
-        const callId = id();
-        if (!UUID.test(proposalId) || !UUID.test(callId)) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
+        if (!UUID.test(proposalId)) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
         const outputDigest = digest(output);
         const expiresAt = new Date(now.getTime() + useCase.registration.proposalTtlMs).toISOString();
         const proposal: AiProposal = { authoritative: false, expiresAt, output, outputDigest, outputSchemaVersion: useCase.registration.outputSchemaVersion, proposalId: proposalId.toLowerCase(), requiresHumanConfirmation: true, useCaseId: command.useCaseId, version: 1 };
-        const call: AiCallRecord = {
-          adapterVersion: typedResult.adapterVersion, budgetPolicyVersion: useCase.registration.budgetPolicyVersion, callId: callId.toLowerCase(), costMicros: typedUsage.costMicros as number,
-          dataClassification: "synthetic", dataPolicyVersion: useCase.registration.dataPolicyVersion, inputDigest: digest(command.input), inputSchemaVersion: useCase.registration.inputSchemaVersion,
+        const call: AiSuccessfulCallRecord = {
+          actorReference: command.actor.actorId, actorType: command.actor.actorType, adapterAttempts, adapterVersion: typedResult.adapterVersion, authorizationDecisionId,
+          budgetPolicyVersion: useCase.registration.budgetPolicyVersion, callId: callId.toLowerCase(), costMicros: typedUsage.costMicros as number,
+          dataClassification: "synthetic", dataPolicyVersion: useCase.registration.dataPolicyVersion, inputDigest, inputSchemaVersion: useCase.registration.inputSchemaVersion,
           modelPolicyVersion: useCase.registration.modelPolicyVersion, operationId: command.operationId, outputDigest, outputSchemaVersion: useCase.registration.outputSchemaVersion,
           promptPolicyVersion: useCase.registration.promptPolicyVersion, proposalId: proposal.proposalId, resourceReference: command.resourceReference, status: "proposal_created",
           tokenUsage: { input: typedUsage.inputTokens as number, output: typedUsage.outputTokens as number, total: (typedUsage.inputTokens as number) + (typedUsage.outputTokens as number) }, traceId: command.traceId, useCaseId: command.useCaseId, version: 1,
         };
+        await recordCall(call);
         proposals.set(proposal.proposalId, { expiresAt, outputDigest, proposalId: proposal.proposalId, resourceReference: command.resourceReference, useCaseId: command.useCaseId });
         return { call, proposal, replayed: false };
+        } catch (error) {
+          const failure = error instanceof AiGatewayError ? error : new AiGatewayError("ai_adapter_unavailable", { cause: error, retryable: true });
+          const call: AiCallRecord = {
+            actorReference: command.actor.actorId, actorType: command.actor.actorType, adapterAttempts,
+            ...(authorizationDecisionId === undefined ? {} : { authorizationDecisionId }), budgetPolicyVersion: useCase.registration.budgetPolicyVersion,
+            callId: callId.toLowerCase(), dataClassification: "synthetic", dataPolicyVersion: useCase.registration.dataPolicyVersion,
+            errorCategory: failedCategory(failure), errorCode: failure.code, inputDigest, inputSchemaVersion: useCase.registration.inputSchemaVersion,
+            modelPolicyVersion: useCase.registration.modelPolicyVersion, operationId: command.operationId, outputSchemaVersion: useCase.registration.outputSchemaVersion,
+            promptPolicyVersion: useCase.registration.promptPolicyVersion, resourceReference: command.resourceReference, retryable: failure.retryable,
+            status: "failed", traceId: command.traceId, useCaseId: command.useCaseId, version: 1,
+          };
+          await recordCall(call);
+          throw failure;
+        }
       })();
       operations.set(command.operationId, { fingerprint, result: execution });
-      try { return cloneInvocation(await execution); }
-      catch (error) { operations.delete(command.operationId); throw error; }
+      return cloneInvocation(await execution);
     },
 
     async confirm(input) {
@@ -133,7 +168,8 @@ export function createAiGatewayService(options: {
       if (!Number.isFinite(now.getTime())) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
       if (now.getTime() >= new Date(proposal.expiresAt).getTime()) throw new AiGatewayError("ai_proposal_expired");
       const execution = (async (): Promise<AiProposalConfirmation> => {
-        await authorize({ action: "ai:confirm", actor: command.actor, resourceReference: command.resourceReference, useCaseId: command.useCaseId });
+        const authorization = await authorize({ action: "ai:confirm", actor: command.actor, resourceReference: command.resourceReference, useCaseId: command.useCaseId });
+        if (!authorization.allowed) throw new AiGatewayError("ai_confirmation_denied");
         const confirmationId = id();
         if (!UUID.test(confirmationId)) throw new AiGatewayError("ai_adapter_unavailable", { retryable: true });
         return {

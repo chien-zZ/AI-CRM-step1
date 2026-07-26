@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it, vi } from "vitest";
-import { AiGatewayError, createAiGatewayService, type AiBudgetPort, type AiUseCaseRegistration } from "./index.js";
+import { AiGatewayError, createAiGatewayService, type AiBudgetPort, type AiCallRecordPort, type AiUseCaseRegistration } from "./index.js";
 import { createFakeModelAdapter } from "./testing.js";
 
 const traceId = "1234567890abcdef1234567890abcdef";
@@ -35,8 +35,9 @@ function setup(options: { readonly allowed?: boolean; readonly now?: Date; reado
   const id = () => `10000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}`;
   const authorizer = { authorize: vi.fn(() => Promise.resolve({ allowed: options.allowed ?? true, decisionId: crypto.randomUUID() })) };
   const budget = { reserve: vi.fn<AiBudgetPort["reserve"]>(() => Promise.resolve({ allowed: true, reservationId: "synthetic-budget-1" })) };
+  const callRecords = { record: vi.fn<AiCallRecordPort["record"]>(() => Promise.resolve()) };
   const adapter = createFakeModelAdapter({ [useCase.useCaseId]: options.steps ?? [{ kind: "result", result }, { kind: "result", result }, { kind: "result", result }] });
-  return { adapter, authorizer, budget, service: createAiGatewayService({ adapter, authorizer, budget, clock: () => now, id, useCases: [useCase] }), setNow: (value: Date) => { now = value; } };
+  return { adapter, authorizer, budget, callRecords, service: createAiGatewayService({ adapter, authorizer, budget, callRecords, clock: () => now, id, useCases: [useCase] }), setNow: (value: Date) => { now = value; } };
 }
 
 describe("AI gateway fake", () => {
@@ -56,14 +57,16 @@ describe("AI gateway fake", () => {
   it("rejects unregistered and runtime-invalid use cases", async () => {
     const { service } = setup();
     await expect(service.invoke({ ...metadata(), useCaseId: "platform.unregistered" })).rejects.toMatchObject({ code: "ai_use_case_unavailable" });
-    expect(() => createAiGatewayService({ adapter: createFakeModelAdapter({}), authorizer: { authorize: () => Promise.resolve({ allowed: true, decisionId: crypto.randomUUID() }) }, budget: { reserve: () => Promise.resolve({ allowed: true, reservationId: "fixture" }) }, useCases: [{ ...useCase, inputSchema: { ...inputSchema, properties: { token: { type: "string" } } } }] })).toThrow(AiGatewayError);
+    expect(() => createAiGatewayService({ adapter: createFakeModelAdapter({}), authorizer: { authorize: () => Promise.resolve({ allowed: true, decisionId: crypto.randomUUID() }) }, budget: { reserve: () => Promise.resolve({ allowed: true, reservationId: "fixture" }) }, callRecords: { record: () => Promise.resolve() }, useCases: [{ ...useCase, inputSchema: { ...inputSchema, properties: { token: { type: "string" } } } }] })).toThrow(AiGatewayError);
   });
 
   it("creates a non-authoritative proposal and stores only safe call metadata", async () => {
-    const { service } = setup();
+    const { callRecords, service } = setup();
     const response = await service.invoke(metadata());
     expect(response.proposal).toMatchObject({ authoritative: false, requiresHumanConfirmation: true });
-    expect(response.call).toMatchObject({ costMicros: 10, dataClassification: "synthetic", status: "proposal_created", tokenUsage: { input: 3, output: 5, total: 8 } });
+    expect(response.call).toMatchObject({ actorReference: actor.actorId, actorType: actor.actorType, adapterAttempts: 1, costMicros: 10, dataClassification: "synthetic", status: "proposal_created", tokenUsage: { input: 3, output: 5, total: 8 } });
+    expect(response.call.authorizationDecisionId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(callRecords.record).toHaveBeenCalledOnce();
     expect(response.call).not.toHaveProperty("input");
     expect(response.call).not.toHaveProperty("output");
     expect(response.call).not.toHaveProperty("prompt");
@@ -77,6 +80,37 @@ describe("AI gateway fake", () => {
     await expect(service.invoke({ ...command, input: { syntheticText: "changed" } })).rejects.toMatchObject({ code: "ai_operation_conflict" });
     expect(adapter.calls()).toBe(1);
     expect(budget.reserve).toHaveBeenCalledOnce();
+  });
+
+  it("persists a stable safe failure and never charges or invokes again for the same operation", async () => {
+    const runtime = setup({ steps: [{ category: "ai_adapter_unavailable", kind: "error", retryable: true }, { kind: "result", result }] });
+    const command = metadata();
+    await expect(runtime.service.invoke(command)).rejects.toMatchObject({ code: "ai_adapter_unavailable", retryable: true });
+    await expect(runtime.service.invoke({ ...command, traceId: "abcdef1234567890abcdef1234567890" })).rejects.toMatchObject({ code: "ai_adapter_unavailable", retryable: true });
+    await expect(runtime.service.invoke({ ...command, input: { syntheticText: "changed" } })).rejects.toMatchObject({ code: "ai_operation_conflict" });
+    expect(runtime.adapter.calls()).toBe(1);
+    expect(runtime.budget.reserve).toHaveBeenCalledOnce();
+    expect(runtime.callRecords.record).toHaveBeenCalledOnce();
+    const failure = runtime.callRecords.record.mock.calls[0]?.[0];
+    expect(failure).toMatchObject({ actorReference: actor.actorId, actorType: actor.actorType, adapterAttempts: 1, errorCategory: "dependency", errorCode: "ai_adapter_unavailable", retryable: true, status: "failed" });
+    expect(failure?.authorizationDecisionId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(failure).not.toHaveProperty("input");
+    expect(failure).not.toHaveProperty("output");
+    const callSchema = JSON.parse(await readFile(new URL("../../../../contracts/ai/ai-call-record.v1.schema.json", import.meta.url), "utf8")) as object;
+    const validate = new Ajv2020({ strict: true }).compile(callSchema);
+    expect(validate(failure), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("rejects nested accessors and custom objects without executing getters", async () => {
+    let getterReads = 0;
+    const nested = Object.defineProperty({}, "syntheticText", { enumerable: true, get: () => { getterReads += 1; return "fixture"; } });
+    await expect(setup().service.invoke({ ...metadata(), input: nested as never })).rejects.toMatchObject({ code: "ai_invalid_input" });
+    expect(getterReads).toBe(0);
+    await expect(setup().service.invoke({ ...metadata(), input: { nested: new (class Fixture { readonly value = "synthetic"; })() } as never })).rejects.toMatchObject({ code: "ai_invalid_input" });
+
+    const schemaGetter = Object.defineProperty({}, "type", { enumerable: true, get: () => { getterReads += 1; return "string"; } });
+    expect(() => createAiGatewayService({ adapter: createFakeModelAdapter({}), authorizer: { authorize: () => Promise.resolve({ allowed: true, decisionId: crypto.randomUUID() }) }, budget: { reserve: () => Promise.resolve({ allowed: true, reservationId: "fixture" }) }, callRecords: { record: () => Promise.resolve() }, useCases: [{ ...useCase, inputSchema: { ...inputSchema, properties: { syntheticText: schemaGetter } } }] })).toThrow(AiGatewayError);
+    expect(getterReads).toBe(0);
   });
 
   it("isolates replayed results from caller mutation", async () => {
@@ -98,7 +132,11 @@ describe("AI gateway fake", () => {
   });
 
   it("fails closed on authorization, budget, data policy, malformed output, and excessive usage", async () => {
-    await expect(setup({ allowed: false }).service.invoke(metadata())).rejects.toMatchObject({ code: "ai_use_case_unavailable" });
+    const denied = setup({ allowed: false });
+    await expect(denied.service.invoke(metadata())).rejects.toMatchObject({ code: "ai_use_case_unavailable" });
+    const deniedRecord = denied.callRecords.record.mock.calls[0]?.[0];
+    expect(deniedRecord).toMatchObject({ errorCategory: "authorization", status: "failed" });
+    expect(deniedRecord?.authorizationDecisionId).toMatch(/^[0-9a-f-]{36}$/u);
     const budgetDenied = setup();
     budgetDenied.budget.reserve.mockResolvedValueOnce({ allowed: false });
     await expect(budgetDenied.service.invoke(metadata())).rejects.toMatchObject({ code: "ai_budget_exceeded" });

@@ -19,6 +19,29 @@ const object = (value: unknown): Record<string, unknown> => {
   if (Object.values(descriptors).some((descriptor) => descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable)) invalid();
   return value as Record<string, unknown>;
 };
+const inspectPlainData = (value: unknown, depth = 0): void => {
+  if (depth > 20) invalid("ai_data_policy_rejected");
+  if (value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) return;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype || value.length > 1000) invalid("ai_data_policy_rejected");
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = descriptors[String(index)] ?? invalid("ai_data_policy_rejected");
+      if (descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable) invalid("ai_data_policy_rejected");
+      inspectPlainData(descriptor.value, depth + 1);
+    }
+    if (Object.keys(descriptors).some((key) => key !== "length" && !/^(0|[1-9]\d*)$/u.test(key))) invalid("ai_data_policy_rejected");
+    return;
+  }
+  if (typeof value !== "object") invalid();
+  const candidate = object(value);
+  const descriptors = Object.getOwnPropertyDescriptors(candidate);
+  if (Object.keys(descriptors).length > 1000) invalid("ai_data_policy_rejected");
+  for (const descriptor of Object.values(descriptors)) {
+    if (descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable) invalid("ai_data_policy_rejected");
+    inspectPlainData(descriptor.value, depth + 1);
+  }
+};
 const exact = (value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> => {
   const candidate = object(value);
   const keys = Object.keys(candidate);
@@ -62,6 +85,7 @@ const scanSchema = (value: unknown, depth = 0): void => {
 };
 
 const compile = (schema: Readonly<Record<string, unknown>>): ValidateFunction => {
+  inspectPlainData(schema);
   if (JSON.stringify(schema).length > 64_000 || schema.$schema !== "https://json-schema.org/draft/2020-12/schema") invalid();
   scanSchema(schema);
   try {
@@ -94,7 +118,7 @@ export function validateUseCase(value: unknown): ValidatedUseCase {
 
 const safeJson = (value: unknown, maximumBytes: number): JsonValue => {
   let encoded: string;
-  try { encoded = canonical(value); } catch (error) { throw new AiGatewayError("ai_invalid_input", { cause: error }); }
+  try { inspectPlainData(value); encoded = canonical(value); } catch (error) { throw new AiGatewayError("ai_invalid_input", { cause: error }); }
   if (Buffer.byteLength(encoded, "utf8") > maximumBytes) invalid("ai_data_policy_rejected");
   const scan = (item: unknown, depth = 0): void => {
     if (depth > 20) invalid("ai_data_policy_rejected");
