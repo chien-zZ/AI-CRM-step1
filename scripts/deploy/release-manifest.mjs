@@ -17,6 +17,7 @@ const EXACT_KEYS = (value, expected, path, errors) => {
 const RELEASE_ID = /^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]{0,5}$/u;
 const SAFE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255}$/u;
 const SHA256 = /^sha256:[a-f0-9]{64}$/u;
+const EVIDENCE_REFERENCE = /^evidence:\/\/[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/u;
 const APPLICATION_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?@sha256:[a-f0-9]{64}$/u;
 const PINNED_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::(?!latest(?:$|@))[A-Za-z0-9][A-Za-z0-9._-]{0,127})(?:@sha256:[a-f0-9]{64})?$/u;
 const SECRET_KEY = /(?:password|secret|token|cookie|credential|private.?key|session.?key|dsn|authorization)/iu;
@@ -32,7 +33,7 @@ const scanKeys = (value, path, errors) => {
   }
   if (value === null || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value)) {
-    const approvedSecretEvidenceFlag = path === "manifest.gates" && key === "secretFiles" && typeof child === "boolean";
+    const approvedSecretEvidenceFlag = path === "manifest.gates" && key === "secretFiles";
     if (SECRET_KEY.test(key) && !approvedSecretEvidenceFlag) errors.push(`${path}.${key} is a forbidden Secret-like field.`);
     scanKeys(child, `${path}.${key}`, errors);
   }
@@ -109,7 +110,16 @@ export const validateReleaseManifest = (manifest) => {
     "restorePoint", "workerDrain", "rollback", "manualApproval",
   ];
   if (EXACT_KEYS(manifest.gates, gates, "gates", errors)) {
-    for (const name of gates) if (manifest.gates[name] !== true) errors.push(`gates.${name} must be true.`);
+    for (const name of gates) {
+      const gate = manifest.gates[name];
+      if (!EXACT_KEYS(gate, ["evidenceRef", "evidenceDigest"], `gates.${name}`, errors)) continue;
+      if (typeof gate.evidenceRef !== "string" || !EVIDENCE_REFERENCE.test(gate.evidenceRef)) {
+        errors.push(`gates.${name}.evidenceRef must be a bounded evidence:// reference.`);
+      }
+      if (typeof gate.evidenceDigest !== "string" || !SHA256.test(gate.evidenceDigest)) {
+        errors.push(`gates.${name}.evidenceDigest must be a sha256 reference.`);
+      }
+    }
   }
   return [...new Set(errors)];
 };

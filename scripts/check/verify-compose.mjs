@@ -136,6 +136,13 @@ for (const [host, definition] of [["host-a", productionA], ["host-b", production
       errors.push(`${host}/${name} application container must be read-only and non-root.`);
     }
   }
+  const edgeTmpfs = definition.services?.edge?.tmpfs?.map(String) ?? [];
+  for (const directory of ["/etc/nginx/conf.d", "/var/cache/nginx", "/var/run", "/tmp"]) {
+    const mount = edgeTmpfs.find((value) => value.startsWith(`${directory}:`));
+    if (!mount || !mount.includes("uid=${AI_CRM_EDGE_UID:?") || !mount.includes("gid=${AI_CRM_EDGE_GID:?") || !mount.includes("mode=0750")) {
+      errors.push(`${host}/edge must provide a UID/GID-scoped writable tmpfs for ${directory}.`);
+    }
+  }
 }
 if (!productionNginx.includes("access_log /dev/stdout safe_technical") ||
   /log_format[^;]*\$(?:request(?:\s|['"])|request_uri|args|remote_addr)/u.test(productionNginx)) {

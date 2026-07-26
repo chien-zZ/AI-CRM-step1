@@ -184,8 +184,12 @@ services:
     <<: *service-defaults
     image: ${AI_CRM_EDGE_IMAGE:?digest-pinned edge image is required}
     read_only: true
-    user: ${AI_CRM_EDGE_UID_GID:?edge uid:gid is required}
-    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    user: ${AI_CRM_EDGE_UID:?edge uid is required}:${AI_CRM_EDGE_GID:?edge gid is required}
+    tmpfs:
+      - /etc/nginx/conf.d:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+      - /var/cache/nginx:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+      - /var/run:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
+      - /tmp:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
     environment:
       AI_CRM_PUBLIC_HOST: ${AI_CRM_PUBLIC_HOST:?required}
       AI_CRM_API_HOST_A: ${AI_CRM_API_HOST_A:?required}

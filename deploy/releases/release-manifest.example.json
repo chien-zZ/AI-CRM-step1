@@ -34,16 +34,16 @@
     }
   ],
   "gates": {
-    "pnpmCheck": true,
-    "contracts": true,
-    "migrations": true,
-    "integrationAndE2e": true,
-    "stagingSmoke": true,
-    "secretFiles": true,
-    "observability": true,
-    "restorePoint": true,
-    "workerDrain": true,
-    "rollback": true,
-    "manualApproval": true
+    "pnpmCheck": { "evidenceRef": "evidence://synthetic/ci/pnpm-check", "evidenceDigest": "sha256:8111111111111111111111111111111111111111111111111111111111111111" },
+    "contracts": { "evidenceRef": "evidence://synthetic/ci/contracts", "evidenceDigest": "sha256:8222222222222222222222222222222222222222222222222222222222222222" },
+    "migrations": { "evidenceRef": "evidence://synthetic/ci/migrations", "evidenceDigest": "sha256:8333333333333333333333333333333333333333333333333333333333333333" },
+    "integrationAndE2e": { "evidenceRef": "evidence://synthetic/ci/integration-e2e", "evidenceDigest": "sha256:8444444444444444444444444444444444444444444444444444444444444444" },
+    "stagingSmoke": { "evidenceRef": "evidence://synthetic/staging/smoke", "evidenceDigest": "sha256:8555555555555555555555555555555555555555555555555555555555555555" },
+    "secretFiles": { "evidenceRef": "evidence://synthetic/security/secret-files", "evidenceDigest": "sha256:8666666666666666666666666666666666666666666666666666666666666666" },
+    "observability": { "evidenceRef": "evidence://synthetic/operations/observability", "evidenceDigest": "sha256:8777777777777777777777777777777777777777777777777777777777777777" },
+    "restorePoint": { "evidenceRef": "evidence://synthetic/recovery/restore-point", "evidenceDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888" },
+    "workerDrain": { "evidenceRef": "evidence://synthetic/runtime/worker-drain", "evidenceDigest": "sha256:8999999999999999999999999999999999999999999999999999999999999999" },
+    "rollback": { "evidenceRef": "evidence://synthetic/release/rollback", "evidenceDigest": "sha256:8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    "manualApproval": { "evidenceRef": "evidence://synthetic/approval/manual", "evidenceDigest": "sha256:8bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
   }
 }

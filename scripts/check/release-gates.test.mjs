@@ -32,11 +32,26 @@ test("rejects floating or digest-free application images", () => {
 
 test("fails closed when an approval or recovery gate is absent", () => {
   const manifest = copy();
-  manifest.gates.manualApproval = false;
   delete manifest.gates.restorePoint;
   const errors = validateReleaseManifest(manifest);
   assert.ok(errors.some((error) => error.startsWith("gates must contain exactly:")));
   assert.ok(!errors.some((error) => error.includes("undefined")));
+});
+
+test("rejects self-asserted boolean gates without evidence bindings", () => {
+  const manifest = copy();
+  manifest.gates.pnpmCheck = true;
+  const errors = validateReleaseManifest(manifest);
+  assert.ok(errors.includes("gates.pnpmCheck must be an object."));
+});
+
+test("rejects malformed evidence references and digests", () => {
+  const manifest = copy();
+  manifest.gates.contracts.evidenceRef = "https://untrusted.example/evidence";
+  manifest.gates.contracts.evidenceDigest = "not-a-digest";
+  const errors = validateReleaseManifest(manifest);
+  assert.ok(errors.includes("gates.contracts.evidenceRef must be a bounded evidence:// reference."));
+  assert.ok(errors.includes("gates.contracts.evidenceDigest must be a sha256 reference."));
 });
 
 test("requires a distinct operator and approver reference", () => {

@@ -13,4 +13,4 @@ if (result.errors.length > 0) {
   process.exit(1);
 }
 
-console.log(`Release manifest ${result.manifest.releaseId} satisfies the OPS-01 static gates.`);
+console.log(`Release manifest ${result.manifest.releaseId} has valid OPS-01 structure and evidence bindings; referenced evidence still requires trusted-source verification.`);

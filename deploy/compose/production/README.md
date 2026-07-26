@@ -34,6 +34,7 @@ Do not mount the Secret root. Compose resolves each declared file and mounts onl
 node scripts/deploy/verify-release.mjs <approved-release.json>
 node scripts/deploy/render-release-variables.mjs <approved-release.json> > <root-owned-release-dir>/images.vars.tmp
 pnpm compose:check
+node scripts/check/run-production-edge-integration.mjs
 ```
 
 Restrict and atomically rename `images.vars.tmp` after validation. It contains no Secret, but it is still controlled release metadata. Validate each project with its own two non-secret variable files before pulling or changing containers:

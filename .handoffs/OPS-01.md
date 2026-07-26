@@ -108,6 +108,13 @@ Owner 与 Reviewer 每轮必须明确 Authorization、Idempotency、Transactions
 
 Round 1 Owner 证据：release tests 8/8；两个生产 Compose 文件经 `docker compose config --quiet` 分别解析；production shell scripts 语法检查通过；`pnpm compose:check` 通过；完整 `pnpm check` 140/140；`git diff --check` 通过。等待 Agent B 对精确 Owner candidate 独立 Review。
 
+## Independent Review Round 1 And Fixes
+
+- P1 Edge 无法在 read-only/non-root/template 布局启动：Reviewer 使用 `nginx:1.28.0-alpine` 复现 `/etc/nginx/conf.d` 不可写及 cache 临时目录 permission denied。Host A/B 现分别要求独立 Edge UID/GID，并对 `/etc/nginx/conf.d`、`/var/cache/nginx`、`/var/run`、`/tmp` 声明精确 `uid/gid/mode=0750` tmpfs；静态门验证四个目录。新增真实容器检查生成一次性合成证书，按相同 read-only/non-root/tmpfs/template 布局启动 Nginx 并从容器内验证 `/health/live`，临时证书和容器最终清理。
+- P1 release gates 可由调用方用布尔 `true` 伪造：每个 gate 现必须包含有界 `evidence://` 引用和 SHA-256 内容摘要；布尔值、HTTP 任意引用、畸形/缺失摘要失败关闭。发布权威仍必须从批准证据库解析引用、重算摘要并校验 CI/审批身份；CLI 输出改为只声明结构和 evidence binding 有效，不宣称底层证据已满足门禁。
+
+Round 1 修复后专项证据：release tests 10/10；`pnpm compose:check` 通过；部署/检查脚本 ESLint 通过；两个 Compose 仍可由 Docker 解析；真实 Production Edge read-only/non-root 启动、模板渲染与 liveness 通过。等待原 Reviewer Round 2 复查。
+
 ## Unresolved Questions
 
 - 最终主机规格、域名/IP、镜像仓库与摘要、证书、资源限制、状态盘、真实 Owner、告警阈值、Sentry 区域、RPO/RTO 和保留期仍待上线前评审。
