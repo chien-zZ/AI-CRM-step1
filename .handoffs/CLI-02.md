@@ -80,5 +80,5 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - Independent Review Round 2 on candidate `4d0a600`: all four Round 1 findings were closed. Agent A reported one new P2 ordering race where a delayed initial connectivity query could overwrite a newer network-change event.
 - Round 2 fix: once a subscribed connectivity event is observed, the initial query may no longer update state. A deferred-Promise regression test proves a stale online snapshot cannot overwrite a newer offline event.
 - Independent Review Round 3 on candidate `7fd281c`: the ordering-race finding was closed. The original Reviewer reported zero actionable findings, zero unresolved architecture/contract issues, and no new findings after rechecking initialization rejection, effect cleanup, and subscription ordering.
-- Review result: all executable findings are closed; scoped tests, production build, bundle gate, and `pnpm check` pass. G2 acceptance remains an Integration Owner decision.
-- G2 acceptance: not declared by the Owner.
+- Review result: all executable findings are closed; scoped tests, production build, bundle gate, and `pnpm check` pass.
+- G2 acceptance: accepted by the Integration Owner after Agent A reported zero actionable findings and zero unresolved architecture/contract issues on candidate `7fd281c`; final branch-tip changes after that candidate are handoff evidence only.
