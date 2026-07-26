@@ -66,6 +66,7 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - `pnpm --filter @ai-crm/internal-mobile lint`: passed.
 - `pnpm --filter @ai-crm/internal-mobile typecheck`: passed.
 - `pnpm --filter @ai-crm/internal-mobile test`: 6 files, 27 tests passed.
+- Bundle-gate regression tests: 5 Node tests passed, covering hashed entrypoint discovery, exact HTML attribute matching, canonical asset deduplication, external/traversal rejection, missing assets, and budget overflow.
 - `pnpm repo:check`: passed.
 - `pnpm check`: passed; 140/140 tasks successful. Turbo emitted only the existing informational note that `@ai-crm/internal-mobile#test` has no configured output files.
 - `git diff --check`: passed.
@@ -82,3 +83,14 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - Independent Review Round 3 on candidate `7fd281c`: the ordering-race finding was closed. The original Reviewer reported zero actionable findings, zero unresolved architecture/contract issues, and no new findings after rechecking initialization rejection, effect cleanup, and subscription ordering.
 - Review result: all executable findings are closed; scoped tests, production build, bundle gate, and `pnpm check` pass.
 - G2 acceptance: accepted by the Integration Owner after Agent A reported zero actionable findings and zero unresolved architecture/contract issues on candidate `7fd281c`; final branch-tip changes after that candidate are handoff evidence only.
+
+## Post-G2 Integration Regression
+
+- Integration verification reopened CLI-02 after a clean Lockfile/full `node_modules` rebuild produced `js/395.js` instead of the previously observed `js/512.js`; the hard-coded bundle gate failed with `ENOENT` even though the Taro build itself was valid.
+- Fix: the bundle gate now derives initial JavaScript and stylesheet assets from production `dist/h5/index.html`, deduplicates references, resolves them within the real output root, and rejects external origins, traversal/backslashes, invalid URL encoding, symlink escape, missing assets, absent JS/CSS entrypoints, source maps, forbidden content, and totals above the unchanged 600 KiB budget.
+- Verification: 5 bundle-gate tests, 27 Vitest tests, lint, typecheck, production build, package contract check, repository check, `git diff --check`, and `pnpm check` (140/140) pass. Lockfile remains unchanged.
+- Review status: Integration P1 fix is pending independent re-review by the original Agent A. Previous G2 acceptance is reopened until that review reports zero actionable findings and Integration verification passes on the serialized Lockfile environment.
+- Integration follow-up: the serialized main-worktree install currently reports a Taro plugin peer warning (`vite@^4` expected while `vite@7` is present). The approved H5 build uses the Webpack runner and this warning is not changed or waived by CLI-02. Integration Owner must evaluate it in the shared dependency/Lockfile window; this task must not add Vite dependencies or modify the Lockfile speculatively.
+- Integration Re-review Round 1 on candidate `2f11a02`: Agent A closed the original hard-coded-chunk P1 direction but reported one P1 fail-open attribute match (`data-src`/`data-rel`/`data-href`) and one P2 duplicate budget count for URL aliases resolving to the same real file; no other implementation or architecture/contract issue was found.
+- Round 1 fixes: HTML attributes now require an exact whitespace-delimited attribute token, so prefixed lookalikes cannot become entrypoints; safely resolved assets are deduplicated by canonical real path before stat and budget summation. Regression tests prove lookalikes fail closed and `/js/app.js`, `js/app.js`, and `/js/app.js?v=1` count the same file once.
+- Integration Re-review Round 2 on exact candidate `cac70c49328c636f69d3929b6925dc7881047533`: Agent A confirmed both findings closed, found no new actionable finding, and reported zero unresolved architecture/contract issues after rerunning 5 Node tests, 27 Vitest tests, the production build/bundle gate (`540927/614400`), and diff-check. CLI-02 is eligible for G2 restoration subject to Integration Owner confirmation in the serialized shared dependency environment; the recorded Taro peer warning remains a separate Integration Owner follow-up.

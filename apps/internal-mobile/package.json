@@ -10,7 +10,7 @@
     "bundle:check": "node scripts/check-bundle.mjs",
     "lint": "eslint src config scripts vitest.config.ts --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "node --test scripts/*.test.mjs && vitest run --config vitest.config.ts",
     "contracts:check": "node ../../scripts/check/verify-package.mjs"
   },
   "dependencies": {
