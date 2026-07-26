@@ -2,7 +2,7 @@
 
 PC workbench based on React 19, Vite, TypeScript, Ant Design 6, Ant Design Pro Components, React Router, and TanStack Query.
 
-The application shell provides login entry, explicit routing, application navigation, organization context, unified tasks, notifications, forms, files, and future registered business applications. Authentication, authorization, and platform capabilities are consumed through `platform-sdk` and reviewed contracts. HTTP clients and types are generated from reviewed OpenAPI contracts.
+The application shell provides a login entry, explicit routing, application navigation, assignment context, unified tasks, notifications, forms, and files. Authentication, authorization, and platform capabilities will be consumed through reviewed generated clients once those contracts pass G2. Until an adapter is composed, production fails closed with a maintenance state; development and tests use visibly labelled synthetic fixtures behind `WorkbenchPort`.
 
 PC Web uses a same-site BFF session. Browser JavaScript must never receive or persist Keycloak access, refresh, or ID tokens; it only consumes the minimal current-user view and sends CSRF-protected requests with the HTTP-only session cookie. See [ADR-0005](../../docs/08-架构决策/ADR-0005-PC-Web采用BFF登录会话.md).
 
@@ -10,7 +10,7 @@ The first foundation stage enables standard Keycloak login. Internal workforce a
 
 The first notification stage uses TanStack Query polling for the in-app notification list and unread count. WebSocket/SSE and external channels remain out of scope. Notification deep links resolve through the application registry and recheck authorization at the target. See [第一阶段通知范围](../../docs/01-权威与基线/第一阶段通知范围.md).
 
-CRM-specific pages are added only after their business contracts are confirmed.
+Domain-specific pages are added only after their business contracts are confirmed.
 
 See [ADR-0001](../../docs/08-架构决策/ADR-0001-PC-Web采用Vite与Ant-Design技术栈.md) for the accepted frontend baseline and boundaries.
 

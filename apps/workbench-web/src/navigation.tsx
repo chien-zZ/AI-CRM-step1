@@ -1,122 +1,50 @@
 import {
-  AuditOutlined,
+  AppstoreOutlined,
   BellOutlined,
-  CalendarOutlined,
   CheckSquareOutlined,
-  ClockCircleOutlined,
-  DesktopOutlined,
-  ExportOutlined,
   FileOutlined,
-  FundProjectionScreenOutlined,
-  GlobalOutlined,
-  InboxOutlined,
-  MailOutlined,
-  ScheduleOutlined,
-  SendOutlined,
+  FormOutlined,
+  HomeOutlined,
   SettingOutlined,
-  TeamOutlined,
-  ThunderboltOutlined,
-  UnorderedListOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
-import React, { type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-export interface SecondaryNavItem {
+export interface NavigationItem {
   key: string;
   label: string;
   icon: ReactNode;
+  children?: NavigationItem[];
 }
 
-export interface PrimaryNavItem {
-  key: string;
-  label: string;
-  icon: ReactNode;
-  children: SecondaryNavItem[];
-}
-
-export const navigation: PrimaryNavItem[] = [
+export const navigation: NavigationItem[] = [
+  { key: "/workspace", label: "工作概览", icon: <HomeOutlined /> },
   {
-    key: "workbench",
-    label: "工作台",
-    icon: <DesktopOutlined />,
+    key: "/coordination",
+    label: "协同",
+    icon: <AppstoreOutlined />,
     children: [
-      { key: "/", label: "经营首页", icon: <FundProjectionScreenOutlined /> },
-      { key: "/students", label: "学员与分配", icon: <TeamOutlined /> },
-      { key: "/approvals", label: "审批中心", icon: <AuditOutlined /> },
-      { key: "/risks", label: "异常与风险", icon: <ThunderboltOutlined /> },
+      { key: "/tasks", label: "统一任务", icon: <CheckSquareOutlined /> },
+      { key: "/notifications", label: "站内通知", icon: <BellOutlined /> },
     ],
   },
   {
-    key: "calendar",
-    label: "日历",
-    icon: <CalendarOutlined />,
+    key: "/resources",
+    label: "平台资源",
+    icon: <AppstoreOutlined />,
     children: [
-      { key: "/calendar", label: "我的日程", icon: <ScheduleOutlined /> },
-      { key: "/calendar/interviews", label: "采访排期", icon: <ClockCircleOutlined /> },
+      { key: "/forms", label: "表单", icon: <FormOutlined /> },
+      { key: "/files", label: "文件", icon: <FileOutlined /> },
     ],
   },
-  {
-    key: "approvals",
-    label: "审批",
-    icon: <AuditOutlined />,
-    children: [
-      { key: "/workflow/mine", label: "我发起的", icon: <ExportOutlined /> },
-      { key: "/workflow/todo", label: "待我审批", icon: <CheckSquareOutlined /> },
-      { key: "/workflow/all", label: "全部审批", icon: <UnorderedListOutlined /> },
-    ],
-  },
-  {
-    key: "notifications",
-    label: "通知",
-    icon: <BellOutlined />,
-    children: [
-      { key: "/notifications", label: "全部通知", icon: <BellOutlined /> },
-      { key: "/notifications/todo", label: "待办提醒", icon: <ClockCircleOutlined /> },
-      { key: "/notifications/system", label: "系统 / 外部", icon: <GlobalOutlined /> },
-    ],
-  },
-  {
-    key: "mail",
-    label: "邮件",
-    icon: <MailOutlined />,
-    children: [
-      { key: "/mail/inbox", label: "收件箱", icon: <InboxOutlined /> },
-      { key: "/mail/sent", label: "已发送", icon: <SendOutlined /> },
-      { key: "/mail/drafts", label: "草稿箱", icon: <FileOutlined /> },
-    ],
-  },
-  {
-    key: "settings",
-    label: "设置",
-    icon: <SettingOutlined />,
-    children: [
-      { key: "/settings/system", label: "系统设置", icon: <SettingOutlined /> },
-      { key: "/settings/profile", label: "个人信息", icon: <UserOutlined /> },
-    ],
-  },
+  { key: "/settings", label: "个人设置", icon: <SettingOutlined /> },
 ];
 
-export function matchNavigation(pathname: string): {
-  primary: PrimaryNavItem;
-  secondary: SecondaryNavItem;
-} {
-  let bestMatch: { primary: PrimaryNavItem; secondary: SecondaryNavItem } | undefined;
+export function flattenNavigation(items: NavigationItem[] = navigation): NavigationItem[] {
+  return items.flatMap((item) => [item, ...flattenNavigation(item.children ?? [])]);
+}
 
-  for (const primary of navigation) {
-    for (const secondary of primary.children) {
-      const matches = secondary.key === "/"
-        ? pathname === "/"
-        : pathname === secondary.key || pathname.startsWith(`${secondary.key}/`);
-      if (matches && (!bestMatch || secondary.key.length > bestMatch.secondary.key.length)) {
-        bestMatch = { primary, secondary };
-      }
-    }
-  }
-
-  const fallbackPrimary = navigation[0];
-  const fallbackSecondary = fallbackPrimary?.children[0];
-  if (!fallbackPrimary || !fallbackSecondary) {
-    throw new Error("Workbench navigation must contain at least one route.");
-  }
-  return bestMatch ?? { primary: fallbackPrimary, secondary: fallbackSecondary };
+export function matchNavigation(pathname: string): NavigationItem | undefined {
+  return flattenNavigation()
+    .filter((item) => pathname === item.key || pathname.startsWith(`${item.key}/`))
+    .sort((left, right) => right.key.length - left.key.length)[0];
 }
