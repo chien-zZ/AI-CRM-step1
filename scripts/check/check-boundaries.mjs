@@ -28,6 +28,16 @@ function internalPackageName(specifier) {
   return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : undefined;
 }
 
+function isPublicWorkspaceImport(specifier, dependency, targetManifest) {
+  if (specifier === dependency) return true;
+  const subpath = `.${specifier.slice(dependency.length)}`;
+  const exported = targetManifest.exports;
+  return exported !== null
+    && typeof exported === "object"
+    && !Array.isArray(exported)
+    && Object.hasOwn(exported, subpath);
+}
+
 export async function analyzeBoundaries(root) {
   const manifests = await walk(root, (path) => path.endsWith(`${sep}package.json`));
   const packages = [];
@@ -59,8 +69,9 @@ export async function analyzeBoundaries(root) {
         }
         const dependency = internalPackageName(specifier);
         if (!dependency) continue;
-        if (specifier !== dependency) errors.push(`${relative(root, source)} deep-imports ${specifier}`);
-        if (!byName.has(dependency)) errors.push(`${relative(root, source)} imports unknown workspace package ${dependency}`);
+        const targetPackage = byName.get(dependency);
+        if (!targetPackage) errors.push(`${relative(root, source)} imports unknown workspace package ${dependency}`);
+        else if (!isPublicWorkspaceImport(specifier, dependency, targetPackage.manifest)) errors.push(`${relative(root, source)} deep-imports ${specifier}`);
         if (dependency === owner.manifest.name) continue;
         const declared = { ...owner.manifest.dependencies, ...owner.manifest.devDependencies, ...owner.manifest.peerDependencies };
         if (!(dependency in declared)) errors.push(`${owner.manifest.name} does not declare ${dependency}`);
