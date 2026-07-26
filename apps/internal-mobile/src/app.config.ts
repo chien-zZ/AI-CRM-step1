@@ -1,4 +1,6 @@
-export default defineAppConfig({
+import type Taro from "@tarojs/taro";
+
+const appConfig: Taro.AppConfig = defineAppConfig({
   pages: [
     "pages/home/index",
     "pages/tasks/index",
@@ -13,3 +15,5 @@ export default defineAppConfig({
     navigationBarTextStyle: "black",
   },
 });
+
+export default appConfig;
