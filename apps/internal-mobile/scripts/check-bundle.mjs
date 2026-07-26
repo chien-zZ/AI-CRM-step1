@@ -26,7 +26,7 @@ async function walk(directory) {
 }
 
 function attribute(tag, name) {
-  const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>]+))`, "iu").exec(tag);
+  const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>]+))`, "iu").exec(tag);
   return match?.[1] ?? match?.[2] ?? match?.[3];
 }
 
@@ -112,7 +112,8 @@ export async function checkBundle({ budgetBytes = entrypointBudgetBytes, outputR
     throw new Error("Production index.html has no initial stylesheet entrypoint.");
   }
 
-  const entrypointFiles = await Promise.all(references.map((reference) => resolveInitialAsset(outputRootReal, outputRootReal, reference)));
+  const resolvedEntrypointFiles = await Promise.all(references.map((reference) => resolveInitialAsset(outputRootReal, outputRootReal, reference)));
+  const entrypointFiles = [...new Set(resolvedEntrypointFiles)];
   const entrypointSizes = await Promise.all(entrypointFiles.map(async (file) => (await stat(file)).size));
   const entrypointBytes = entrypointSizes.reduce((sum, size) => sum + size, 0);
   if (entrypointBytes > budgetBytes) throw new Error(`H5 entrypoint is ${entrypointBytes} bytes; budget is ${budgetBytes} bytes.`);
