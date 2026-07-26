@@ -763,6 +763,800 @@
         ]
       }
     },
+    "/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeArchived",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "archivedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "body": {
+                            "maxLength": 8000,
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "deepLink": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "applicationId": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                "type": "string"
+                              },
+                              "parameters": {
+                                "additionalProperties": {
+                                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                  "type": "string"
+                                },
+                                "maxProperties": 20,
+                                "type": "object"
+                              },
+                              "resourceId": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                "type": "string"
+                              },
+                              "resourceType": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                "type": "string"
+                              },
+                              "routeId": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "applicationId",
+                              "routeId",
+                              "resourceType",
+                              "resourceId"
+                            ],
+                            "type": "object"
+                          },
+                          "intentId": {
+                            "format": "uuid",
+                            "type": "string"
+                          },
+                          "notificationId": {
+                            "format": "uuid",
+                            "type": "string"
+                          },
+                          "notificationType": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "preferenceDecision": {
+                            "enum": [
+                              "deliver",
+                              "suppress"
+                            ],
+                            "type": "string"
+                          },
+                          "preferenceReason": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "preferenceVersion": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "principalId": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "readAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "recipientReference": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "resolutionReference": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "resolutionVersion": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "sourceId": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "sourceType": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "templateKey": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "templateVersion": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "title": {
+                            "maxLength": 512,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "notificationId",
+                          "intentId",
+                          "principalId",
+                          "recipientReference",
+                          "resolutionReference",
+                          "resolutionVersion",
+                          "templateKey",
+                          "templateVersion",
+                          "notificationType",
+                          "title",
+                          "body",
+                          "sourceType",
+                          "sourceId",
+                          "deepLink",
+                          "preferenceDecision",
+                          "preferenceReason",
+                          "preferenceVersion",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "maxLength": 128,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current principal's visible in-app notifications."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side authorization denied."
+          },
+          "503": {
+            "description": "Authorization, audit, recipient resolution, template validation, or storage failed closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/notifications/{notificationId}": {
+      "get": {
+        "operationId": "getNotification",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notificationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "archivedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "body": {
+                      "maxLength": 8000,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "deepLink": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "applicationId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "additionalProperties": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "maxProperties": 20,
+                          "type": "object"
+                        },
+                        "resourceId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "resourceType": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "routeId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "applicationId",
+                        "routeId",
+                        "resourceType",
+                        "resourceId"
+                      ],
+                      "type": "object"
+                    },
+                    "intentId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "notificationId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "notificationType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "preferenceDecision": {
+                      "enum": [
+                        "deliver",
+                        "suppress"
+                      ],
+                      "type": "string"
+                    },
+                    "preferenceReason": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "preferenceVersion": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "principalId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "readAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "recipientReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "resolutionReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "resolutionVersion": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "templateKey": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "templateVersion": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "title": {
+                      "maxLength": 512,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "notificationId",
+                    "intentId",
+                    "principalId",
+                    "recipientReference",
+                    "resolutionReference",
+                    "resolutionVersion",
+                    "templateKey",
+                    "templateVersion",
+                    "notificationType",
+                    "title",
+                    "body",
+                    "sourceType",
+                    "sourceId",
+                    "deepLink",
+                    "preferenceDecision",
+                    "preferenceReason",
+                    "preferenceVersion",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current principal's notification after object authorization."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side authorization denied."
+          },
+          "404": {
+            "description": "Notification does not exist for the current principal."
+          },
+          "503": {
+            "description": "Authorization, audit, recipient resolution, template validation, or storage failed closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/notifications/{notificationId}/archive": {
+      "post": {
+        "operationId": "archiveNotification",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notificationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "archivedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "body": {
+                      "maxLength": 8000,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "deepLink": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "applicationId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "additionalProperties": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "maxProperties": 20,
+                          "type": "object"
+                        },
+                        "resourceId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "resourceType": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "routeId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "applicationId",
+                        "routeId",
+                        "resourceType",
+                        "resourceId"
+                      ],
+                      "type": "object"
+                    },
+                    "intentId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "notificationId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "notificationType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "preferenceDecision": {
+                      "enum": [
+                        "deliver",
+                        "suppress"
+                      ],
+                      "type": "string"
+                    },
+                    "preferenceReason": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "preferenceVersion": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "principalId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "readAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "recipientReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "resolutionReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "resolutionVersion": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "templateKey": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "templateVersion": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "title": {
+                      "maxLength": 512,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "notificationId",
+                    "intentId",
+                    "principalId",
+                    "recipientReference",
+                    "resolutionReference",
+                    "resolutionVersion",
+                    "templateKey",
+                    "templateVersion",
+                    "notificationType",
+                    "title",
+                    "body",
+                    "sourceType",
+                    "sourceId",
+                    "deepLink",
+                    "preferenceDecision",
+                    "preferenceReason",
+                    "preferenceVersion",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Idempotently archived in-app notification."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side authorization denied."
+          },
+          "404": {
+            "description": "Notification does not exist for the current principal."
+          },
+          "503": {
+            "description": "Authorization, audit, recipient resolution, template validation, or storage failed closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/notifications/{notificationId}/read": {
+      "post": {
+        "description": "Idempotently changes only the current principal's in-app read state; it never completes a task or business action.",
+        "operationId": "markNotificationRead",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notificationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "archivedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "body": {
+                      "maxLength": 8000,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "deepLink": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "applicationId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "additionalProperties": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "maxProperties": 20,
+                          "type": "object"
+                        },
+                        "resourceId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "resourceType": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "routeId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "applicationId",
+                        "routeId",
+                        "resourceType",
+                        "resourceId"
+                      ],
+                      "type": "object"
+                    },
+                    "intentId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "notificationId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "notificationType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "preferenceDecision": {
+                      "enum": [
+                        "deliver",
+                        "suppress"
+                      ],
+                      "type": "string"
+                    },
+                    "preferenceReason": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "preferenceVersion": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "principalId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "readAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "recipientReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "resolutionReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "resolutionVersion": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "templateKey": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "templateVersion": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "title": {
+                      "maxLength": 512,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "notificationId",
+                    "intentId",
+                    "principalId",
+                    "recipientReference",
+                    "resolutionReference",
+                    "resolutionVersion",
+                    "templateKey",
+                    "templateVersion",
+                    "notificationType",
+                    "title",
+                    "body",
+                    "sourceType",
+                    "sourceId",
+                    "deepLink",
+                    "preferenceDecision",
+                    "preferenceReason",
+                    "preferenceVersion",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Updated in-app notification."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side authorization denied."
+          },
+          "404": {
+            "description": "Notification does not exist for the current principal."
+          },
+          "503": {
+            "description": "Authorization, audit, recipient resolution, template validation, or storage failed closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/notifications/unread-count": {
+      "get": {
+        "operationId": "getNotificationUnreadCount",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current principal's unread count."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side authorization denied."
+          },
+          "503": {
+            "description": "Authorization, audit, recipient resolution, template validation, or storage failed closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
     "/tasks": {
       "get": {
         "operationId": "listTasks",
