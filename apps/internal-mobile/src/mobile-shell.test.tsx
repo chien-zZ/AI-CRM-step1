@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import type { PropsWithChildren, ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -36,7 +36,7 @@ const ready: ReadyMobileBootstrap = {
   },
 };
 
-function setup(result: MobileBootstrapResult = ready, parameters: Readonly<Record<string, string>> = {}, initiallyOnline = true): {
+function setup(result: MobileBootstrapResult = ready, parameters: Readonly<Record<string, string>> = {}, initiallyOnline: boolean | Promise<boolean> = true): {
   adapters: ReturnTypeOfAdapters;
   emitNetwork: (online: boolean) => void;
   port: InternalMobilePort;
@@ -49,7 +49,7 @@ function setup(result: MobileBootstrapResult = ready, parameters: Readonly<Recor
       replace: vi.fn().mockResolvedValue(undefined),
     },
     connectivity: {
-      current: vi.fn().mockResolvedValue(initiallyOnline),
+      current: vi.fn(() => Promise.resolve(initiallyOnline)),
       subscribe: vi.fn((listener: (online: boolean) => void) => {
         networkListener = listener;
         return vi.fn();
@@ -106,6 +106,19 @@ describe("internal mobile shell", () => {
   it("fails closed as offline when the application starts without a change event", async () => {
     const context = setup(ready, {}, false);
     render(<MobileShell adapters={context.adapters} port={context.port} section="home" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("网络已断开");
+  });
+
+  it("does not let a stale initial network query overwrite a newer change event", async () => {
+    let resolveInitial: ((online: boolean) => void) | undefined;
+    const initial = new Promise<boolean>((resolve) => { resolveInitial = resolve; });
+    const context = setup(ready, {}, initial);
+    render(<MobileShell adapters={context.adapters} port={context.port} section="home" />);
+    await act(async () => {
+      context.emitNetwork(false);
+      resolveInitial?.(true);
+      await initial;
+    });
     expect(await screen.findByRole("alert")).toHaveTextContent("网络已断开");
   });
 

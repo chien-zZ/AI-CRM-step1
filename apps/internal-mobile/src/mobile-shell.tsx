@@ -76,11 +76,12 @@ export function MobileShell({ adapters, initialParameters, port, section }: { ad
   useEffect(load, [port]);
   useEffect(() => {
     let active = true;
+    let eventSeen = false;
     void adapters.connectivity.current().then(
-      (currentOnline) => { if (active) setOnline(currentOnline); },
-      () => { if (active) setOnline(false); },
+      (currentOnline) => { if (active && !eventSeen) setOnline(currentOnline); },
+      () => { if (active && !eventSeen) setOnline(false); },
     );
-    const unsubscribe = adapters.connectivity.subscribe((nextOnline) => { setOnline(nextOnline); });
+    const unsubscribe = adapters.connectivity.subscribe((nextOnline) => { eventSeen = true; setOnline(nextOnline); });
     return () => { active = false; unsubscribe(); };
   }, [adapters.connectivity]);
 
