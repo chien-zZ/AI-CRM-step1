@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="urn:ai-crm:testing:workflow">
+  <process id="syntheticHumanTaskV1" name="Synthetic Human Task" isExecutable="true">
+    <startEvent id="syntheticStart" />
+    <sequenceFlow id="flowStartToReview" sourceRef="syntheticStart" targetRef="syntheticReviewTask" />
+    <userTask id="syntheticReviewTask" name="Synthetic Review" />
+    <sequenceFlow id="flowReviewToEnd" sourceRef="syntheticReviewTask" targetRef="syntheticEnd" />
+    <endEvent id="syntheticEnd" />
+  </process>
+</definitions>

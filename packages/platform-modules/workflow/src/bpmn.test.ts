@@ -1,0 +1,3 @@
+import { readFile } from "node:fs/promises";
+import { describe,expect,it } from "vitest";
+describe("synthetic BPMN asset",()=>{it("is executable, business-neutral and contains one unassigned human task",async()=>{const xml=await readFile(new URL("../../../../deploy/flowable/bpmn/synthetic-human-task.v1.bpmn20.xml",import.meta.url),"utf8");expect(xml).toMatch(/<process\b[^>]*id="syntheticHumanTaskV1"[^>]*isExecutable="true"/u);expect(xml.match(/<userTask\b/gu)).toHaveLength(1);expect(xml).not.toMatch(/assignee|candidateUsers|candidateGroups|serviceTask|scriptTask|timerEventDefinition/iu);expect(xml).not.toMatch(/lead|order|refund|settlement|student|customer/iu);});});

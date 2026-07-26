@@ -162,7 +162,11 @@ importers:
 
   packages/platform-modules/task-center: {}
 
-  packages/platform-modules/workflow: {}
+  packages/platform-modules/workflow:
+    dependencies:
+      '@xmldom/xmldom':
+        specifier: 0.9.10
+        version: 0.9.10
 
   packages/platform-sdk:
     dependencies:
@@ -1311,6 +1315,10 @@ packages:
 
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
+
+  '@xmldom/xmldom@0.9.10':
+    resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
+    engines: {node: '>=14.6'}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -3878,6 +3886,8 @@ snapshots:
       '@vitest/pretty-format': 3.2.4
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  '@xmldom/xmldom@0.9.10': {}
 
   acorn-jsx@5.3.2(acorn@8.17.0):
     dependencies:

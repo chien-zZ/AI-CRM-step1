@@ -1,0 +1,3 @@
+services:
+  flowable:
+    ports: ["127.0.0.1:${AI_CRM_TEST_FLOWABLE_PORT:?set an isolated test port}:8080"]
