@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/configuration/v1/parameter-activation-termination.schema.json",
+  "title": "Immutable Parameter Activation Termination V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "terminationId", "activationId", "parameterKey", "effectiveTo", "occurredAt"],
+  "properties": {
+    "version": { "const": 1 },
+    "terminationId": { "$ref": "#/$defs/uuid" },
+    "activationId": { "$ref": "#/$defs/uuid" },
+    "parameterKey": { "$ref": "#/$defs/id" },
+    "effectiveTo": { "$ref": "#/$defs/dateTime" },
+    "occurredAt": { "$ref": "#/$defs/dateTime" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "dateTime": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$" }
+  }
+}

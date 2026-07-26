@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/forms/v1/form-definition-reference.schema.json",
+  "title": "Form Definition Reference V1",
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "definitionId", "releaseVersion", "contentDigest"],
+  "properties": {
+    "version": { "const": 1 },
+    "definitionId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "releaseVersion": { "type": "integer", "minimum": 1 },
+    "contentDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}
