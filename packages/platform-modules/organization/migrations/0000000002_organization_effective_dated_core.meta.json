@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "organization",
+  "purpose": "Create the business-neutral effective-dated workforce, organization, position, assignment, subject-association, and idempotency receipt structures.",
+  "applicationCompatibility": ">=0.0.0",
+  "lockImpact": "Creates a new module-owned schema, tables, indexes, functions, and triggers only; no existing application table is rewritten or locked. At runtime, placement writes take one transaction-scoped organization hierarchy advisory lock so concurrent hierarchy changes are serialized.",
+  "dataImpact": "Creates empty organization structures. No people, company units, positions, assignments, authentication subjects, or business data are inserted.",
+  "backfill": "Not required. The first release starts with empty structures and only accepts explicit controlled commands.",
+  "destructive": false,
+  "recovery": "Roll back the application while leaving the additive empty or populated schema intact. Restore the pre-migration recovery point only before any organization facts are accepted; never drop populated history mechanically.",
+  "forwardFix": "Append a reviewed organization-owned migration for constraint or schema repairs. Do not rewrite this migration after it has been applied."
+}

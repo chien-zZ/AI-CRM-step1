@@ -137,7 +137,17 @@ importers:
 
   packages/platform-modules/notifications: {}
 
-  packages/platform-modules/organization: {}
+  packages/platform-modules/organization:
+    dependencies:
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../database
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)
+      pg:
+        specifier: 8.16.3
+        version: 8.16.3
 
   packages/platform-modules/task-center: {}
 
