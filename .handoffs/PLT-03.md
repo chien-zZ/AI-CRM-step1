@@ -4,7 +4,7 @@
 - Branch: `task/PLT-03-file-center`
 - Owner: Agent B
 - Independent Reviewer: Agent D
-- Status: `SELF_REVIEW`
+- Status: `RE_REVIEW`
 - Baseline: `6474690dffe2af0b8f73f76a1659733d94272d3e`
 - Migration lease: `0000000010`
 - Allowed paths: `packages/platform-modules/file-center/`, `contracts/files/`, `.handoffs/PLT-03.md`
@@ -109,18 +109,26 @@
 9. A missing current resource link returned a denied error without a matching denied audit outcome. Download denial from current link state is now explicitly audited before returning.
 10. Successful completion, scan, and reconciliation replays could re-run external inspection/scanning or fail after session expiry/object movement because service-level state checks ran before the store receipt. Command fingerprints are now stable before external work, durable receipts are read after current authorization, and regression tests prove stable replay without another provider call.
 
+## Independent Review Round 1 Findings Fixed
+
+1. **P1 bounded scan read:** `StorageAdapter.readObject` now requires `maximumBytes`; the local adapter checks the open file and reads at most the ceiling plus one detection byte in bounded chunks. The service independently rejects oversized adapter results before the scanner. Tests grow an object after completion and prove the scanner is never invoked.
+2. **P1 quarantine path escape:** object and quarantine targets now share root-relative ancestor validation. Every existing ancestor must be a real directory inside the controlled root; symlinks/junctions fail closed. A regression test points the quarantine directory outside the root and verifies no outside write occurs.
+3. **P2 partial quarantine convergence:** retries now inspect source/target binary and metadata states. A completed binary move with source metadata still present is repaired; missing or conflicting metadata fails explicitly. Quarantine success requires both isolated files.
+4. **P1 reconciliation coordination:** reconciliation changes only missing `pending_scan`/`available` versions and preserves quarantine/cleanup/deleted states. Cleanup completion now requires an actual `cleanup_pending → deleted` content transition before marking the session cleaned. Unit and PostgreSQL tests cover both preserved intermediate states and the split-state rollback.
+5. **P2 upload expiry TOCTOU:** completion captures the trusted cutoff after storage inspection. Both memory and PostgreSQL stores verify the locked session has not expired at that cutoff before any durable transition. A delayed-inspection regression test proves the session and version remain unchanged.
+
 ## Verification Evidence
 
 - `pnpm --filter @ai-crm/platform-file-center typecheck` — passed 2026-07-26.
 - `pnpm --filter @ai-crm/platform-file-center lint` — passed 2026-07-26.
-- `pnpm --filter @ai-crm/platform-file-center test` — passed, 19/19 executable unit, contract-alignment, adapter, and package tests; 4 PostgreSQL tests correctly skipped in the unit command.
-- `pnpm --filter @ai-crm/platform-file-center test:integration` — passed, 4/4 real PostgreSQL tests.
+- `pnpm --filter @ai-crm/platform-file-center test` — passed, 25/25 executable unit, contract-alignment, adapter, and package tests; 5 PostgreSQL tests correctly skipped in the unit command.
+- `pnpm --filter @ai-crm/platform-file-center test:integration` — passed, 5/5 real PostgreSQL tests.
 - `pnpm contracts:check` — passed, 28/28 packages.
-- `pnpm check` — passed, 140/140 workspace tasks on the final owner candidate.
+- `pnpm check` — passed, 140/140 workspace tasks on the Round 1 fix candidate.
 - `git diff --check` — passed; allowed-path audit contains only `packages/platform-modules/file-center/`, `contracts/files/`, and `.handoffs/PLT-03.md`.
 
 ## Independent Review
 
-- Round 1: pending Agent D review.
-- Actionable findings: pending.
+- Round 1: five findings received (P1 × 3, P2 × 2); all fixed with behavior regression coverage.
+- Actionable findings: pending original Reviewer re-review.
 - G2 acceptance: pending zero-finding re-review and complete checks.

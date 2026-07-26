@@ -16,7 +16,7 @@ export interface StorageAdapter {
   deleteObject(input: { readonly objectHandle: string }): Promise<void>;
   inspectObject(input: { readonly objectHandle: string }): Promise<StorageObjectMetadata>;
   quarantineObject(input: { readonly objectHandle: string }): Promise<void>;
-  readObject(input: { readonly objectHandle: string }): Promise<Uint8Array>;
+  readObject(input: { readonly maximumBytes: number; readonly objectHandle: string }): Promise<Uint8Array>;
 }
 export interface MalwareScanner { scan(input: { readonly bytes: Uint8Array; readonly maximumBytes: number }): Promise<{ readonly outcome: "clean" | "malicious" | "unscannable"; readonly scannerVersion: string }> }
 export interface FileAuthorizationRequest { readonly action: "file:cleanup" | "file:download" | "file:link" | "file:reconcile" | "file:scan" | "file:upload"; readonly actor: FileActor; readonly ownerModule?: string; readonly resourceReference: string }
