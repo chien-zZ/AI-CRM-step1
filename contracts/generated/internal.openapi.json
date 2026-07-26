@@ -1,6 +1,59 @@
 {
   "components": {
     "schemas": {
+      "AuthenticationError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "authentication_required",
+              "authentication_callback_invalid",
+              "authentication_csrf_rejected",
+              "authentication_dependency_unavailable",
+              "authentication_refresh_in_progress"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "BrowserSession": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "client": {
+            "const": "pc-web",
+            "type": "string"
+          },
+          "csrfToken": {
+            "maxLength": 512,
+            "minLength": 32,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "authenticatedAt",
+          "expiresAt",
+          "csrfToken"
+        ],
+        "type": "object"
+      },
       "HealthStatus": {
         "additionalProperties": false,
         "properties": {
@@ -25,6 +78,672 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/auth/pc/callback": {
+      "get": {
+        "operationId": "completePcLogin",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 32,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Establish an opaque BFF session, rotate its identifier, and redirect to the allowlisted return path.",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Set-Cookie": {
+                "description": "Opaque secure BFF session Cookie rotation or deletion; never contains a Keycloak Token.",
+                "required": true,
+                "schema": {
+                  "maxLength": 1024,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The one-time callback transaction is invalid, expired, or already consumed."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The identity provider or session store is unavailable; authentication fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/auth/pc/login": {
+      "get": {
+        "operationId": "beginPcLogin",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "returnTo",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the reviewed Keycloak authorization endpoint.",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The requested local return path is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The identity provider or session store is unavailable; login fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/auth/pc/logout": {
+      "post": {
+        "operationId": "logoutPcSession",
+        "parameters": [
+          {
+            "description": "Required when an existing browser session Cookie is present.",
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 32,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Supply Origin or Referer. An existing-session mutation is rejected when neither identifies an allowlisted origin.",
+            "in": "header",
+            "name": "Origin",
+            "required": false,
+            "schema": {
+              "format": "uri",
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fallback source evidence when Origin is unavailable; its origin must be allowlisted.",
+            "in": "header",
+            "name": "Referer",
+            "required": false,
+            "schema": {
+              "format": "uri",
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Clear an absent session Cookie idempotently; no provider redirect is required.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Opaque secure BFF session Cookie rotation or deletion; never contains a Keycloak Token.",
+                "required": true,
+                "schema": {
+                  "maxLength": 1024,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "Revoke the local session, clear its Cookie, and redirect the browser to the token-free Keycloak logout flow.",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Set-Cookie": {
+                "description": "Opaque secure BFF session Cookie rotation or deletion; never contains a Keycloak Token.",
+                "required": true,
+                "schema": {
+                  "maxLength": 1024,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The supplied session Cookie is malformed, expired, or revoked."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "CSRF validation failed for an existing session."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Session storage or durable authentication audit is unavailable; logout fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/auth/pc/refresh": {
+      "post": {
+        "operationId": "refreshPcSession",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 32,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Supply Origin or Referer. An existing-session mutation is rejected when neither identifies an allowlisted origin.",
+            "in": "header",
+            "name": "Origin",
+            "required": false,
+            "schema": {
+              "format": "uri",
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fallback source evidence when Origin is unavailable; its origin must be allowlisted.",
+            "in": "header",
+            "name": "Referer",
+            "required": false,
+            "schema": {
+              "format": "uri",
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Refresh the server-side Keycloak session and rotate the opaque BFF session identifier.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Opaque secure BFF session Cookie rotation or deletion; never contains a Keycloak Token.",
+                "required": true,
+                "schema": {
+                  "maxLength": 1024,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The session or refresh credential is no longer valid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "CSRF validation failed."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another refresh owns the short-lived session refresh lease; the request must not reuse the refresh credential."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The identity provider or session store is unavailable; refresh fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/auth/pc/session": {
+      "get": {
+        "operationId": "getPcSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "authenticatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "client": {
+                      "const": "pc-web",
+                      "type": "string"
+                    },
+                    "csrfToken": {
+                      "maxLength": 512,
+                      "minLength": 32,
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "client",
+                    "authenticatedAt",
+                    "expiresAt",
+                    "csrfToken"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Return the browser-safe view of the current BFF session."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The session is missing, expired, revoked, or invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "authentication_required",
+                        "authentication_callback_invalid",
+                        "authentication_csrf_rejected",
+                        "authentication_dependency_unavailable",
+                        "authentication_refresh_in_progress"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The identity provider or session store is unavailable; session validation fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
     "/health/live": {
       "get": {
         "operationId": "getLiveness",

@@ -22,6 +22,8 @@
     "compose:dev:down": "docker compose -p ai-crm-dev -f deploy/compose/compose.base.yml -f deploy/compose/compose.dev.yml down",
     "db:migrate": "pnpm --filter @ai-crm/database build && node scripts/migration/run.mjs",
     "db:test:integration": "node scripts/check/run-database-integration.mjs",
+    "auth:test:integration": "node scripts/check/run-authentication-integration.mjs",
+    "auth:rotate-client-secret": "node scripts/bootstrap/rotate-keycloak-client-secret.mjs",
     "compose:test:integration": "node scripts/check/run-compose-integration.mjs",
     "check": "pnpm repo:check && pnpm compose:check && node scripts/contracts/generate.mjs --check && turbo run build lint typecheck test contracts:check"
   },

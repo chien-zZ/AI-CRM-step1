@@ -22,6 +22,8 @@ secrets:
     file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/postgres_flowable_password
   keycloak_bootstrap_password:
     file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/keycloak_bootstrap_password
+  pc_oidc_client_secret:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/pc_oidc_client_secret
   flowable_admin_password:
     file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/test}/flowable_admin_password
   rabbitmq_password:

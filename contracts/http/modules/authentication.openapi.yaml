@@ -1,0 +1,256 @@
+openapi: 3.1.0
+info:
+  title: AI-CRM Authentication API
+  version: 0.1.0
+paths:
+  /auth/pc/login:
+    get:
+      operationId: beginPcLogin
+      x-ai-crm-audiences: [internal]
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "302":
+          description: Redirect to the reviewed Keycloak authorization endpoint.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+        "400":
+          description: The requested local return path is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "503":
+          description: The identity provider or session store is unavailable; login fails closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+  /auth/pc/callback:
+    get:
+      operationId: completePcLogin
+      x-ai-crm-audiences: [internal]
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 4096
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 32
+            maxLength: 512
+      responses:
+        "302":
+          description: Establish an opaque BFF session, rotate its identifier, and redirect to the allowlisted return path.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+        "400":
+          description: The one-time callback transaction is invalid, expired, or already consumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "503":
+          description: The identity provider or session store is unavailable; authentication fails closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+  /auth/pc/session:
+    get:
+      operationId: getPcSession
+      x-ai-crm-audiences: [internal]
+      responses:
+        "200":
+          description: Return the browser-safe view of the current BFF session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserSession"
+        "401":
+          description: The session is missing, expired, revoked, or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "503":
+          description: The identity provider or session store is unavailable; session validation fails closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+  /auth/pc/refresh:
+    post:
+      operationId: refreshPcSession
+      x-ai-crm-audiences: [internal]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/Referer"
+      responses:
+        "204":
+          description: Refresh the server-side Keycloak session and rotate the opaque BFF session identifier.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+        "401":
+          description: The session or refresh credential is no longer valid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "403":
+          description: CSRF validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "409":
+          description: Another refresh owns the short-lived session refresh lease; the request must not reuse the refresh credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "503":
+          description: The identity provider or session store is unavailable; refresh fails closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+  /auth/pc/logout:
+    post:
+      operationId: logoutPcSession
+      x-ai-crm-audiences: [internal]
+      parameters:
+        - name: X-CSRF-Token
+          in: header
+          required: false
+          description: Required when an existing browser session Cookie is present.
+          schema:
+            type: string
+            minLength: 32
+            maxLength: 512
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/Referer"
+      responses:
+        "302":
+          description: Revoke the local session, clear its Cookie, and redirect the browser to the token-free Keycloak logout flow.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+        "204":
+          description: Clear an absent session Cookie idempotently; no provider redirect is required.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+        "401":
+          description: The supplied session Cookie is malformed, expired, or revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "403":
+          description: CSRF validation failed for an existing session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+        "503":
+          description: Session storage or durable authentication audit is unavailable; logout fails closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationError"
+components:
+  headers:
+    SessionCookie:
+      description: Opaque secure BFF session Cookie rotation or deletion; never contains a Keycloak Token.
+      required: true
+      schema:
+        type: string
+        maxLength: 1024
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 512
+    Origin:
+      name: Origin
+      in: header
+      required: false
+      description: Supply Origin or Referer. An existing-session mutation is rejected when neither identifies an allowlisted origin.
+      schema:
+        type: string
+        format: uri
+        maxLength: 512
+    Referer:
+      name: Referer
+      in: header
+      required: false
+      description: Fallback source evidence when Origin is unavailable; its origin must be allowlisted.
+      schema:
+        type: string
+        format: uri
+        maxLength: 2048
+  schemas:
+    BrowserSession:
+      type: object
+      additionalProperties: false
+      required: [client, authenticatedAt, expiresAt, csrfToken]
+      properties:
+        client:
+          type: string
+          const: pc-web
+        authenticatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        csrfToken:
+          type: string
+          minLength: 32
+          maxLength: 512
+    AuthenticationError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - authentication_required
+            - authentication_callback_invalid
+            - authentication_csrf_rejected
+            - authentication_dependency_unavailable
+            - authentication_refresh_in_progress
+        message:
+          type: string
+          maxLength: 200

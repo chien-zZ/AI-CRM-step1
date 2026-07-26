@@ -1,0 +1,29 @@
+name: ai-crm-auth-test
+
+services:
+  redis:
+    ports: ["127.0.0.1:${AI_CRM_TEST_REDIS_PORT:-16379}:6379"]
+  keycloak:
+    ports: ["127.0.0.1:${AI_CRM_TEST_KEYCLOAK_PORT:-18080}:8080"]
+
+secrets:
+  postgres_admin_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/postgres_admin_password
+  postgres_app_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/postgres_app_password
+  postgres_migration_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/postgres_migration_password
+  postgres_keycloak_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/postgres_keycloak_password
+  postgres_flowable_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/postgres_flowable_password
+  keycloak_bootstrap_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/keycloak_bootstrap_password
+  pc_oidc_client_secret:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/pc_oidc_client_secret
+  flowable_admin_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/flowable_admin_password
+  rabbitmq_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/rabbitmq_password
+  redis_password:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR}/redis_password

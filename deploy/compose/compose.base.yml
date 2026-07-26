@@ -84,8 +84,9 @@ services:
     secrets:
       - postgres_keycloak_password
       - keycloak_bootstrap_password
+      - pc_oidc_client_secret
     volumes:
-      - ../keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
+      - ../keycloak/realm-dev.json:/opt/ai-crm/realm-dev.template.json:ro
       - ./entrypoints/keycloak-entrypoint.sh:/opt/ai-crm/keycloak-entrypoint.sh:ro
     depends_on:
       postgres:
@@ -176,6 +177,8 @@ secrets:
     file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/postgres_flowable_password
   keycloak_bootstrap_password:
     file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/keycloak_bootstrap_password
+  pc_oidc_client_secret:
+    file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/pc_oidc_client_secret
   flowable_admin_password:
     file: ${AI_CRM_COMPOSE_SECRET_DIR:-.runtime/dev}/flowable_admin_password
   rabbitmq_password:

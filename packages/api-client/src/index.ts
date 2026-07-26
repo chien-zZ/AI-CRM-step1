@@ -2,6 +2,31 @@
 export const packageId = "@ai-crm/api-client" as const;
 export const internalOperations = [
   {
+    "id": "beginPcLogin",
+    "method": "GET",
+    "path": "/auth/pc/login"
+  },
+  {
+    "id": "completePcLogin",
+    "method": "GET",
+    "path": "/auth/pc/callback"
+  },
+  {
+    "id": "getPcSession",
+    "method": "GET",
+    "path": "/auth/pc/session"
+  },
+  {
+    "id": "refreshPcSession",
+    "method": "POST",
+    "path": "/auth/pc/refresh"
+  },
+  {
+    "id": "logoutPcSession",
+    "method": "POST",
+    "path": "/auth/pc/logout"
+  },
+  {
     "id": "getLiveness",
     "method": "GET",
     "path": "/health/live"

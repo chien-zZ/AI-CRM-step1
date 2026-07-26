@@ -6,6 +6,35 @@
   "resetPasswordAllowed": false,
   "rememberMe": false,
   "users": [],
-  "clients": [],
+  "clients": [
+    {
+      "clientId": "ai-crm-pc-bff",
+      "name": "AI-CRM PC BFF",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__AI_CRM_PC_CLIENT_SECRET__",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:8088/auth/pc/callback"],
+      "webOrigins": ["http://127.0.0.1:8088"],
+      "protocolMappers": [
+        {
+          "name": "ai-crm-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "ai-crm-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
   "roles": { "realm": [] }
 }

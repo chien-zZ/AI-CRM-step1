@@ -1,6 +1,59 @@
 {
   "components": {
     "schemas": {
+      "AuthenticationError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "authentication_required",
+              "authentication_callback_invalid",
+              "authentication_csrf_rejected",
+              "authentication_dependency_unavailable",
+              "authentication_refresh_in_progress"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "BrowserSession": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "client": {
+            "const": "pc-web",
+            "type": "string"
+          },
+          "csrfToken": {
+            "maxLength": 512,
+            "minLength": 32,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "authenticatedAt",
+          "expiresAt",
+          "csrfToken"
+        ],
+        "type": "object"
+      },
       "HealthStatus": {
         "additionalProperties": false,
         "properties": {

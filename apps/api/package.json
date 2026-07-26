@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./dist/index.js" },
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "scripts": {
     "dev": "tsc -b --watch --preserveWatchOutput",
     "build": "tsc -b",
@@ -11,5 +13,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "test": "vitest run --config ../../vitest.config.ts",
     "contracts:check": "node ../../scripts/check/verify-package.mjs"
+  },
+  "dependencies": {
+    "@ai-crm/config": "workspace:*",
+    "@ai-crm/platform-auth-context": "workspace:*",
+    "openid-client": "6.8.4",
+    "redis": "6.1.0"
+  },
+  "devDependencies": {
+    "cheerio": "1.1.2",
+    "jose": "6.1.0"
   }
 }

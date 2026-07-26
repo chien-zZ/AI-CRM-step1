@@ -21,6 +21,7 @@ const names = [
   "postgres_keycloak_password",
   "postgres_flowable_password",
   "keycloak_bootstrap_password",
+  "pc_oidc_client_secret",
   "flowable_admin_password",
   "rabbitmq_password",
   "redis_password",

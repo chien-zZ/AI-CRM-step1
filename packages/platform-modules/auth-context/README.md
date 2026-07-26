@@ -1,6 +1,6 @@
 # Auth Context
 
-Validates Keycloak-issued OpenID Connect tokens and converts external subjects into the internal, transport-neutral principal context. Validation includes issuer, audience, signature, expiry, and required claims, and must fail closed.
+Validates Keycloak-issued OpenID Connect Access Tokens and converts external subjects into the internal, transport-neutral principal context. Validation includes issuer, a dedicated API resource audience, signature, expiry, and client binding, and must fail closed. The API audience is mapped only into Access Tokens; an ID Token for the same OAuth Client therefore cannot be substituted.
 
 Trusted, client-specific BFF session adapters perform OIDC/provider and server-side session work before this normalized context reaches domain code. H5 clients use isolated HTTP-only cookies; the WeChat Mini Program uses only an opaque server-session handle. Cookies, session handles, provider identifiers, and Keycloak tokens are never accepted by domain modules directly.
 
