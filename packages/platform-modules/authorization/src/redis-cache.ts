@@ -14,6 +14,7 @@ interface RedisCommandExecutor {
 
 interface RedisRuntimeClient {
   connect(): Promise<void>;
+  destroy(): void;
   quit(): Promise<string>;
   sendCommand(command: readonly string[]): Promise<unknown>;
 }
@@ -164,12 +165,17 @@ export const connectRedisAuthorizationCache = async (
   try {
     await client.connect();
   } catch {
+    try { client.destroy(); } catch { /* Preserve the stable unavailable error. */ }
     throw new TypeError("AUTHORIZATION_CACHE_UNAVAILABLE");
   }
   return Object.freeze({
     cache: createRedisAuthorizationCache({ send: (command) => client.sendCommand(command) }, options.namespace),
     async close() {
-      try { await client.quit(); } catch { /* Cache shutdown cannot change authorization truth. */ }
+      try {
+        await client.quit();
+      } catch {
+        try { client.destroy(); } catch { /* Cache shutdown cannot change authorization truth. */ }
+      }
     },
   });
 };

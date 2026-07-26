@@ -29,7 +29,7 @@ import type {
 } from "./types.js";
 
 const UNAVAILABLE_VERSION = "unavailable";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const TRACE_ID = /^(?!0{32})[0-9a-f]{32}$/u;
 
 const recordSafely = (observer: AuthorizationObserver | undefined, event: Parameters<AuthorizationObserver["record"]>[0]): void => {
@@ -153,8 +153,14 @@ export const createAuthorizationService = (
     operation: "batch_check" | "check" | "resolve_data_scope",
   ): Promise<{ readonly decision: Readonly<AuthorizationDecision>; readonly scope?: Readonly<DataScope> }> => {
     const startedAt = performance.now();
-    const at = clock();
-    const validClock = !Number.isNaN(at.getTime());
+    let clockValue: unknown;
+    try {
+      clockValue = clock();
+    } catch {
+      clockValue = undefined;
+    }
+    const validClock = clockValue instanceof Date && !Number.isNaN(clockValue.getTime());
+    const at: Date = clockValue instanceof Date ? clockValue : new Date(0);
     const evaluatedAt = validClock ? at.toISOString() : new Date(0).toISOString();
     const subject = validateSubjectContext(subjectInput);
     const request = validatePermissionRequest(requestInput);
@@ -163,7 +169,9 @@ export const createAuthorizationService = (
     let cacheStatus: "error" | "hit" | "miss" | "not_used" = "not_used";
     let evaluation: CachedAuthorizationEvaluation;
 
-    if (subject === undefined || request === undefined || !validClock || resolveRequestContainsContext) {
+    if (!validClock) {
+      evaluation = { allowed: false, policyVersion: UNAVAILABLE_VERSION, reason: "policy_unavailable" };
+    } else if (subject === undefined || request === undefined || resolveRequestContainsContext) {
       evaluation = { allowed: false, policyVersion: UNAVAILABLE_VERSION, reason: "invalid_context" };
     } else {
       let version: string;
@@ -225,14 +233,21 @@ export const createAuthorizationService = (
     startedAt: number,
     evaluatedAt: string,
   ): Promise<{ readonly decision: Readonly<AuthorizationDecision>; readonly scope?: Readonly<DataScope> }> => {
-    const decisionId = newDecisionId();
+    let decisionId: unknown;
+    try {
+      decisionId = newDecisionId();
+    } catch {
+      throw new AuthorizationUnavailableError();
+    }
     let traceId: string;
     try {
       traceId = options.traceId();
     } catch {
       throw new AuthorizationUnavailableError();
     }
-    if (!UUID.test(decisionId) || !TRACE_ID.test(traceId)) throw new AuthorizationUnavailableError();
+    if (typeof decisionId !== "string" || !UUID.test(decisionId) || !TRACE_ID.test(traceId)) {
+      throw new AuthorizationUnavailableError();
+    }
     const decision = Object.freeze({
       allowed: evaluation.allowed,
       decisionId,
@@ -269,9 +284,6 @@ export const createAuthorizationService = (
   };
 
   const service: AuthorizationService = {
-    assertAllowed(decision: AuthorizationDecision): void {
-      if (!decision.allowed) throw new AuthorizationDeniedError(decision.decisionId);
-    },
     async batchCheck(subject: AuthorizationSubjectContext, requests: readonly PermissionRequest[]) {
       if (!Array.isArray(requests) || requests.length > 256) throw new TypeError("AUTHORIZATION_BATCH_TOO_LARGE");
       const results = [];
@@ -290,6 +302,11 @@ export const createAuthorizationService = (
       } catch {
         // Cache invalidation is cleanup; policy-version keys preserve authorization truth.
       }
+    },
+    async requireAllowed(subject: AuthorizationSubjectContext, request: PermissionRequest) {
+      const decision = (await decide(subject, request, "check")).decision;
+      if (!decision.allowed) throw new AuthorizationDeniedError(decision.decisionId);
+      return decision;
     },
     async resolveDataScope(
       subject: AuthorizationSubjectContext,

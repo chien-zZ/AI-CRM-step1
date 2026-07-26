@@ -9,7 +9,7 @@ import type {
   ScopeConstraint,
 } from "./types.js";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const IDENTIFIER = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
 const ACTION = /^[a-z][a-z0-9-]*$/u;
 const POLICY_VERSION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -30,7 +30,7 @@ const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boo
   Object.keys(value).sort().join("\0") === [...keys].sort().join("\0");
 const string = (value: unknown, pattern: RegExp, maximum: number): string =>
   typeof value === "string" && value.length <= maximum && pattern.test(value) ? value : invalid();
-const uuid = (value: unknown): string => string(value, UUID, 36);
+const uuid = (value: unknown): string => string(value, UUID, 36).toLowerCase();
 
 const timestamp = (value: unknown): Date => {
   const raw = string(value, TIMESTAMP, 24);
@@ -184,8 +184,11 @@ export const validatePolicySnapshot = (value: unknown, expectedVersion: string):
 export const validateSubjectContext = (value: unknown): Readonly<AuthorizationSubjectContext> | undefined => {
   if (!isRecord(value) || typeof value["workforcePersonId"] !== "string" || !UUID.test(value["workforcePersonId"]) ||
     !Array.isArray(value["activeAssignmentIds"])) return undefined;
-  const activeAssignmentIds = value["activeAssignmentIds"].filter((id): id is string => typeof id === "string");
-  const selectedAssignmentId = value["selectedAssignmentId"];
+  const activeAssignmentIds = value["activeAssignmentIds"]
+    .filter((id): id is string => typeof id === "string")
+    .map((id) => id.toLowerCase());
+  const rawSelectedAssignmentId = value["selectedAssignmentId"];
+  const selectedAssignmentId = typeof rawSelectedAssignmentId === "string" ? rawSelectedAssignmentId.toLowerCase() : rawSelectedAssignmentId;
   if (activeAssignmentIds.length !== value["activeAssignmentIds"].length || activeAssignmentIds.length > 128 ||
     activeAssignmentIds.some((id) => !UUID.test(id)) || new Set(activeAssignmentIds).size !== activeAssignmentIds.length ||
     (selectedAssignmentId !== undefined && (typeof selectedAssignmentId !== "string" ||
@@ -193,7 +196,7 @@ export const validateSubjectContext = (value: unknown): Readonly<AuthorizationSu
   return Object.freeze({
     activeAssignmentIds: Object.freeze([...activeAssignmentIds].sort()),
     ...(selectedAssignmentId === undefined ? {} : { selectedAssignmentId }),
-    workforcePersonId: value["workforcePersonId"],
+    workforcePersonId: value["workforcePersonId"].toLowerCase(),
   });
 };
 

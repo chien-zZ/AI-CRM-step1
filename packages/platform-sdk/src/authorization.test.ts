@@ -14,11 +14,11 @@ describe("platform authorization client", () => {
       reason: "no_applicable_grant",
     };
     const service = {
-      assertAllowed: vi.fn(),
       batchCheck: vi.fn(() => Promise.resolve([decision])),
       check: vi.fn(() => Promise.resolve(decision)),
+      requireAllowed: vi.fn(() => Promise.resolve(decision)),
       resolveDataScope: vi.fn(() => Promise.resolve({ decision })),
-    } satisfies Pick<AuthorizationService, "assertAllowed" | "batchCheck" | "check" | "resolveDataScope">;
+    } satisfies Pick<AuthorizationService, "batchCheck" | "check" | "requireAllowed" | "resolveDataScope">;
     const client = createPlatformAuthorizationClient(service);
     const subject = { activeAssignmentIds: [], workforcePersonId: "60000000-0000-4000-8000-000000000002" };
     const request = { action: "read", resource: "synthetic.record" };
@@ -26,7 +26,7 @@ describe("platform authorization client", () => {
     await expect(client.check(subject, request)).resolves.toBe(decision);
     await expect(client.batchCheck(subject, [request])).resolves.toEqual([decision]);
     await expect(client.resolveDataScope(subject, request)).resolves.toEqual({ decision });
-    client.assertAllowed(decision);
-    expect(Object.keys(client).sort()).toEqual(["assertAllowed", "batchCheck", "check", "resolveDataScope"]);
+    await expect(client.requireAllowed(subject, request)).resolves.toBe(decision);
+    expect(Object.keys(client).sort()).toEqual(["batchCheck", "check", "requireAllowed", "resolveDataScope"]);
   });
 });

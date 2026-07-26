@@ -1,6 +1,6 @@
 # IAM-03 Explicit Authorization Core
 
-- Status: implementation complete; pending independent G2 review
+- Status: review/fix loop complete; G2 accepted
 - Owner: 当前会话
 - Branch: `codex/IAM-03-authorization-core`
 - Allowed paths: `packages/platform-modules/authorization`, `contracts/permissions`, the corresponding `packages/platform-sdk` entry, dependency manifests, tests, and directly related documentation
@@ -44,7 +44,7 @@
 - Batch results preserve single-check semantics and input order.
 - Structured scope resolution and object-context matching never return SQL or silently ignore undeclared dimensions.
 - Explicit switching between concurrent Assignments changes the applicable grants without unioning inactive context.
-- Effective grant interval boundaries and person-level controlled exceptions behave deterministically.
+- Effective grant interval boundaries and Workforce Person controlled exceptions behave deterministically.
 - Cache hit/miss/failure, policy-version isolation, and explicit version invalidation preserve authorization truth.
 - Decision recording receives the minimum required audit facts; technical telemetry and Redis keys cannot leak Workforce Person, Assignment, scope values, or resource-object facts.
 - `pnpm check` passes.
@@ -69,9 +69,17 @@
 
 - Formal contracts: `data-scope.v1.schema.json`, `authorization-policy.v1.schema.json`, and `authorization-decision.v1.schema.json`.
 - Runtime: validated policy snapshots, Check, Batch Check, Data Scope Resolution, denial/unavailable errors, required decision recording, bounded telemetry, and optional Redis cache adapter.
-- SDK: `createPlatformAuthorizationClient` exposes Check, Batch Check, Data Scope Resolution, and server-side denial assertion without policy-store or Redis access.
-- Tests: 18 authorization tests cover allow/deny, unknown permission, context validation, Assignment switching, Workforce Person exception, effective boundaries, scope resolution, cache corruption/failure/versioning, recorder failure, audit correlation and decision ID validation; 2 SDK tests cover the public capability boundary.
+- SDK: `createPlatformAuthorizationClient` exposes Check, Batch Check, Data Scope Resolution, and `requireAllowed` without policy-store or Redis access. `requireAllowed` performs its own server-side decision and cannot accept a caller-fabricated allow result.
+- Tests: 20 authorization tests cover allow/deny, unknown permission, context validation, Assignment switching, Workforce Person exception, effective boundaries, scope resolution, cache corruption/failure/versioning, recorder failure, audit correlation, provider failure mapping and contract-valid uppercase UUID normalization; 2 SDK tests cover the public capability boundary.
 - Runtime integration: 1 local Redis test verifies authenticated connect, set/get, TTL, digest-only identity-safe keys, version invalidation, and cleanup. Local Compose reported all seven services healthy.
 - Targeted gates: frozen install, Authorization and SDK typecheck/lint/test/build, `pnpm contracts:generate`, `pnpm contracts:check`, real Redis integration and `git diff --check` passed on 2026-07-26.
 - Full gate: `pnpm check` passed on 2026-07-26 with 140/140 Turbo tasks successful across 28 Workspace packages.
-- Independent Review: the above is the implementer review and cannot replace the required non-implementer G2 review.
+
+## 2026-07-26 Review/Fix Loop
+
+- Round 1 found that `assertAllowed(decision)` trusted a caller-provided decision and could be invoked with a fabricated allow object. It was replaced by `requireAllowed(subject, request)`, which evaluates and records the decision internally before returning or throwing the stable denial.
+- Round 1 also aligned contract-valid UUID handling by accepting case-insensitive input and normalizing Workforce Person, Assignment, Role and Grant identifiers before comparison. Clock and decision-ID provider exceptions now fail closed through stable behavior.
+- Round 2 corrected Clock failure classification from request `invalid_context` to infrastructure `policy_unavailable`, and ensured Redis clients are destroyed when connect or graceful shutdown fails.
+- Round 3 rechecked authorization, idempotency/versioning, transactions, migrations, observability/audit, Secrets, public boundaries and backward compatibility. No new findings remained.
+- The project owner requested this review/fix loop continue until clean and then merge. With the final no-finding pass and full gate evidence, IAM-03 is accepted through G2.
+- Final post-loop gate: `pnpm check` passed with 140/140 Turbo tasks after all review fixes.

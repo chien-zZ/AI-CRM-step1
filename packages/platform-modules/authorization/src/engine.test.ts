@@ -211,15 +211,35 @@ describe("authorization engine", () => {
 
   it("records bounded decision references and exposes a generic server-side denial", async () => {
     const { records, service } = createSyntheticAuthorizationService();
-    const decision = await service.check(
+    await expect(service.requireAllowed(
       subject(SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha), scopedRequest("beta"),
-    );
-    expect(() => { service.assertAllowed(decision); }).toThrow(AuthorizationDeniedError);
+    )).rejects.toBeInstanceOf(AuthorizationDeniedError);
     expect(records.at(-1)).toMatchObject({
       selectedAssignmentId: SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha,
       traceId: "1234567890abcdef1234567890abcdef",
       workforcePersonId: SYNTHETIC_AUTHORIZATION_FIXTURE.workforcePersonId,
     });
     expect(JSON.stringify(records)).not.toContain("beta");
+  });
+
+  it("normalizes contract-valid uppercase UUIDs before grant evaluation", async () => {
+    const { service } = createSyntheticAuthorizationService();
+    const uppercaseSubject = {
+      activeAssignmentIds: [SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha.toUpperCase()],
+      selectedAssignmentId: SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha.toUpperCase(),
+      workforcePersonId: SYNTHETIC_AUTHORIZATION_FIXTURE.workforcePersonId.toUpperCase(),
+    };
+    await expect(service.requireAllowed(uppercaseSubject, scopedRequest("alpha")))
+      .resolves.toMatchObject({ allowed: true, reason: "allowed" });
+  });
+
+  it("maps clock and identifier provider failures to fail-closed outcomes", async () => {
+    const clockFailure = createSyntheticAuthorizationService({ clock: () => { throw new Error("clock failed"); } });
+    await expect(clockFailure.service.check(subject(), SYNTHETIC_AUTHORIZATION_FIXTURE.unscopedPermission))
+      .resolves.toMatchObject({ allowed: false, reason: "policy_unavailable" });
+
+    const idFailure = createSyntheticAuthorizationService({ decisionId: () => { throw new Error("id failed"); } });
+    await expect(idFailure.service.check(subject(), SYNTHETIC_AUTHORIZATION_FIXTURE.unscopedPermission))
+      .rejects.toBeInstanceOf(AuthorizationUnavailableError);
   });
 });

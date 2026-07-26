@@ -138,7 +138,6 @@ export interface AuthorizationObserver {
 }
 
 export interface AuthorizationService {
-  assertAllowed(decision: AuthorizationDecision): void;
   batchCheck(
     subject: AuthorizationSubjectContext,
     requests: readonly PermissionRequest[],
@@ -148,6 +147,10 @@ export interface AuthorizationService {
     request: PermissionRequest,
   ): Promise<Readonly<AuthorizationDecision>>;
   invalidatePolicyVersion(version: string): Promise<void>;
+  requireAllowed(
+    subject: AuthorizationSubjectContext,
+    request: PermissionRequest,
+  ): Promise<Readonly<AuthorizationDecision>>;
   resolveDataScope(
     subject: AuthorizationSubjectContext,
     request: Omit<PermissionRequest, "resourceContext">,

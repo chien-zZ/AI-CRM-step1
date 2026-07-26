@@ -13,6 +13,7 @@ External access distinguishes anonymous requests, restricted invitation capabili
 ## Usage Boundaries
 
 - Use `check` when authorizing one concrete resource operation. A scoped permission requires a complete `resourceContext`; missing, undeclared, or extra dimensions fail closed.
+- Use `requireAllowed` for server-side Guard/Facade enforcement. It evaluates the request internally and throws a stable denial carrying only the decision reference; callers cannot supply a fabricated decision object.
 - Use `resolveDataScope` only to obtain structured constraints for a resource-owning repository. It rejects object context and never emits SQL, Prisma filters, table names, or executable expressions.
 - Use `batchCheck` for bounded independent checks. It preserves input order and the semantics of individual checks.
 - An Assignment grant applies only when callers explicitly select that active Assignment. Concurrent Assignments are never silently unioned. Person grants are explicit controlled exceptions, not inferred defaults.
