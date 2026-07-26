@@ -3,6 +3,7 @@ import { IntegrationRuntimeError } from "./errors.js";
 export type CircuitState = "closed" | "half_open" | "open";
 
 export interface CircuitBreakerOptions {
+  readonly countsAsFailure?: (error: unknown) => boolean;
   readonly failureThreshold: number;
   readonly halfOpenMaxCalls: number;
   readonly openMs: number;
@@ -59,8 +60,10 @@ export function createCircuitBreaker(options: CircuitBreakerOptions): CircuitBre
         }
         return result;
       } catch (error) {
-        failures += 1;
-        if (probe || failures >= options.failureThreshold) open();
+        if (options.countsAsFailure?.(error) ?? true) {
+          failures += 1;
+          if (probe || failures >= options.failureThreshold) open();
+        }
         throw error;
       } finally {
         if (probe && state === "half_open") halfOpenActive -= 1;

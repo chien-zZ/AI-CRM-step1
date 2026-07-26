@@ -17,9 +17,9 @@ describe("integration fault fixtures", () => {
 
   it("models duplicate replay reservations without claiming durability", async () => {
     const store = createInMemoryReplayStore();
-    await expect(store.reserve({ expiresAt: "2026-07-26T08:01:00.000Z", fingerprint: "fixture" }))
+    await expect(store.reserve({ expiresAt: "2026-07-26T08:01:00.000Z", fingerprints: ["event", "nonce"] }))
       .resolves.toEqual({ accepted: true, reservationId: "fixture-1" });
-    await expect(store.reserve({ expiresAt: "2026-07-26T08:01:00.000Z", fingerprint: "fixture" }))
+    await expect(store.reserve({ expiresAt: "2026-07-26T08:01:00.000Z", fingerprints: ["another-event", "nonce"] }))
       .resolves.toEqual({ accepted: false });
   });
 

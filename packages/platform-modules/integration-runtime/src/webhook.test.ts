@@ -73,4 +73,24 @@ describe("Webhook acceptance", () => {
       verifier: { verify: () => Promise.resolve(true) },
     })).rejects.toMatchObject({ category: "replay_detected" });
   });
+
+  it("reserves independent event and nonce fingerprints atomically", async () => {
+    let captured: readonly string[] = [];
+    await acceptVerifiedWebhook(envelope, {
+      allowedClockSkewMs: 1000,
+      maxBodyBytes: 1024,
+      now: () => new Date(receivedAt),
+      replayRetentionMs: 60_000,
+      replayStore: {
+        reserve: ({ fingerprints }) => {
+          captured = fingerprints;
+          return Promise.resolve({ accepted: true, reservationId: "receipt-2" });
+        },
+      },
+      verifier: { verify: () => Promise.resolve(true) },
+    });
+    expect(captured).toHaveLength(2);
+    expect(captured[0]).not.toBe(captured[1]);
+    expect(captured.every((value) => /^[a-f0-9]{64}$/.test(value))).toBe(true);
+  });
 });

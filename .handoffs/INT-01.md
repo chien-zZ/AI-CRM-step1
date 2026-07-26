@@ -82,7 +82,7 @@
 
 - 非幂等写强制单次尝试；其他操作只重试显式 allowlist 内且标记 retryable 的稳定错误。
 - Retry Budget 最大 10 次，退避数组必须逐次完整定义，抖动限制在 0～1。
-- Webhook 在验签后通过 SHA-256 指纹调用原子耐久 ReplayStore；重复失败关闭。
+- Webhook 在验签后通过独立 SHA-256 Event ID/Nonce 键调用原子耐久 ReplayStore；任一重复均失败关闭。
 - ReplayStore 不可用映射为可重试 `upstream_unavailable`，验签异常映射为不可重试 `signature_invalid`。
 - Adapter 必须响应 AbortSignal 并结束；运行时等待 Adapter settle，不让仍运行 Promise 越过调用边界。
 
@@ -118,7 +118,7 @@ Observer 只接收受限 operation ID、固定错误类别、attempt、duration�
 - Secrets：不读取、保存或记录 Secret；签名只进入 Verifier Port。
 - Failure Modes：Deadline、取消、限流、并发、熔断、临时错误、验签失败、重复和 ReplayStore 不可用均有稳定失败语义。
 
-自审修复：在初版检查后补充策略前置校验、非幂等写约束、并发取消竞态保护、半开计数清理、Webhook 输入上限、ReplayStore 稳定错误映射及测试工具覆盖。
+自审修复：在初版检查后补充策略前置校验、非幂等写约束、并发取消竞态保护、已取消 Signal 继承、半开计数清理/失败分类、Webhook 输入上限、Event ID 与 Nonce 独立原子防重、ReplayStore 稳定错误映射及测试工具覆盖。
 
 ## Handoff Result
 

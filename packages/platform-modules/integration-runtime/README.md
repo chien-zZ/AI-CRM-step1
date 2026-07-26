@@ -14,7 +14,7 @@ Future AI Provider Adapters may reuse this package's deadlines, rate limits, ret
 - Operation policy declares connect, response, and total deadlines, operation safety, bounded retry delays, jitter, and an explicit transient-error allowlist. Non-idempotent writes must use one attempt.
 - Adapter callbacks must observe the supplied `AbortSignal` and settle after cancellation. The runtime waits for settlement so an operation cannot silently continue past its caller's transaction or lifecycle boundary.
 - Concurrency, rate-limit, circuit and observer snapshots contain only bounded technical identifiers and categories. Request/response bodies and provider payloads are never passed to observers.
-- `acceptVerifiedWebhook` validates bounded metadata and timestamp, invokes a provider-owned raw-body signature verifier, then atomically reserves a hashed replay fingerprint before returning a receipt. It never parses business data.
+- `acceptVerifiedWebhook` validates bounded metadata and timestamp, invokes a provider-owned raw-body signature verifier, then atomically reserves independent hashed event-ID and nonce replay keys before returning a receipt. It never parses business data.
 - Production composition must inject an atomic durable `WebhookReplayStore`. `createInMemoryReplayStore` is exported only from `@ai-crm/platform-integration-runtime/testing` and is not a production correctness mechanism.
 
 Concrete capability policy, provider error mapping, credentials, endpoints, replay retention, authorization, audit and reconciliation remain owned by the approved capability and Adapter composition task.

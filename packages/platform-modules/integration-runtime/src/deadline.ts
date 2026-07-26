@@ -76,7 +76,8 @@ export function createDeadlineBudget(
   const cancel = (): void => {
     totalController.abort();
   };
-  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.signal?.aborted) cancel();
+  else options.signal?.addEventListener("abort", cancel, { once: true });
 
   return {
     deadlineAt,

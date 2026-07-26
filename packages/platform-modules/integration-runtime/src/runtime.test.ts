@@ -47,6 +47,21 @@ describe("deadline primitives", () => {
       budget.dispose();
     }
   });
+
+  it("inherits an already-aborted caller signal", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const budget = createDeadlineBudget(
+      { connectMs: 100, responseMs: 100, totalMs: 100 },
+      { signal: controller.signal },
+    );
+    try {
+      await expect(budget.runPhase("connect", () => Promise.resolve("not-called")))
+        .rejects.toMatchObject({ category: "cancelled" });
+    } finally {
+      budget.dispose();
+    }
+  });
 });
 
 describe("retry and limiting", () => {
@@ -90,6 +105,18 @@ describe("circuit breaker and executor", () => {
     await expect(breaker.execute(() => Promise.resolve("blocked"))).rejects.toMatchObject({ category: "circuit_open" });
     now = 100;
     await expect(breaker.execute(() => Promise.resolve("probe"))).resolves.toBe("probe");
+    expect(breaker.snapshot().state).toBe("closed");
+  });
+
+  it("does not count caller-side or policy failures selected by the classifier", async () => {
+    const breaker = createCircuitBreaker({
+      countsAsFailure: (error) => error instanceof IntegrationRuntimeError && error.category === "upstream_unavailable",
+      failureThreshold: 1,
+      halfOpenMaxCalls: 1,
+      openMs: 100,
+    });
+    await expect(breaker.execute(() => Promise.reject(new IntegrationRuntimeError("cancelled"))))
+      .rejects.toMatchObject({ category: "cancelled" });
     expect(breaker.snapshot().state).toBe("closed");
   });
 

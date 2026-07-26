@@ -27,7 +27,7 @@ export interface WebhookReplayReservation {
 }
 
 export interface WebhookReplayStore {
-  reserve(input: Readonly<{ expiresAt: string; fingerprint: string }>): Promise<WebhookReplayReservation>;
+  reserve(input: Readonly<{ expiresAt: string; fingerprints: readonly string[] }>): Promise<WebhookReplayReservation>;
 }
 
 export interface AcceptedWebhook {
@@ -97,18 +97,18 @@ export async function acceptVerifiedWebhook(
   }
   if (!verified) throw new IntegrationRuntimeError("signature_invalid");
 
-  const fingerprint = createHash("sha256")
+  const fingerprint = (kind: "event" | "nonce", value: string): string => createHash("sha256")
+    .update(kind)
+    .update("\0")
     .update(envelope.version)
     .update("\0")
-    .update(envelope.eventId)
-    .update("\0")
-    .update(envelope.nonce)
+    .update(value)
     .digest("hex");
   let reservation: WebhookReplayReservation;
   try {
     reservation = await options.replayStore.reserve({
       expiresAt: new Date(now.getTime() + options.replayRetentionMs).toISOString(),
-      fingerprint,
+      fingerprints: [fingerprint("event", envelope.eventId), fingerprint("nonce", envelope.nonce)],
     });
   } catch (error) {
     if (error instanceof IntegrationRuntimeError) throw error;

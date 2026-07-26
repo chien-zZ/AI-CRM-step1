@@ -36,9 +36,9 @@ export function createInMemoryReplayStore(): WebhookReplayStore {
   const fingerprints = new Set<string>();
   let sequence = 0;
   return {
-    reserve({ fingerprint }) {
-      if (fingerprints.has(fingerprint)) return Promise.resolve({ accepted: false });
-      fingerprints.add(fingerprint);
+    reserve({ fingerprints: requested }) {
+      if (requested.some((fingerprint) => fingerprints.has(fingerprint))) return Promise.resolve({ accepted: false });
+      for (const fingerprint of requested) fingerprints.add(fingerprint);
       sequence += 1;
       return Promise.resolve({ accepted: true, reservationId: `fixture-${String(sequence)}` });
     },
