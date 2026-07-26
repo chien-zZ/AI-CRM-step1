@@ -1,6 +1,6 @@
 # PLT-02 Form Schema And Business Configuration
 
-- Status: INDEPENDENT_REVIEW
+- Status: G2_ACCEPTED
 - Branch: `task/PLT-02-form-configuration`
 - Owner: Agent B
 - Independent Reviewer: Agent D
@@ -96,6 +96,8 @@
   - Added additive V1 activation-termination contract and immutable termination facts. Scope advisory locks serialize termination and replacement; the effective end is the earlier of the original end and termination, and service, memory Store, PostgreSQL Store, and database constraints reject backdating.
   - Added two-stage mutation authorization so a denied coarse check performs no Store lookup, followed by the existing Owner-aware authorization before mutation; regression tests cover both modules.
 - Round 1 repair self-review: Authorization, Idempotency, Transactions, Migrations, Observability, Backward Compatibility, Secrets and Failure Modes were rechecked. No remaining Owner finding was identified. The termination contract is additive; receipts and advisory locks preserve retry/concurrency behavior; no payload, Secret, provider, CRM rule, or mutable historical fact was introduced.
-- Round: Round 1 repairs complete; Round 2 requested from the same Reviewer.
-- Actionable findings: awaiting Round 2.
-- G2 decision: pending independent zero-finding re-review; Owner does not self-accept.
+- Round 2: the same Reviewer re-reviewed exact repair commit `f881ab8268f1d70bc4198bc15d4119b7d3d9b03b` and reported zero P0-P3 actionable findings and zero unresolved architecture or contract issues.
+- Round 2 verification: Form typecheck/lint/unit 9/9 and PostgreSQL 2/2 passed; Configuration typecheck/lint/unit 9/9 and PostgreSQL 4/4 passed; contracts 28/28 and diff check passed.
+- Round 2 review dimensions: Authorization, Idempotency, Transactions, Migrations, Backward Compatibility, Secrets and Failure Modes passed. Runtime health/logger composition is not applicable to these library modules; sanitized audit, trace, receipt and Outbox evidence remains explicit. Reserved migrations `0000000007` and `0000000008` are still unmerged and undeployed, so the reviewed corrections remain within the authorized pre-application migration window.
+- Actionable findings: zero.
+- G2 decision: `G2_ACCEPTED` on 2026-07-26. Merge remains subject to the Integration Owner's dependency order, migration/Lockfile windows and main-branch evidence gate.
