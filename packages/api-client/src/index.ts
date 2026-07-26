@@ -27,6 +27,31 @@ export const internalOperations = [
     "path": "/auth/pc/logout"
   },
   {
+    "id": "listNotifications",
+    "method": "GET",
+    "path": "/notifications"
+  },
+  {
+    "id": "getNotificationUnreadCount",
+    "method": "GET",
+    "path": "/notifications/unread-count"
+  },
+  {
+    "id": "getNotification",
+    "method": "GET",
+    "path": "/notifications/{notificationId}"
+  },
+  {
+    "id": "markNotificationRead",
+    "method": "POST",
+    "path": "/notifications/{notificationId}/read"
+  },
+  {
+    "id": "archiveNotification",
+    "method": "POST",
+    "path": "/notifications/{notificationId}/archive"
+  },
+  {
     "id": "getLiveness",
     "method": "GET",
     "path": "/health/live"

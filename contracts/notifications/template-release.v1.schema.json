@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-crm.local/contracts/notifications/v1/template-release.schema.json",
+  "title": "Immutable Notification Template Release v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["templateKey","version","ownerReference","notificationType","variableSchema","titleTemplate","bodyTemplate","contentDigest","publishedAt"],
+  "properties": {
+    "templateKey": { "$ref": "#/$defs/stableId" }, "version": { "type": "integer", "minimum": 1 },
+    "ownerReference": { "$ref": "#/$defs/stableId" }, "notificationType": { "$ref": "#/$defs/stableId" },
+    "variableSchema": { "type": "object" }, "titleTemplate": { "type": "string", "minLength": 1, "maxLength": 8000 },
+    "bodyTemplate": { "type": "string", "minLength": 1, "maxLength": 8000 }, "contentDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "publishedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$" }
+  },
+  "$defs": { "stableId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$" } }
+}
