@@ -1,0 +1,8 @@
+CREATE SCHEMA form_schema;
+CREATE TABLE form_schema.drafts(definition_id varchar(128) PRIMARY KEY,owner_module varchar(128) NOT NULL,revision integer NOT NULL CHECK(revision>0),json_schema jsonb NOT NULL,ui_schema jsonb NOT NULL,updated_at timestamptz NOT NULL);
+CREATE TABLE form_schema.releases(definition_id varchar(128) NOT NULL,release_version integer NOT NULL CHECK(release_version>0),owner_module varchar(128) NOT NULL,content_digest varchar(64) NOT NULL CHECK(length(content_digest)=64),json_schema jsonb NOT NULL,ui_schema jsonb NOT NULL,published_at timestamptz NOT NULL,PRIMARY KEY(definition_id,release_version));
+CREATE TABLE form_schema.release_status(definition_id varchar(128) NOT NULL,release_version integer NOT NULL,active boolean NOT NULL,PRIMARY KEY(definition_id,release_version),FOREIGN KEY(definition_id,release_version) REFERENCES form_schema.releases(definition_id,release_version));
+CREATE TABLE form_schema.operation_receipts(operation_id uuid PRIMARY KEY,fingerprint varchar(64) NOT NULL CHECK(length(fingerprint)=64),result jsonb NOT NULL);
+CREATE TABLE form_schema.outbox_events(event_id uuid PRIMARY KEY,event_type varchar(64) NOT NULL,payload jsonb NOT NULL,occurred_at timestamptz NOT NULL,published_at timestamptz,last_error text);
+CREATE FUNCTION form_schema.reject_release_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'form releases are immutable' USING ERRCODE='55000'; END $$;
+CREATE TRIGGER form_releases_no_update_delete BEFORE UPDATE OR DELETE ON form_schema.releases FOR EACH ROW EXECUTE FUNCTION form_schema.reject_release_mutation();

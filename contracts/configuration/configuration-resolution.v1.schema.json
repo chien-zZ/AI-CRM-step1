@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/configuration/v1/configuration-resolution.schema.json",
+  "title": "Version-aware Business Configuration Resolution V1",
+  "oneOf": [
+    { "$ref": "#/$defs/activationResolution" },
+    { "$ref": "#/$defs/defaultResolution" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "value": { "anyOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }] },
+    "base": {
+      "type": "object",
+      "properties": {
+        "version": { "const": 1 }, "parameterKey": { "$ref": "#/$defs/id" },
+        "definitionVersion": { "type": "integer", "minimum": 1 }, "value": { "$ref": "#/$defs/value" }
+      }
+    },
+    "activationResolution": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["version", "parameterKey", "definitionVersion", "source", "valueVersion", "activationId", "scope", "effectiveFrom", "value"],
+          "properties": {
+            "version": { "const": 1 }, "parameterKey": { "$ref": "#/$defs/id" }, "definitionVersion": { "type": "integer", "minimum": 1 },
+            "source": { "const": "activation" }, "valueVersion": { "type": "integer", "minimum": 1 }, "activationId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+            "scope": { "type": "object", "additionalProperties": false, "required": ["scopeType", "scopeReference"], "properties": { "scopeType": { "$ref": "#/$defs/id" }, "scopeReference": { "type": "string", "minLength": 1, "maxLength": 255 } } },
+            "effectiveFrom": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$" }, "effectiveTo": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$" }, "value": { "$ref": "#/$defs/value" }
+          }
+        }
+      ]
+    },
+    "defaultResolution": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["version", "parameterKey", "definitionVersion", "source", "valueVersion", "value"],
+          "properties": {
+            "version": { "const": 1 }, "parameterKey": { "$ref": "#/$defs/id" }, "definitionVersion": { "type": "integer", "minimum": 1 },
+            "source": { "const": "default" }, "valueVersion": { "const": 0 }, "value": { "$ref": "#/$defs/value" }
+          }
+        }
+      ]
+    }
+  }
+}
