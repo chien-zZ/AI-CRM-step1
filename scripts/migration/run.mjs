@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runMigrations } from "../../packages/database/dist/index.js";
 
@@ -14,5 +14,12 @@ if (!connectionString) {
   process.exit(1);
 }
 
-await runMigrations(connectionString, resolve("packages/database/migrations"));
+const directories = [resolve("packages/database/migrations")];
+for (const entry of await readdir(resolve("packages/platform-modules"), { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const directory = resolve("packages/platform-modules", entry.name, "migrations");
+  try { if ((await readdir(directory)).some((name) => name.endsWith(".sql"))) directories.push(directory); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+}
+await runMigrations(connectionString, directories);
 console.log("Database migrations are current.");

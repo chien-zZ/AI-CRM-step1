@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://contracts.ai-crm.local/jobs/v1/job-envelope.schema.json",
+  "title": "AI-CRM private worker job envelope v1", "type": "object", "additionalProperties": false,
+  "required": ["jobId", "jobType", "jobVersion", "source", "idempotencyKey", "requestedAt", "correlationId", "policy", "payload"],
+  "properties": {
+    "jobId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }, "jobType": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$", "maxLength": 128 },
+    "jobVersion": { "type": "integer", "minimum": 1, "maximum": 1000 }, "source": { "type": "string", "pattern": "^urn:ai-crm:[a-z][a-z0-9.-]*$", "maxLength": 256 },
+    "idempotencyKey": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{7,127}$" }, "requestedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+    "notBefore": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" }, "correlationId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }, "causationId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "traceparent": { "type": "string", "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$" }, "tracestate": { "type": "string", "pattern": "^[ -~]+$", "maxLength": 512 },
+    "policy": { "type": "object", "additionalProperties": false, "required": ["maxAttempts", "backoffSeconds", "timeoutMs", "failureDisposition"], "properties": {
+      "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 16 }, "backoffSeconds": { "type": "array", "maxItems": 15, "items": { "type": "integer", "minimum": 1, "maximum": 86400 } },
+      "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 900000 }, "failureDisposition": { "const": "isolate" }
+    }, "oneOf": [
+      { "properties": { "maxAttempts": { "const": 1 }, "backoffSeconds": { "type": "array", "minItems": 0, "maxItems": 0 } } },
+      { "properties": { "maxAttempts": { "const": 2 }, "backoffSeconds": { "type": "array", "minItems": 1, "maxItems": 1 } } },
+      { "properties": { "maxAttempts": { "const": 3 }, "backoffSeconds": { "type": "array", "minItems": 2, "maxItems": 2 } } },
+      { "properties": { "maxAttempts": { "const": 4 }, "backoffSeconds": { "type": "array", "minItems": 3, "maxItems": 3 } } },
+      { "properties": { "maxAttempts": { "const": 5 }, "backoffSeconds": { "type": "array", "minItems": 4, "maxItems": 4 } } },
+      { "properties": { "maxAttempts": { "const": 6 }, "backoffSeconds": { "type": "array", "minItems": 5, "maxItems": 5 } } },
+      { "properties": { "maxAttempts": { "const": 7 }, "backoffSeconds": { "type": "array", "minItems": 6, "maxItems": 6 } } },
+      { "properties": { "maxAttempts": { "const": 8 }, "backoffSeconds": { "type": "array", "minItems": 7, "maxItems": 7 } } },
+      { "properties": { "maxAttempts": { "const": 9 }, "backoffSeconds": { "type": "array", "minItems": 8, "maxItems": 8 } } },
+      { "properties": { "maxAttempts": { "const": 10 }, "backoffSeconds": { "type": "array", "minItems": 9, "maxItems": 9 } } },
+      { "properties": { "maxAttempts": { "const": 11 }, "backoffSeconds": { "type": "array", "minItems": 10, "maxItems": 10 } } },
+      { "properties": { "maxAttempts": { "const": 12 }, "backoffSeconds": { "type": "array", "minItems": 11, "maxItems": 11 } } },
+      { "properties": { "maxAttempts": { "const": 13 }, "backoffSeconds": { "type": "array", "minItems": 12, "maxItems": 12 } } },
+      { "properties": { "maxAttempts": { "const": 14 }, "backoffSeconds": { "type": "array", "minItems": 13, "maxItems": 13 } } },
+      { "properties": { "maxAttempts": { "const": 15 }, "backoffSeconds": { "type": "array", "minItems": 14, "maxItems": 14 } } },
+      { "properties": { "maxAttempts": { "const": 16 }, "backoffSeconds": { "type": "array", "minItems": 15, "maxItems": 15 } } }
+    ] }, "payload": {}
+  }
+}

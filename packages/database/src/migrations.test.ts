@@ -6,12 +6,12 @@ import { loadMigrations, runMigrationsWithPool, type MigrationConnection, type M
 
 const temporaryDirectories: string[] = [];
 
-async function migrationDirectory(sql: string, metadataOverrides: Record<string, unknown> = {}): Promise<string> {
+async function migrationDirectory(sql: string, metadataOverrides: Record<string, unknown> = {}, version = "0000000001"): Promise<string> {
   const directory = await mkdtemp(resolve(tmpdir(), "ai-crm-migrations-"));
   temporaryDirectories.push(directory);
   await mkdir(directory, { recursive: true });
-  await writeFile(resolve(directory, "0000000001_foundation.sql"), sql);
-  await writeFile(resolve(directory, "0000000001_foundation.meta.json"), JSON.stringify({
+  await writeFile(resolve(directory, `${version}_foundation.sql`), sql);
+  await writeFile(resolve(directory, `${version}_foundation.meta.json`), JSON.stringify({
     applicationCompatibility: ">=0.0.0",
     backfill: "Not required for this isolated fixture.",
     dataImpact: "No persisted application data is affected.",
@@ -70,5 +70,12 @@ describe("migration governance", () => {
     await expect(runMigrationsWithPool(pool, directory)).rejects.toThrow("migration failed");
     expect(statements).toContain("rollback");
     expect(statements.some((sql) => sql.startsWith("insert into"))).toBe(false);
+  });
+
+  it("orders globally versioned migrations across module directories",async()=>{
+    const later=await migrationDirectory("select later;",{},"0000000003");const earlier=await migrationDirectory("select earlier;",{},"0000000002");const statements:string[]=[];
+    const connection:MigrationConnection={query<Row>(sql:string):Promise<{rows:Row[]}>{statements.push(sql);if(sql.startsWith("select version")){const error=new Error("missing") as Error&{code:string};error.code="42P01";return Promise.reject(error);}return Promise.resolve({rows:[] as Row[]});},release(){}};
+    const pool:MigrationPool={connect:()=>Promise.resolve(connection),end:()=>Promise.resolve()};await runMigrationsWithPool(pool,[later,earlier]);
+    expect(statements.indexOf("select earlier;")).toBeLessThan(statements.indexOf("select later;"));
   });
 });
