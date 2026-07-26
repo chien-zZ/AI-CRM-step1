@@ -6,7 +6,7 @@ export interface RecipientSelector { readonly selectorType:string;readonly refer
 export interface ResolvedRecipient { readonly principalId:string;readonly recipientReference:string;readonly resolutionReference:string;readonly resolutionVersion:string }
 export interface TemplateRelease { readonly templateKey:string;readonly version:number;readonly ownerReference:string;readonly notificationType:string;readonly variableSchema:Readonly<Record<string,unknown>>;readonly titleTemplate:string;readonly bodyTemplate:string;readonly contentDigest:string;readonly publishedAt:string }
 export interface PublishTemplateCommand extends Omit<TemplateRelease,"contentDigest"|"publishedAt"> { readonly actor:NotificationActor;readonly publishedAt:string }
-export interface NotificationIntent { readonly intentId:string;readonly actor:NotificationActor;readonly producer:string;readonly idempotencyKey:string;readonly templateKey:string;readonly templateVersion:number;readonly selectors:readonly RecipientSelector[];readonly variables:Readonly<Record<string,JsonValue>>;readonly sourceType:string;readonly sourceId:string;readonly deepLink:NotificationDeepLink }
+export interface NotificationIntent { readonly intentId:string;readonly producer:string;readonly idempotencyKey:string;readonly templateKey:string;readonly templateVersion:number;readonly selectors:readonly RecipientSelector[];readonly variables:Readonly<Record<string,JsonValue>>;readonly sourceType:string;readonly sourceId:string;readonly deepLink:NotificationDeepLink }
 export interface NotificationIntentResult { readonly intentId:string;readonly notificationIds:readonly string[];readonly status:"accepted" }
 export type PreferenceDecision="deliver"|"suppress";
 export interface NotificationPreference { evaluate(input:{readonly notificationType:string;readonly recipient:ResolvedRecipient}):Promise<{readonly decision:PreferenceDecision;readonly reason:string;readonly version:string}> }
@@ -33,7 +33,7 @@ export interface NotificationStore {
 }
 export interface NotificationCenter {
   publishTemplate(command:PublishTemplateCommand):Promise<TemplateRelease>;
-  submitIntent(intent:NotificationIntent):Promise<NotificationIntentResult>;
+  submitIntent(actor:NotificationActor,intent:NotificationIntent):Promise<NotificationIntentResult>;
   get(actor:NotificationActor,notificationId:string):Promise<InAppNotification>;
   list(query:NotificationQuery):Promise<NotificationPage>;
   unreadCount(actor:NotificationActor):Promise<number>;

@@ -14,6 +14,7 @@
 - The first stage implements PostgreSQL in-app notifications and PC polling only.
 - Notification intent, recipient snapshot, in-app state, Task state, domain state, and future provider delivery facts are separate.
 - Business modules submit explicit intents with producer-scoped idempotency keys and stable recipient selectors.
+- The authenticated actor is invocation context supplied separately to `submitIntent(actor, intent)`; it is not part of the versioned intent payload or its idempotency fingerprint.
 - Recipient resolution uses a public injected port and stores the actual principal/recipient and resolution evidence/version.
 - Templates are immutable versions, restricted Mustache plain text, and validated by JSON Schema before rendering.
 - Safe deep links use Application Registry IDs, not arbitrary URLs. Target pages and APIs reauthorize current access.
@@ -94,10 +95,24 @@
 | Secrets | No new secrets or provider values |
 | Failure modes | Stable errors; empty resolver fails; storage/retry semantics documented |
 
+## Independent review round 1
+
+The independent Reviewer reported four P2 findings against candidate `063b1d7`; the Owner fixed all four and added regression coverage:
+
+1. Closed: aligned the JSON Schema and public TypeScript intent payload by moving the authenticated actor to invocation context. A retry by a different authorized actor now returns the original producer-scoped idempotent result without repeating recipient resolution.
+2. Closed: the in-memory detail lookup now excludes `suppress` decisions, matching PostgreSQL list/detail/state behavior. Regression coverage proves a suppressed notification is neither listed nor readable by ID.
+3. Closed: bounded technical observer failures are caught and cannot change either a successful business result or the original denied/error result. Audit remains authoritative and fail-closed.
+4. Closed: cursors are validated at the service boundary with a 128-character maximum and exact `RFC3339 UTC timestamp + NUL + UUID` structure before Store access. Malformed and oversized cursor tests prove the Store is not called; valid cursor pagination remains covered.
+
+No source contract or generated artifact changed in this round: the source JSON Schema already excluded actor. No Lockfile or generated-file window was required.
+
 ## Verification evidence
 
-- Module unit/contract tests: 15 passed; the 3 PostgreSQL tests are intentionally skipped outside the isolated harness.
-- Isolated real PostgreSQL integration: 3 passed on 2026-07-26.
+- Post-fix module unit/contract tests: 17 passed; the 3 PostgreSQL tests are intentionally skipped outside the isolated harness.
+- Post-fix isolated real PostgreSQL integration: 3 passed on 2026-07-26.
+- Post-fix module lint, typecheck, and build: passed on 2026-07-26.
+- Post-fix `pnpm check`: 140/140 tasks passed on 2026-07-26, including repository, Compose, generated-contract integrity, build, lint, typecheck, tests, and package contract checks.
+- Post-fix `git diff --check`: passed.
 - `pnpm repo:check`: passed (8 repository/check tests).
 - `pnpm compose:check`: passed.
 - `pnpm exec turbo run build lint typecheck test contracts:check`: 140/140 tasks passed.

@@ -14,3 +14,4 @@ const canonical=(value:unknown,seen:ReadonlySet<object>):unknown=>{if(value===nu
 export const jsonRecord=(value:unknown):Readonly<Record<string,JsonValue>>=>{if(typeof value!=="object"||value===null||Array.isArray(value))return invalid();return canonical(value,new Set()) as Readonly<Record<string,JsonValue>>;};
 export const stable=(value:unknown):string=>JSON.stringify(canonical(value,new Set()));
 export const sha256=(value:unknown):string=>createHash("sha256").update(typeof value==="string"?value:stable(value)).digest("hex");
+export const cursor=(value:unknown):string=>{if(typeof value!=="string"||value.length>128)return invalid();const parts=value.split("\u0000");if(parts.length!==2)return invalid();timestamp(parts[0]);uuid(parts[1]);return value;};
