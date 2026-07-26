@@ -1,0 +1,237 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 1080px;
+  color: #1f1f1f;
+  background: #f5f7fa;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.app-shell {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.primary-sider,
+.secondary-sider {
+  overflow: hidden;
+  background: #fff !important;
+  border-inline-end: 1px solid #f0f0f0;
+}
+
+.sider-column {
+  height: 100%;
+}
+
+.brand {
+  height: 48px;
+  padding: 0 4px;
+  flex-shrink: 0;
+  color: #1677ff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.brand-collapsed {
+  font-size: 16px;
+}
+
+.menu-scroll {
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.shell-menu {
+  background: transparent !important;
+  border-inline-end: 0 !important;
+}
+
+.collapse-footer {
+  flex-shrink: 0;
+  padding: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.secondary-heading {
+  height: 48px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.right-layout {
+  min-width: 0;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  height: 48px;
+  padding: 0 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 48px;
+  background: #fff;
+  border-bottom: 1px solid;
+}
+
+.topbar-left,
+.topbar-actions {
+  min-width: 0;
+}
+
+.global-search {
+  width: 220px;
+}
+
+.profile-avatar {
+  cursor: pointer;
+  background: #1677ff;
+}
+
+.content-area {
+  height: calc(100vh - 48px);
+  overflow: auto;
+  background: #f5f7fa;
+}
+
+.workspace-page {
+  padding: 24px;
+}
+
+.page-heading {
+  margin-bottom: 16px;
+}
+
+.page-heading h4 {
+  margin: 0 0 2px;
+}
+
+.stat-row {
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  min-width: 126px;
+  border-color: #edf0f3;
+  box-shadow: 0 1px 2px rgba(31, 35, 41, 0.03);
+}
+
+.stat-card .ant-statistic-title {
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+
+.stat-card .ant-statistic-content {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.main-grid {
+  align-items: stretch;
+}
+
+.content-card {
+  height: calc(100vh - 224px);
+  min-height: 410px;
+  overflow: hidden;
+  border-color: #edf0f3;
+  box-shadow: 0 1px 2px rgba(31, 35, 41, 0.03);
+}
+
+.content-card > .ant-card-body {
+  max-height: calc(100% - 40px);
+  padding: 4px 0;
+  overflow: auto;
+}
+
+.todo-group-title {
+  padding: 10px 16px 4px;
+}
+
+.todo-row {
+  padding: 11px 16px;
+  cursor: pointer;
+  border-top: 1px solid #f0f0f0;
+  transition: background-color 0.18s ease;
+}
+
+.todo-row:hover {
+  background: #f5f9ff;
+}
+
+.todo-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.todo-copy .ant-tag {
+  margin-inline-end: 0;
+}
+
+.due {
+  flex-shrink: 0;
+  color: #fa8c16;
+  font-size: 12px;
+}
+
+.due.danger {
+  color: #ff4d4f;
+}
+
+.row-arrow {
+  flex-shrink: 0;
+  color: #bfbfbf;
+  font-size: 12px;
+}
+
+.activity-card > .ant-card-body {
+  padding: 18px 18px 4px;
+}
+
+.placeholder-card {
+  min-height: calc(100vh - 130px);
+}
+
+.placeholder-card .ant-card-body {
+  display: flex;
+  min-height: calc(100vh - 180px);
+  align-items: center;
+  justify-content: center;
+}
+
+.placeholder-icon {
+  color: #91caff;
+  font-size: 42px;
+}
+
+@media (max-width: 1280px) {
+  .workspace-page {
+    padding: 16px;
+  }
+
+  .global-search {
+    width: 180px;
+  }
+
+  .content-card {
+    height: calc(100vh - 208px);
+  }
+}

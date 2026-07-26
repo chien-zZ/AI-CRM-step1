@@ -7,7 +7,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
-    files: ["**/*.ts"],
+    files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -25,7 +25,7 @@ export default tseslint.config(
     languageOptions: { globals: { console: "readonly", process: "readonly" } },
   },
   {
-    files: ["**/*.test.ts"],
+    files: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/no-unnecessary-type-parameters": "off" },
   },
 );
