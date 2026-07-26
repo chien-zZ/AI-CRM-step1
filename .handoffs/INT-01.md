@@ -98,7 +98,7 @@ Observer 只接收受限 operation ID、固定错误类别、attempt、duration�
 
 - 供应商中立运行时公共 API 与开发者说明。
 - 两份 v1 JSON Schema。
-- 16 项模块/Workspace 测试和故障 Fixture。
+- 25 项模块/Workspace 测试和故障 Fixture。
 - Owner 自审与后续独立 Review 记录。
 
 ## Unresolved Questions
@@ -120,6 +120,12 @@ Observer 只接收受限 operation ID、固定错误类别、attempt、duration�
 
 自审修复：在初版检查后补充策略前置校验、非幂等写约束、并发取消竞态保护、已取消 Signal 继承、半开计数清理/失败分类、Webhook 输入上限、Event ID 与 Nonce 独立原子防重、ReplayStore 稳定错误映射及测试工具覆盖。第二轮将总 Deadline 从“每次尝试”提升为覆盖排队、全部尝试和退避的单一执行预算，限制所有计时器输入为最多一小时，并隔离 Observer 异常，新增总预算与观测失败回归测试。
 
+## Independent Review Round 1 And Owner Fixes
+
+Agent B 对 `c7429c8` 完成只读独立 Review，提出五项可执行问题：P1 Webhook 验签字节可在异步边界被修改、P1 异步 Observer rejection 未被隔离、P2 ReplayStore 异常与返回值未归一、P2 抖动后退避可突破一小时、P2 默认熔断将调用方取消计为 Provider 故障。Authorization、Migrations、Backward Compatibility 和 Secrets 无 finding；Transactions/Idempotency、Observability 与 Failure Modes 的问题由上述 finding 覆盖。
+
+Owner 在 `f2f85e8` 全部修复并补回归：进入异步验签前验证并复制原始字节、预计算摘要且拒绝 Verifier 修改；无效字节不会调用 ReplayStore；Store 所有异常统一映射为可重试 `upstream_unavailable` 并精确校验返回结构；同步和异步 Observer 故障都被吸收；有效抖动后退避上限固定为一小时；默认熔断只统计稳定 Provider/传输故障类别。专项证据为 25/25 tests、lint、typecheck 与 28/28 contracts checks 通过。等待同一 Agent B 复审，当前不得标记 G2。
+
 ## Handoff Result
 
-专项 build/lint/typecheck/test/contracts 检查完成后提交 Owner 版本；尚未执行独立 Review，不得标记 G2 accepted。
+Owner 已完成独立 Review Round 1 修复；等待同一 Reviewer 复查五项 finding 及新增覆盖面，不得提前标记 G2 accepted。
