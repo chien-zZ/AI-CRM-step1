@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-crm.local/contracts/integrations/v1/integration-operation-policy.schema.json",
+  "title": "Provider-neutral integration operation policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "operationId", "safety", "deadlines", "retry"],
+  "properties": {
+    "version": { "const": 1 },
+    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{2,79}$" },
+    "safety": { "enum": ["read", "idempotent_write", "non_idempotent_write"] },
+    "deadlines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connectMs", "responseMs", "totalMs"],
+      "properties": {
+        "connectMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "responseMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "totalMs": { "type": "integer", "minimum": 1, "maximum": 3600000 }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxAttempts", "backoffMs", "jitterRatio", "retryableCategories"],
+      "properties": {
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "backoffMs": {
+          "type": "array",
+          "maxItems": 9,
+          "items": { "type": "integer", "minimum": 0, "maximum": 3600000 }
+        },
+        "jitterRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "retryableCategories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["connection", "rate_limited", "timeout", "upstream_unavailable"]
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "safety": { "const": "non_idempotent_write" } }, "required": ["safety"] },
+      "then": {
+        "type": "object",
+        "properties": {
+          "retry": {
+            "type": "object",
+            "properties": { "maxAttempts": { "const": 1 } }
+          }
+        }
+      }
+    }
+  ]
+}

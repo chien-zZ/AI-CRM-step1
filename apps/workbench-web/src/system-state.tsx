@@ -11,11 +11,11 @@ export const stateCopy = {
 
 export type StateKind = keyof typeof stateCopy;
 
-export function SystemState({ kind, loginUrl, onRetry }: { kind: StateKind; loginUrl?: string; onRetry?: () => void }): React.JSX.Element {
+export function SystemState({ kind, loginUrl, onRetry, retryable = false }: { kind: StateKind; loginUrl?: string; onRetry?: () => void; retryable?: boolean }): React.JSX.Element {
   const copy = stateCopy[kind];
   const action = kind === "expired"
     ? <Button type="primary" href={loginUrl ?? "/auth/pc/login"}>重新登录</Button>
-    : onRetry
+    : retryable && onRetry
       ? <Button type="primary" onClick={onRetry}>重试</Button>
       : <Button type="primary" href="/workspace">返回工作概览</Button>;
   return <Result status={copy.status} title={copy.title} subTitle={copy.detail} extra={action} />;

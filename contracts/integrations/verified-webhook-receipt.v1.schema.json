@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-crm.local/contracts/integrations/v1/verified-webhook-receipt.schema.json",
+  "title": "Verified provider-neutral Webhook receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "eventId", "protocolVersion", "receivedAt", "reservationId", "bodyDigest"],
+  "properties": {
+    "version": { "const": 1 },
+    "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "protocolVersion": { "type": "string", "pattern": "^v[1-9][0-9]*$" },
+    "receivedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$" },
+    "reservationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "bodyDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

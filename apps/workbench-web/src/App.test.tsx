@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
-import { App, normalizeReturnTo, pcLoginUrl } from "./App";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { App, normalizeReturnTo, pcLoginUrl, RouteErrorBoundary } from "./App";
 import { developmentFixturePort } from "./development-fixture";
 import type { BootstrapResult, WorkbenchPort } from "./workbench-port";
 
@@ -63,6 +63,11 @@ const longReady: ReadyBootstrap = {
   }])) as ReadyBootstrap["collections"],
 };
 
+afterEach(() => {
+  Object.defineProperty(window.navigator, "onLine", { configurable: true, value: true });
+  window.dispatchEvent(new Event("online"));
+});
+
 describe("workbench shell", () => {
   it("normalizes inconsistent tab, filter, page and selection URL state", async () => {
     renderApp("/tasks?tab=history&filter=unknown&page=99&selected=fixture-task-02");
@@ -81,6 +86,31 @@ describe("workbench shell", () => {
     expect(screen.getByTestId("pro-layout")).toHaveAttribute("data-open", "/coordination");
     expect(screen.getByTestId("pro-layout")).toHaveAttribute("data-location", "/notifications");
     expect(screen.getByText("fixture-notification-06")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).not.toHaveTextContent("selected=");
+
+    fireEvent.click(screen.getByRole("button", { name: /合成通知 7/u }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/notifications/fixture-notification-07"));
+    expect(screen.getByTestId("location")).not.toHaveTextContent("selected=");
+    expect(screen.getByText("fixture-notification-07")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["/coordination", "任务", "/tasks"],
+    ["/resources", "表单", "/forms"],
+  ])("redirects linked parent path %s to a stable child", async (entry, heading, expectedPath) => {
+    renderApp(entry);
+
+    expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(expectedPath));
+  });
+
+  it("renders an explicit object not-found state for an unknown deep-link id", async () => {
+    renderApp("/tasks/fixture-does-not-exist");
+
+    expect(await screen.findByText("对象不存在")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/tasks/fixture-does-not-exist");
+    expect(screen.queryByText("fixture-task-01")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回当前集合" })).toHaveAttribute("href", "/tasks");
   });
 
   it("shows every required runtime state with explicit copy", async () => {
@@ -104,9 +134,57 @@ describe("workbench shell", () => {
     }
   });
 
+  it("uses route-appropriate actions for direct status pages", async () => {
+    renderApp("/status/403");
+    expect(await screen.findByRole("link", { name: "返回工作概览" })).toHaveAttribute("href", "/workspace");
+  });
+
+  it("returns expired-session login to the workspace instead of the expired status URL", async () => {
+    renderApp("/status/session-expired");
+    expect(await screen.findByRole("link", { name: "重新登录" })).toHaveAttribute("href", "/auth/pc/login?returnTo=%2Fworkspace");
+  });
+
+  it("leaves a retryable direct status route after a successful refetch", async () => {
+    const bootstrap = vi.fn(() => developmentFixturePort.bootstrap());
+    renderApp("/status/500", { bootstrap, logout: () => developmentFixturePort.logout() });
+    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+
+    expect(await screen.findByRole("heading", { name: "工作概览" })).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/workspace");
+    expect(bootstrap).toHaveBeenCalled();
+  });
+
   it("fails closed when the runtime adapter reports maintenance", async () => {
     renderApp("/workspace", { bootstrap: vi.fn().mockResolvedValue({ kind: "maintenance" }), logout: vi.fn() });
     expect(await screen.findByText("服务维护中")).toBeInTheDocument();
+  });
+
+  it("announces connectivity loss through a semantic live alert", async () => {
+    Object.defineProperty(window.navigator, "onLine", { configurable: true, value: true });
+    renderApp("/workspace");
+    await screen.findByRole("heading", { name: "工作概览" });
+
+    Object.defineProperty(window.navigator, "onLine", { configurable: true, value: false });
+    window.dispatchEvent(new Event("offline"));
+    const notice = await screen.findByText("网络已断开，当前操作不会被视为成功");
+    expect(notice).toHaveAttribute("role", "alert");
+    expect(notice).toHaveAttribute("aria-live", "assertive");
+    expect(notice).toHaveTextContent("网络已断开，当前操作不会被视为成功");
+    expect(notice.nextElementSibling).toHaveClass("connectivity-content-offline");
+  });
+
+  it("contains lazy route failures and exposes an explicit recovery action", async () => {
+    const recover = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    function FailedRoute(): React.JSX.Element {
+      throw new Error("synthetic lazy chunk failure");
+    }
+    render(<RouteErrorBoundary onRecover={recover}><FailedRoute /></RouteErrorBoundary>);
+
+    expect(await screen.findByText("页面资源加载失败。请重新加载工作台；未完成操作不会被视为成功。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(recover).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
   });
 
   it("constructs only the fixed same-site login entry with a bounded local returnTo", async () => {

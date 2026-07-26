@@ -49,12 +49,14 @@ Deliver the business-neutral PC workbench shell for CLI-01 without treating the 
 - Business-neutral navigation and pages for work overview, tasks, notifications, forms, files, and personal settings.
 - URL-restorable `tab`, `filter`, `page`, and `selected` collection state plus longest-prefix navigation matching.
 - Explicit 403, 404, 500, offline, session-expired, and maintenance presentations.
+- Direct status routes expose route-appropriate return, login, or bootstrap-refetch recovery actions; lazy route failures are contained by an explicit reload boundary.
 - BFF login entry and a fail-closed production runtime port. Development-only/test-only fixture content is visibly labelled synthetic.
 - Master-detail platform collection layout, keyboard-focus treatment, accessible labels, empty states, and responsive behavior.
 - Fixed same-site `/auth/pc/login` construction with the authentication contract's bounded local `returnTo` rules; bootstrap data can no longer inject a login URL.
 - Explicit logout pending, error/retry, signed-out, and expired-session convergence; no logout Promise is discarded.
 - ProLayout receives longest-prefix leaf selection and parent open keys, including collection object deep links.
 - Route-specific lazy chunks and a manifest-driven bundle budget covering individual chunks, entry, static initial imports, and each lazy route's complete static import closure.
+- Connectivity loss is announced through a semantic live alert and reserves its own layout height below the fixed header.
 
 ## Demo Reference Differences
 
@@ -77,7 +79,7 @@ Deliver the business-neutral PC workbench shell for CLI-01 without treating the 
 - Observability: no sensitive telemetry was added. Errors expose stable generic copy and no response body, token, cookie, or personal data.
 - Backward Compatibility: public `applicationId` export remains unchanged; root `/` redirects to `/workspace`.
 - Secrets: source, fixtures, URLs, and build configuration contain no credentials or real identifiers.
-- Failure Modes: loading, fetch failure, signed-out, expired, maintenance, offline, forbidden, missing route, login-return validation, logout pending/error/retry, and retry behaviors are explicit.
+- Failure Modes: loading, fetch failure, signed-out, expired, maintenance, offline, forbidden, missing route, login-return validation, logout pending/error/retry, direct-status refetch/return behavior, and lazy-chunk recovery are explicit.
 
 ## Independent Review Round 1 Remediation
 
@@ -87,12 +89,14 @@ All entries below are implemented by the commit titled `CLI-01: resolve independ
 |---|---|---|
 | P1 injectable `loginUrl` and unsafe `returnTo` | Removed `loginUrl` from `BootstrapResult`; `pcLoginUrl` always targets `/auth/pc/login` and mirrors the reviewed 512-character local-path restrictions. | `constructs only the fixed same-site login entry with a bounded local returnTo` |
 | P1 discarded logout Promise | `WorkbenchPort.logout` returns an explicit signed-out/session-expired result; Shell renders pending and retryable error states and converges Query session state only on success. | Pending/success and failure/retry logout tests |
-| P2 longest-prefix match not connected | ProLayout now receives normalized `location`, `menuProps.selectedKeys`, and parent `openKeys`; object deep-link routes render their owning collection. | ProLayout deep-link test plus navigation parent/leaf unit test |
-| P2 inconsistent tab/filter/page/selected | Collection state validates Tab/filter, clamps page, derives the selected item's page, and replaces invalid selection with an item in the current range; legal object deep links select their own Tab. | URL normalization and collection deep-link tests |
-| P2 offline notice covers header | Offline notice starts at the reviewed 48px fixed-header boundary with a lower stacking layer. | Executable CSS rule test |
+| P2 longest-prefix match not connected | ProLayout now receives normalized `location`, `menuProps.selectedKeys`, and parent `openKeys`; object deep-link routes render their owning collection; linked `/coordination` and `/resources` parents redirect to stable default children. | ProLayout deep-link test, parent redirect tests, and navigation parent/leaf unit test |
+| P2 inconsistent tab/filter/page/selected | Collection state validates Tab/filter, clamps page, and derives the selected item's page. Query selection is canonical on collection routes; path selection is canonical on object routes, row clicks replace that path, and unknown IDs render an explicit 404 with an absolute collection return target. | URL normalization, deep-link row selection, unknown-ID, and return-action tests |
+| P2 offline notice covers content/header and is not announced | Offline notice is a semantic assertive alert at the reviewed 48px header boundary; the offline content wrapper reserves its 30px height. | Accessible offline-event test and executable non-overlap CSS test |
 | P2 unclear hierarchy/desktop width | ProLayout remains the approved shell with mix/split hierarchy, 48px header token, 184px secondary Sider, explicit parent/leaf state, fluid content, and 1680px content ceiling. | ProLayout selection test and production build |
 | P2 icon-only logout/text overflow | Logout has Tooltip and accessible name; header, list title/status/summary, context, IDs, and detail values have bounded truncation or stable wrapping. | Tooltip/accessible-name test and long-text tests at 320px and 360px |
-| P3 monolithic bundle/no budget | Overview, collection, settings, and system states are distinct lazy entries; vendor groups use explicit-only manual chunks; build executes `check-bundle.mjs`. No Vite warning limit is raised or disabled. | Production build and manifest-driven bundle budget |
+| P2 direct status actions do not recover | 403/404 return to the workspace, session-expired login returns to `/workspace`, and 500/offline/maintenance refetch bootstrap before leaving the status URL. | Direct status action, login target, refetch, and actual-location tests |
+| P2 lazy route rejection escapes Suspense | A synchronous Error Boundary contains rejected/stale route chunks, renders generic safe failure copy, and exposes an explicit full-page reload action. | Synthetic lazy-route failure and recovery-action test |
+| P3 monolithic bundle/no budget | Overview, collection, settings, and status routes are distinct lazy entries; vendor groups use explicit-only manual chunks; build executes `check-bundle.mjs`. No Vite warning limit is raised or disabled. | Production build and manifest-driven bundle budget |
 
 The offline browser visual pass was attempted after these fixes, but the configured browser runtime reported no available browser instance. This is recorded as missing visual evidence, not treated as a pass.
 
@@ -110,13 +114,13 @@ The offline browser visual pass was attempted after these fixes, but the configu
 - Workbench build: passed; Vite production output generated successfully.
 - Workbench lint: passed with the application-local TS/TSX typed ESLint configuration.
 - Workbench typecheck: passed.
-- Workbench tests: 3 files, 15 tests passed. Coverage includes longest-prefix shell selection, deep links, URL normalization, all required runtime states, fixed BFF login construction, logout pending/success/failure/retry, Tooltip/accessibility, fixed-header offline offset, and 320px/360px long text behavior.
+- Workbench tests: 3 files, 23 tests passed. Coverage includes longest-prefix shell selection, parent redirects, canonical object deep links, unknown-object handling, URL normalization, route-specific status actions and recovery, all required runtime states, fixed BFF login construction, logout pending/success/failure/retry, semantic connectivity announcements, lazy-route failure containment, Tooltip/accessibility, offline non-overlap, and 320px/360px long text behavior.
 - Workbench contract/package check: passed.
 - Repository boundary check: passed after removing the cross-package ESLint configuration import.
 - Full `pnpm check`: passed after Round 1 remediation, 140/140 Turbo tasks successful.
 - Production artifact scan: concrete development fixture identifiers and values are absent; the generic Fixture disclosure component remains intentionally available for injected non-production data.
 - Visual browser pass: attempted, but the browser runtime reported no available browser instance. Independent visual review remains required.
-- Bundle budget: passed without changing `chunkSizeWarningLimit`. Entry is 84,295 bytes; manifest static-initial import closure is 973,851 bytes. Complete route import closures are collection 1,160,077 bytes, overview 1,046,784 bytes, settings 988,237 bytes, and system state 975,139 bytes. The largest individual chunk is 493,550 bytes; all four route entries are independently lazy.
+- Bundle budget: passed without changing `chunkSizeWarningLimit`. Entry is 87,240 bytes; manifest static-initial import closure is 976,796 bytes. Complete route import closures are collection 1,163,720 bytes, overview 1,049,729 bytes, settings 991,182 bytes, and status route 977,149 bytes. The largest individual chunk is 493,550 bytes; all four route entries are independently lazy.
 
 ## Review Status
 

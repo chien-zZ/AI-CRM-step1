@@ -1,7 +1,7 @@
 import { PageContainer } from "@ant-design/pro-components";
-import { Alert, Card, Descriptions, Empty, Flex, Pagination, Segmented, Select, Tag, Typography } from "antd";
+import { Alert, Button, Card, Descriptions, Empty, Flex, Pagination, Result, Segmented, Select, Tag, Typography } from "antd";
 import { useEffect, useMemo } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { PlatformCollection, PlatformItem } from "./workbench-port";
 
 const { Text } = Typography;
@@ -39,10 +39,17 @@ export function normalizeCollectionState(
 }
 
 function useCollectionUrlState(collection: PlatformCollection): NormalizedCollectionState & {
-  update: (changes: Record<string, string | undefined>) => void;
+  basePath: string;
+  invalidPathSelection: boolean;
+  select: (id: string) => void;
+  update: (changes: Record<string, string | undefined>, dropPathSelection?: boolean) => void;
 } {
   const { itemId } = useParams<{ itemId?: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const basePath = `/${location.pathname.split("/").filter(Boolean)[0] ?? ""}`;
+  const invalidPathSelection = itemId !== undefined && !collection.items.some((item) => item.id === itemId);
   const pageValue = Number(params.get("page") ?? "1");
   const raw = useMemo(() => ({
     filter: params.get("filter") ?? "all",
@@ -52,13 +59,28 @@ function useCollectionUrlState(collection: PlatformCollection): NormalizedCollec
   }), [pageValue, params]);
   const normalized = useMemo(() => normalizeCollectionState(collection, raw, itemId), [collection, itemId, raw]);
 
-  const update = (changes: Record<string, string | undefined>): void => {
+  const update = (changes: Record<string, string | undefined>, dropPathSelection = false): void => {
     const next = new URLSearchParams(params);
     Object.entries(changes).forEach(([key, value]) => {
       if (value === undefined) next.delete(key);
       else next.set(key, value);
     });
-    setParams(next, { replace: true });
+    if (dropPathSelection && itemId !== undefined) {
+      next.delete("selected");
+      void navigate({ pathname: basePath, search: next.toString() }, { replace: true });
+    } else {
+      setParams(next, { replace: true });
+    }
+  };
+
+  const select = (id: string): void => {
+    if (itemId === undefined) {
+      update({ selected: id });
+      return;
+    }
+    const next = new URLSearchParams(params);
+    next.delete("selected");
+    void navigate({ pathname: `${basePath}/${encodeURIComponent(id)}`, search: next.toString() }, { replace: true });
   };
 
   useEffect(() => {
@@ -66,18 +88,23 @@ function useCollectionUrlState(collection: PlatformCollection): NormalizedCollec
     canonical.set("tab", normalized.tab);
     canonical.set("filter", normalized.filter);
     canonical.set("page", String(normalized.page));
-    if (normalized.selected === undefined) canonical.delete("selected");
+    if (itemId !== undefined) canonical.delete("selected");
+    else if (normalized.selected === undefined) canonical.delete("selected");
     else canonical.set("selected", normalized.selected);
-    if (canonical.toString() !== params.toString()) setParams(canonical, { replace: true });
-  }, [normalized.filter, normalized.page, normalized.selected, normalized.tab, params, setParams]);
+    if (!invalidPathSelection && canonical.toString() !== params.toString()) setParams(canonical, { replace: true });
+  }, [invalidPathSelection, itemId, normalized.filter, normalized.page, normalized.selected, normalized.tab, params, setParams]);
 
-  return { ...normalized, update };
+  return { ...normalized, basePath, invalidPathSelection, select, update };
 }
 
 export function CollectionPage({ collection }: { collection: PlatformCollection }): React.JSX.Element {
   const state = useCollectionUrlState(collection);
   const selected = collection.items.find((item) => item.id === state.selected);
   const total = collection.items.filter((item) => item.tab === state.tab && (state.filter === "all" || item.status === state.filter)).length;
+
+  if (state.invalidPathSelection) {
+    return <Result status="404" title="对象不存在" subTitle="该平台对象引用不存在，或当前 Fixture 已更新。" extra={<Button type="primary" href={state.basePath}>返回当前集合</Button>} />;
+  }
 
   return (
     <PageContainer title={collection.title} subTitle="平台能力视图">
@@ -89,13 +116,13 @@ export function CollectionPage({ collection }: { collection: PlatformCollection 
               aria-label="数据范围"
               value={state.tab}
               options={[{ label: "当前", value: "active" }, { label: "历史", value: "history" }]}
-              onChange={(value) => { state.update({ tab: String(value), page: "1", selected: undefined }); }}
+              onChange={(value) => { state.update({ tab: String(value), page: "1", selected: undefined }, true); }}
             />
             <Select
               aria-label="状态筛选"
               value={state.filter}
               options={[{ label: "全部状态", value: "all" }, ...collection.statuses.map((value) => ({ label: value, value }))]}
-              onChange={(value) => { state.update({ filter: value, page: "1", selected: undefined }); }}
+              onChange={(value) => { state.update({ filter: value, page: "1", selected: undefined }, true); }}
             />
             {state.items.length === 0
               ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可显示内容" />
@@ -106,7 +133,7 @@ export function CollectionPage({ collection }: { collection: PlatformCollection 
                       type="button"
                       className={selected?.id === item.id ? "collection-item selected" : "collection-item"}
                       aria-pressed={selected?.id === item.id}
-                      onClick={() => { state.update({ selected: item.id }); }}
+                      onClick={() => { state.select(item.id); }}
                     >
                       <Flex justify="space-between" gap={8} className="collection-item-heading">
                         <Text strong className="truncate-text" title={item.title}>{item.title}</Text>
@@ -121,7 +148,7 @@ export function CollectionPage({ collection }: { collection: PlatformCollection 
               current={state.page}
               pageSize={PAGE_SIZE}
               total={total}
-              onChange={(page) => { state.update({ page: String(page), selected: undefined }); }}
+              onChange={(page) => { state.update({ page: String(page), selected: undefined }, true); }}
               showSizeChanger={false}
               hideOnSinglePage
             />

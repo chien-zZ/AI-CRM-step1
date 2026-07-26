@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "app-registry",
+  "purpose": "Create stable business-neutral applications, registered relative routes, navigation entries, enablement state, permission references, and idempotency receipts.",
+  "applicationCompatibility": ">=0.0.0",
+  "lockImpact": "Creates a new module-owned schema, tables, constraints, and indexes only; no existing table is rewritten or locked.",
+  "dataImpact": "Creates empty registry structures. No internal route, external route, role, permission grant, CRM application, or navigation item is seeded.",
+  "backfill": "Not required. Registrations are accepted only through explicit authorized commands.",
+  "destructive": false,
+  "recovery": "Roll back the application while retaining registered stable identifiers. Restore the pre-migration point only before registrations are accepted.",
+  "forwardFix": "This unmerged migration may be corrected during its pre-G2 review. After first application, append a reviewed app-registry-owned migration for constraints or schema repairs and never rewrite the applied migration."
+}

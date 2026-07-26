@@ -176,7 +176,34 @@ body {
   min-height: 100vh;
 }
 
-html[data-connectivity="offline"]::before {
+.direct-system-state-action {
+  margin-top: -28px;
+  text-align: center;
+}
+
+.direct-retry-button {
+  min-width: 74px;
+  height: 32px;
+  padding-inline: 15px;
+  color: #fff;
+  font: inherit;
+  background: #1677ff;
+  border: 1px solid #1677ff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.direct-retry-button:hover {
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.direct-retry-button:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+.connectivity-alert {
   position: fixed;
   z-index: 999;
   inset: 48px 0 auto;
@@ -187,9 +214,12 @@ html[data-connectivity="offline"]::before {
   font-size: 13px;
   line-height: 18px;
   text-align: center;
-  content: "网络已断开，当前操作不会被视为成功";
   background: #fff1b8;
   border-bottom: 1px solid #ffd666;
+}
+
+.connectivity-content-offline {
+  padding-top: 30px;
 }
 
 @media (max-width: 1024px) {

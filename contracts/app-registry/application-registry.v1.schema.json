@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/app-registry/v1/application-registry.schema.json",
+  "title": "Application Registry V1",
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "applications", "navigation", "routes"],
+  "properties": {
+    "version": { "const": 1 },
+    "applications": { "type": "array", "items": { "$ref": "#/$defs/application" } },
+    "navigation": { "type": "array", "items": { "$ref": "#/$defs/navigation" } },
+    "routes": { "type": "array", "items": { "$ref": "#/$defs/route" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "permission": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}:[a-z][a-z0-9_.-]{0,63}$" },
+    "application": { "type": "object", "additionalProperties": false, "required": ["applicationId", "audience", "enabled", "permissionCode"], "properties": { "applicationId": { "$ref": "#/$defs/id" }, "audience": { "enum": ["internal", "external"] }, "enabled": { "type": "boolean" }, "permissionCode": { "$ref": "#/$defs/permission" } } },
+    "navigation": { "type": "object", "additionalProperties": false, "required": ["navigationId", "applicationId", "routeId", "enabled", "order"], "properties": { "navigationId": { "$ref": "#/$defs/id" }, "applicationId": { "$ref": "#/$defs/id" }, "routeId": { "$ref": "#/$defs/id" }, "parentNavigationId": { "$ref": "#/$defs/id" }, "enabled": { "type": "boolean" }, "order": { "type": "integer", "minimum": 0, "maximum": 100000 } } },
+    "route": { "type": "object", "additionalProperties": false, "required": ["routeId", "applicationId", "path", "enabled", "permissionCode", "deepLinkSources"], "properties": { "routeId": { "$ref": "#/$defs/id" }, "applicationId": { "$ref": "#/$defs/id" }, "path": { "type": "string", "pattern": "^/[a-z0-9_./:-]{0,255}$" }, "enabled": { "type": "boolean" }, "permissionCode": { "$ref": "#/$defs/permission" }, "deepLinkSources": { "type": "array", "uniqueItems": true, "items": { "enum": ["task", "notification"] } } } }
+  }
+}

@@ -53,7 +53,7 @@ for (const source of applicationEntry.dynamicImports) {
   if (total > maximumRouteBytes) throw new Error(`Route ${source} exceeds ${maximumRouteBytes} bytes: ${total}.`);
 }
 
-for (const source of ["src/overview-page.tsx", "src/pages.tsx", "src/settings-page.tsx", "src/system-state.tsx"]) {
+for (const source of ["src/overview-page.tsx", "src/pages.tsx", "src/settings-page.tsx", "src/status-route-page.tsx"]) {
   if (!routeTotals.has(source)) throw new Error(`Required lazy route entry ${source} is missing.`);
 }
 
