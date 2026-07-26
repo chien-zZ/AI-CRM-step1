@@ -1,6 +1,6 @@
 # PLT-01 Audit And Application Registry
 
-- Status: Independent Review Round 1 fixes and Owner self-review complete; awaiting same Reviewer re-review
+- Status: G2_ACCEPTED; independent re-review zero findings; awaiting Integration Owner serial merge
 - Branch: `task/PLT-01-audit-app-registry`
 - Owner: Agent B
 - Independent Reviewer: Agent D
@@ -141,4 +141,11 @@ Owner regression evidence includes application-denied/route-allowed deep links, 
 - Audit retention, legal hold, security reviewer permissions, export, sealing, and break-glass rules require accepted governance decisions.
 - Concrete Audit action/field policy registrations and Registry applications/routes/permissions belong to confirmed capability Owners and CMP-01 composition.
 - Formal application display metadata, localization, icons, external registrations, and resource-specific deep-link parameter rules remain unconfirmed.
-- Independent Reviewer findings and fixes must be appended here. Owner self-review does not satisfy the independent Review gate and PLT-01 is not yet G2 accepted.
+
+## Independent Re-review Result
+
+The same independent Reviewer re-reviewed fix commit `9c60ffa` and confirmed all six Round 1 findings closed with no new actionable P0-P3 finding. The Reviewer reran Audit 8/8 and Application Registry 13/13 unit tests plus both package typechecks, and verified shared forbidden paths remained unchanged.
+
+Eight-area conclusion: application and route authorization both fail closed; canonical idempotency normalizes semantic sets; local state/receipt transaction boundaries remain atomic; the self-parent migration constraint matches runtime validation and the documented pre-G2 migration policy; observability remains bounded; V1 changes remain additive; no Secret or provider data was introduced; malformed inputs and invalid dependency decisions fail closed.
+
+PLT-01 is therefore `G2_ACCEPTED`. Merge remains a separate Integration Owner action and must preserve the recorded Lockfile and generated-artifact windows.
