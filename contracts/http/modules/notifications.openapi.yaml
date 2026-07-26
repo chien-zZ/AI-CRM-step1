@@ -1,0 +1,110 @@
+openapi: 3.1.0
+info: { title: AI-CRM In-App Notifications API, version: 0.1.0 }
+paths:
+  /notifications:
+    get:
+      operationId: listNotifications
+      x-ai-crm-audiences: [internal]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200": { description: Current principal's visible in-app notifications., content: { application/json: { schema: { $ref: "#/components/schemas/NotificationPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /notifications/unread-count:
+    get:
+      operationId: getNotificationUnreadCount
+      x-ai-crm-audiences: [internal]
+      responses:
+        "200": { description: Current principal's unread count., content: { application/json: { schema: { type: object, additionalProperties: false, required: [count], properties: { count: { type: integer, minimum: 0 } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /notifications/{notificationId}:
+    get:
+      operationId: getNotification
+      x-ai-crm-audiences: [internal]
+      parameters: [ { $ref: "#/components/parameters/NotificationId" } ]
+      responses:
+        "200": { description: Current principal's notification after object authorization., content: { application/json: { schema: { $ref: "#/components/schemas/InAppNotification" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Notification does not exist for the current principal. }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /notifications/{notificationId}/read:
+    post:
+      operationId: markNotificationRead
+      x-ai-crm-audiences: [internal]
+      description: Idempotently changes only the current principal's in-app read state; it never completes a task or business action.
+      parameters: [ { $ref: "#/components/parameters/NotificationId" } ]
+      responses:
+        "200": { description: Updated in-app notification., content: { application/json: { schema: { $ref: "#/components/schemas/InAppNotification" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Notification does not exist for the current principal. }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /notifications/{notificationId}/archive:
+    post:
+      operationId: archiveNotification
+      x-ai-crm-audiences: [internal]
+      parameters: [ { $ref: "#/components/parameters/NotificationId" } ]
+      responses:
+        "200": { description: Idempotently archived in-app notification., content: { application/json: { schema: { $ref: "#/components/schemas/InAppNotification" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Notification does not exist for the current principal. }
+        "503": { $ref: "#/components/responses/Unavailable" }
+components:
+  parameters:
+    NotificationId: { name: notificationId, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    Unauthorized: { description: No valid internal BFF session. }
+    Forbidden: { description: Current server-side authorization denied. }
+    Unavailable: { description: "Authorization, audit, recipient resolution, template validation, or storage failed closed." }
+  schemas:
+    StableId: { type: string, pattern: "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$" }
+    DeepLink:
+      type: object
+      additionalProperties: false
+      required: [applicationId,routeId,resourceType,resourceId]
+      properties:
+        applicationId: { $ref: "#/components/schemas/StableId" }
+        routeId: { $ref: "#/components/schemas/StableId" }
+        resourceType: { $ref: "#/components/schemas/StableId" }
+        resourceId: { $ref: "#/components/schemas/StableId" }
+        parameters: { type: object, maxProperties: 20, additionalProperties: { $ref: "#/components/schemas/StableId" } }
+    InAppNotification:
+      type: object
+      additionalProperties: false
+      required: [notificationId,intentId,principalId,recipientReference,resolutionReference,resolutionVersion,templateKey,templateVersion,notificationType,title,body,sourceType,sourceId,deepLink,preferenceDecision,preferenceReason,preferenceVersion,createdAt]
+      properties:
+        notificationId: { type: string, format: uuid }
+        intentId: { type: string, format: uuid }
+        principalId: { $ref: "#/components/schemas/StableId" }
+        recipientReference: { $ref: "#/components/schemas/StableId" }
+        resolutionReference: { $ref: "#/components/schemas/StableId" }
+        resolutionVersion: { $ref: "#/components/schemas/StableId" }
+        templateKey: { $ref: "#/components/schemas/StableId" }
+        templateVersion: { type: integer, minimum: 1 }
+        notificationType: { $ref: "#/components/schemas/StableId" }
+        title: { type: string, maxLength: 512 }
+        body: { type: string, maxLength: 8000 }
+        sourceType: { $ref: "#/components/schemas/StableId" }
+        sourceId: { $ref: "#/components/schemas/StableId" }
+        deepLink: { $ref: "#/components/schemas/DeepLink" }
+        preferenceDecision: { type: string, enum: [deliver,suppress] }
+        preferenceReason: { $ref: "#/components/schemas/StableId" }
+        preferenceVersion: { $ref: "#/components/schemas/StableId" }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: string, format: date-time }
+        archivedAt: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/InAppNotification" } }
+        nextCursor: { type: string, maxLength: 128 }

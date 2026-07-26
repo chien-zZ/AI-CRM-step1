@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "notifications",
+  "purpose": "Add immutable notification templates, producer-scoped intent idempotency, recipient snapshots, preference decisions, and in-app notification state.",
+  "applicationCompatibility": "Additive; existing applications are unaffected until Notification Center is composed.",
+  "lockImpact": "Creates a new schema, tables, and indexes only; no existing application table is locked.",
+  "dataImpact": "No existing data is changed.",
+  "backfill": "None required.",
+  "recovery": "Before consumers start, restore the pre-deployment backup. After use, preserve notification and audit history and forward-fix; do not drop accepted intent or read-state facts.",
+  "forwardFix": "Append a new globally numbered migration. Never modify this migration after deployment.",
+  "destructive": false
+}

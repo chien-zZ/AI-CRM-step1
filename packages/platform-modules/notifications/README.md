@@ -1,11 +1,34 @@
 # Notifications
 
-Owns explicit notification intents, actual recipient snapshots, in-app notifications, immutable Mustache template releases, preferences, channels, deduplication, scheduling, delivery attempts, and receipts. Business modules decide why a notification is requested and provide stable resource references; notifications never replace tasks or domain facts.
+Business-neutral Notification Center core for explicit notification intents, immutable plain-text template releases, actual recipient snapshots, preference decisions, and PostgreSQL-backed in-app user state.
 
-Provider delivery addresses such as a WeCom user identifier are channel data, not the authentication source of truth. This module must obtain them through reviewed interfaces and must never query Keycloak tables directly. See [ADR-0006](../../../docs/08-架构决策/ADR-0006-第三方身份通过Keycloak联合接入.md).
+First-stage behavior is intentionally limited to PC polling semantics: list, detail, unread count, mark read, and archive. The module exposes ports for authorization, audit, recipient resolution, preferences, and observation; composition remains in `CMP-01`.
 
-The first stage implements only PostgreSQL-backed in-app notifications queried by PC Web polling. No WeCom, WeChat, SMS, email, JPush, WebSocket, or SSE adapter is implemented until its client and channel scope are approved.
+## Invariants
 
-For a future approved external channel, this module owns the vendor-neutral `ChannelAdapter` port and delivery facts; the concrete adapter may reuse `integration-runtime` technical primitives at the Worker composition boundary. Provider acceptance or delivery never implies that the user read the notification.
+- Intent idempotency is scoped by `producer + idempotencyKey`; reuse with a different fingerprint fails.
+- Recipients are stable references resolved by an injected public port. The module never queries organization or domain tables.
+- Published template versions are immutable. Notifications retain rendered title/body and the exact template version.
+- Templates are restricted Mustache plain text with JSON Schema validation. Raw tags, sections, partials, prototype names, missing variables, unknown variables, and invalid values fail closed.
+- Deep links contain only `applicationId + routeId`, stable resource references, and bounded non-sensitive parameters. Arbitrary URLs are not accepted.
+- In-app read/archive state is principal scoped and idempotent. It never changes Task or domain state.
+- Suppression is a recorded preference decision, not deletion of the accepted intent or recipient fact.
 
-See [ADR-0014](../../../docs/08-架构决策/ADR-0014-自研通知中心与站内通知优先.md), [ADR-0020](../../../docs/08-架构决策/ADR-0020-第三方集成运行时与供应商适配器.md), the [module description](../../../docs/03-模块说明/通知中心.md), and the [first-stage scope](../../../docs/01-权威与基线/第一阶段通知范围.md).
+## Failure and recovery
+
+- Authorization, audit, recipient resolution, validation, and storage failures use stable errors and fail closed.
+- Intent and recipient/in-app facts are inserted in one PostgreSQL transaction. Concurrent duplicate requests return the original result.
+- Migration `0000000009_notifications.sql` is additive. After production use, forward-fix and preserve accepted intent/read-state history instead of dropping the schema.
+- RabbitMQ delivery workers and any retry/dead-letter composition remain `CMP-01`; PostgreSQL notification facts are authoritative and external transport failure must not delete them.
+
+## Verification
+
+```text
+pnpm --filter @ai-crm/platform-notifications lint
+pnpm --filter @ai-crm/platform-notifications typecheck
+pnpm --filter @ai-crm/platform-notifications test
+pnpm --filter @ai-crm/platform-notifications test:integration
+pnpm --filter @ai-crm/platform-notifications build
+```
+
+No WeCom, WeChat, SMS, email, push, WebSocket, SSE, provider adapter, CRM notification type, role, SLA, or recipient policy is implemented here.
