@@ -98,7 +98,7 @@ All entries below are implemented by the commit titled `CLI-01: resolve independ
 | P2 lazy route rejection escapes Suspense | A synchronous Error Boundary contains rejected/stale route chunks, renders generic safe failure copy, and exposes an explicit full-page reload action. | Synthetic lazy-route failure and recovery-action test |
 | P3 monolithic bundle/no budget | Overview, collection, settings, and status routes are distinct lazy entries; vendor groups use explicit-only manual chunks; build executes `check-bundle.mjs`. No Vite warning limit is raised or disabled. | Production build and manifest-driven bundle budget |
 
-The offline browser visual pass was attempted after these fixes, but the configured browser runtime reported no available browser instance. This is recorded as missing visual evidence, not treated as a pass.
+The Owner's earlier browser attempt had no available runtime and was not treated as a pass. The original independent Reviewer subsequently completed the required in-app Browser pass against exact commit `a11679c` at 1366x768 (`/workspace`), 1440x900 (`/tasks?tab=history`), 1920x1080 (`/resources` redirecting to `/forms`), and 390x844 (`/tasks`). All four viewports had `document.scrollWidth <= document.clientWidth`, no header/main/alert overlap, and correct narrow-screen vertical reflow.
 
 ## Required Verification
 
@@ -119,11 +119,11 @@ The offline browser visual pass was attempted after these fixes, but the configu
 - Repository boundary check: passed after removing the cross-package ESLint configuration import.
 - Full `pnpm check`: passed after Round 1 remediation, 140/140 Turbo tasks successful.
 - Production artifact scan: concrete development fixture identifiers and values are absent; the generic Fixture disclosure component remains intentionally available for injected non-production data.
-- Visual browser pass: attempted, but the browser runtime reported no available browser instance. Independent visual review remains required.
+- Independent visual browser pass: passed against exact commit `a11679c`. The Reviewer verified 1366x768 `/workspace`, 1440x900 `/tasks?tab=history`, 1920x1080 `/resources` to `/forms`, and 390x844 `/tasks`; all viewports had no horizontal overflow or header/main/alert overlap, with correct narrow-screen vertical reflow. `/coordination` redirected to `/tasks`. Direct 403, 500, offline, session-expired, and maintenance routes exposed the correct actions; the single 500 retry button recovered to `/workspace`. Browser console errors and warnings were both zero.
 - Bundle budget: passed without changing `chunkSizeWarningLimit`. Entry is 87,240 bytes; manifest static-initial import closure is 976,796 bytes. Complete route import closures are collection 1,163,720 bytes, overview 1,049,729 bytes, settings 991,182 bytes, and status route 977,149 bytes. The largest individual chunk is 493,550 bytes; all four route entries are independently lazy.
 
 ## Review Status
 
-- Owner self-review: Round 1 fixes implemented; scoped diff, business-neutrality, failure-mode, accessibility-code, bundle graph, and full repository checks pass with no open Owner finding.
-- Independent reviewer: Agent A reported the Round 1 findings above; same-reviewer re-review is pending.
-- G2 acceptance: not claimed.
+- Owner self-review: Round 1 and follow-up fixes implemented; scoped diff, business-neutrality, failure-mode, accessibility-code, bundle graph, and full repository checks pass with no open Owner finding.
+- Independent reviewer: Agent A completed same-reviewer code, accessibility, route, failure-mode, and in-app Browser review against exact commit `a11679c`; actionable findings are zero and unresolved architecture or contract issues are zero.
+- G2 acceptance: ready for the Integration Owner to record; not self-declared by the CLI-01 Owner.
