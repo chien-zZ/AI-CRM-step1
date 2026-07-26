@@ -79,5 +79,6 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - Round 1 fixes: transport types are narrowed and canonical generated operation ID/method/path are verified before I/O; collection entries use native focusable buttons; connectivity reads initial Taro network state before leaving loading; the direct status route exposes the same fail-closed pending-login notice. Regression tests cover all four findings, including negative transport calls that assert no request occurs.
 - Independent Review Round 2 on candidate `4d0a600`: all four Round 1 findings were closed. Agent A reported one new P2 ordering race where a delayed initial connectivity query could overwrite a newer network-change event.
 - Round 2 fix: once a subscribed connectivity event is observed, the initial query may no longer update state. A deferred-Promise regression test proves a stale online snapshot cannot overwrite a newer offline event.
-- Independent Reviewer re-review: pending on the next post-fix candidate.
+- Independent Review Round 3 on candidate `7fd281c`: the ordering-race finding was closed. The original Reviewer reported zero actionable findings, zero unresolved architecture/contract issues, and no new findings after rechecking initialization rejection, effect cleanup, and subscription ordering.
+- Review result: all executable findings are closed; scoped tests, production build, bundle gate, and `pnpm check` pass. G2 acceptance remains an Integration Owner decision.
 - G2 acceptance: not declared by the Owner.
