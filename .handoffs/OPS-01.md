@@ -121,6 +121,15 @@ Round 1 修复后专项证据：release tests 10/10；`pnpm compose:check` 通�
 
 Round 2 修复需重新通过 Edge 容器、Compose 静态/解析、release tests、ESLint、完整 `pnpm check`，再交原 Reviewer Round 3。
 
+## Independent Review Round 3 Acceptance
+
+- Reviewer 对精确 candidate `fe1c6e19b30525269293d90ba28572936849ba3b` 复查，P0-P3 可执行 finding 为零，未决架构或契约问题为零。
+- Round 1 的 Edge writable tmpfs 与 evidence binding 两项 P1、Round 2 的 non-root Secret 可读性 P1 均关闭；同源检查确认只有 Secret 消费服务获得 supplementary reader GID，Secret 根目录未挂载。
+- Reviewer 复跑 release 10/10、`pnpm compose:check`、真实 Production Edge Docker health；Owner 的两个 `docker compose config --quiet`、部署脚本 ESLint、shell syntax、`git diff --check` 和完整 `pnpm check` 140/140 证据有效。
+- Authorization、Idempotency、Transactions、Migrations、Observability、Backward Compatibility、Secrets、Failure Modes 八项无新增 finding；本任务无业务事务或 Schema migration 的不适用依据保持成立。
+
+G2 决策：`G2_ACCEPTED`。真实生产发布仍受 CMP-01、E2E-01、OPS-02、容量/安全/数据边界和人工批准阻塞；本结论不证明真实证据源或生产可用性。
+
 ## Unresolved Questions
 
 - 最终主机规格、域名/IP、镜像仓库与摘要、证书、资源限制、状态盘、真实 Owner、告警阈值、Sentry 区域、RPO/RTO 和保留期仍待上线前评审。
