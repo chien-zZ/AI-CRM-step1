@@ -32,9 +32,11 @@ create table platform_task_center.task_commands (
   fingerprint char(64) not null,
   status varchar(16) not null check (status in ('running','accepted')),
   source_command_id varchar(255),
+  command_lease_token uuid,
+  command_lease_expires_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check ((status='accepted' and source_command_id is not null) or (status='running' and source_command_id is null))
+  check ((status='accepted' and source_command_id is not null and command_lease_token is null and command_lease_expires_at is null) or (status='running' and source_command_id is null and command_lease_token is not null and command_lease_expires_at is not null))
 );
 
 comment on schema platform_task_center is 'Task Center owned projection and idempotent source-command routing state.';

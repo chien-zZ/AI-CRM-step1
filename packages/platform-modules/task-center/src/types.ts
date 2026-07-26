@@ -43,6 +43,10 @@ export interface CompleteTaskCommand extends TaskProjectionKey { readonly actor:
 export interface TaskQuery { readonly actor: TaskActor; readonly status?: TaskProjectionStatus; readonly limit?: number; readonly cursor?: string }
 export interface TaskPage { readonly items: readonly TaskProjection[]; readonly nextCursor?: string }
 export interface TaskCommandResult { readonly sourceCommandId: string; readonly status: "accepted" }
+export type TaskCommandClaim =
+  | { readonly status: "claimed"; readonly leaseToken: string }
+  | { readonly status: "running" }
+  | { readonly status: "accepted"; readonly result: TaskCommandResult };
 export interface ProjectionApplyResult { readonly status: "applied" | "duplicate" | "stale"; readonly projection: TaskProjection }
 export interface ReconciliationResult { readonly status: "applied" | "current" | "stale"; readonly projection: TaskProjection }
 
@@ -51,10 +55,9 @@ export interface TaskCenterStore {
   reconcile(event: TaskLifecycleEvent): Promise<ProjectionApplyResult>;
   get(key: TaskProjectionKey): Promise<TaskProjection | undefined>;
   list(input: { readonly status?: TaskProjectionStatus; readonly limit: number; readonly cursor?: string }): Promise<TaskPage>;
-  getCommand(idempotencyKey: string): Promise<{ readonly fingerprint: string; readonly result?: TaskCommandResult; readonly status: "accepted" | "running" } | undefined>;
-  reserveCommand(input: { readonly idempotencyKey: string; readonly fingerprint: string }): Promise<"reserved" | "exists">;
-  acceptCommand(idempotencyKey: string, result: TaskCommandResult): Promise<void>;
-  releaseCommand(idempotencyKey: string): Promise<void>;
+  claimCommand(input: { readonly idempotencyKey: string; readonly fingerprint: string; readonly leaseToken: string; readonly now: Date; readonly leaseExpiresAt: Date }): Promise<TaskCommandClaim>;
+  acceptCommand(input: { readonly idempotencyKey: string; readonly leaseToken: string; readonly result: TaskCommandResult }): Promise<boolean>;
+  releaseCommand(input: { readonly idempotencyKey: string; readonly leaseToken: string }): Promise<void>;
 }
 export interface TaskCenter {
   apply(event: TaskLifecycleEvent): Promise<ProjectionApplyResult>;
