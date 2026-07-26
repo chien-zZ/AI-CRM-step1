@@ -106,9 +106,18 @@ The independent Reviewer reported four P2 findings against candidate `063b1d7`; 
 
 No source contract or generated artifact changed in this round: the source JSON Schema already excluded actor. No Lockfile or generated-file window was required.
 
+## Independent review round 2
+
+The Reviewer confirmed all four Round 1 findings closed, then reported one new P1 authorization finding against candidate `33e97d7`: intent submission authorization was not explicitly bound to the claimed producer and therefore could not protect another module's producer-scoped idempotency namespace.
+
+- Fixed: `NotificationAuthorization` now receives a validated, explicit `producerReference` for `notification_intent_submit` before `findIntent`, template lookup, recipient resolution, preference evaluation, or persistence.
+- Regression coverage proves an actor authorized for the claimed producer can submit, an untrusted actor is denied before Store/Resolver access, and a separately authorized retry actor still receives the original idempotent result without repeated recipient resolution.
+- The composing application remains responsible for binding authenticated calling subjects to approved producer references; a generic submit permission is insufficient.
+- This is an additive TypeScript port clarification only. The versioned intent JSON payload, source HTTP surface, generated artifacts, and Lockfile do not change.
+
 ## Verification evidence
 
-- Post-fix module unit/contract tests: 17 passed; the 3 PostgreSQL tests are intentionally skipped outside the isolated harness.
+- Post-fix module unit/contract tests: 18 passed; the 3 PostgreSQL tests are intentionally skipped outside the isolated harness.
 - Post-fix isolated real PostgreSQL integration: 3 passed on 2026-07-26.
 - Post-fix module lint, typecheck, and build: passed on 2026-07-26.
 - Post-fix `pnpm check`: 140/140 tasks passed on 2026-07-26, including repository, Compose, generated-contract integrity, build, lint, typecheck, tests, and package contract checks.

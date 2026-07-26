@@ -15,7 +15,7 @@ export interface NotificationQuery { readonly actor:NotificationActor;readonly l
 export interface NotificationPage { readonly items:readonly InAppNotification[];readonly nextCursor?:string }
 export interface ArchiveNotificationCommand { readonly actor:NotificationActor;readonly notificationId:string }
 export type NotificationOperation="notification_archive"|"notification_detail"|"notification_intent_submit"|"notification_list"|"notification_mark_read"|"notification_template_publish"|"notification_unread_count";
-export interface NotificationAuthorization { authorize(input:{readonly actor:NotificationActor;readonly operation:NotificationOperation;readonly notificationId?:string;readonly ownerReference?:string}):Promise<{readonly allowed:boolean;readonly decisionId:string}> }
+export interface NotificationAuthorization { authorize(input:{readonly actor:NotificationActor;readonly operation:NotificationOperation;readonly notificationId?:string;readonly ownerReference?:string;readonly producerReference?:string}):Promise<{readonly allowed:boolean;readonly decisionId:string}> }
 export interface NotificationAudit { record(input:{readonly actor:NotificationActor;readonly operation:NotificationOperation;readonly phase:"attempted"|"failed"|"succeeded";readonly decisionId:string;readonly referenceId:string;readonly errorCode?:string}):Promise<void> }
 export interface NotificationObserver { record(input:{readonly operation:NotificationOperation;readonly outcome:"completed"|"denied"|"duplicate"|"failed";readonly durationMs:number}):void }
 export interface NotificationRecipientResolver { resolve(selectors:readonly RecipientSelector[]):Promise<readonly ResolvedRecipient[]> }
