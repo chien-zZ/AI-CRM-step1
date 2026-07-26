@@ -1,6 +1,6 @@
 # AIG-01 AI Gateway Fake
 
-- Status: `RE_REVIEW`
+- Status: `G2_ACCEPTED`
 - Branch: `task/AIG-01-ai-gateway-fake`
 - Owner: Agent D
 - Independent Reviewer: Agent B
@@ -117,6 +117,15 @@ Owner 修复后专项证据：AI Gateway lint/typecheck 通过，13/13 测试通
 - Owner 同源扩展修复：Authorizer、Budget 与 Adapter Port 返回值同样采用 descriptor-safe 精确解析，访问器和自定义原型不会被执行。
 
 Round 2 修复后证据：AI Gateway lint/typecheck 通过，14/14 测试通过，Contracts 28/28 通过，完整 `pnpm check` 140/140，`git diff --check` 通过。等待原 Reviewer Round 3 最终复查。
+
+## Independent Review Round 3 Acceptance
+
+- Reviewer 对精确提交 `2f20bb1f9d92cba3a6558ceb4411dcfca9d78f85` 复查，P0-P3 可执行 finding 为零，未决架构或契约问题为零。
+- Round 2 的顶层/继承 getter 与 Call Record 状态分支互斥问题均关闭；Round 1 四项和注入式 Port descriptor-safe 覆盖未回退。
+- Reviewer 复跑 lint/typecheck、AI Gateway 14/14、Contracts 28/28 和 diff check 全部通过；Owner 完整 `pnpm check` 140/140。
+- Authorization、Idempotency、Transactions、Observability、Backward Compatibility、Secrets 和 Failure Modes 通过；Migrations 对本任务不适用且未创建存储模型。
+
+G2 决策：`G2_ACCEPTED`。合并和后续 OPS-01 仍由 Integration Owner 串行执行。
 
 ## Unresolved Questions
 
