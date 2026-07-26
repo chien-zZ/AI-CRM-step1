@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/events/v1/organization-change.schema.json",
+  "title": "OrganizationChangeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventType", "operationId", "entityType", "entityId", "effectiveAt", "traceId"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "entityType": { "enum": ["workforce_person", "employment", "assignment", "subject_association"] }
+        },
+        "required": ["entityType"]
+      },
+      "then": {
+        "properties": {
+          "workforcePersonId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }
+        },
+        "required": ["workforcePersonId"]
+      }
+    }
+  ],
+  "properties": {
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "organization.workforce_person.created.v1",
+        "organization.employment.created.v1",
+        "organization.employment.closed.v1",
+        "organization.unit.created.v1",
+        "organization.unit_placement.created.v1",
+        "organization.unit_placement.closed.v1",
+        "organization.position.created.v1",
+        "organization.assignment.created.v1",
+        "organization.assignment.closed.v1",
+        "organization.subject_association.created.v1",
+        "organization.subject_association.closed.v1"
+      ]
+    },
+    "operationId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "entityType": {
+      "type": "string",
+      "enum": ["workforce_person", "employment", "organization_unit", "organization_unit_placement", "position", "assignment", "subject_association"]
+    },
+    "entityId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "workforcePersonId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "effectiveAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+    "traceId": { "type": "string", "minLength": 1, "maxLength": 128 }
+  }
+}

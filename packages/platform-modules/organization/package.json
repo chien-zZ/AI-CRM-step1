@@ -9,6 +9,13 @@
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "test": "vitest run --config ../../../vitest.config.ts",
-    "contracts:check": "node ../../../scripts/check/verify-package.mjs"
+    "test:integration": "node scripts/run-integration.mjs",
+    "contracts:check": "node ../../../scripts/check/verify-package.mjs",
+    "migrate": "node dist/migrate.js"
+  },
+  "dependencies": {
+    "@ai-crm/database": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.16.3"
   }
 }
