@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it, vi } from "vitest";
 import { AiGatewayError, createAiGatewayService, type AiBudgetPort, type AiUseCaseRegistration } from "./index.js";
 import { createFakeModelAdapter } from "./testing.js";
@@ -38,6 +40,19 @@ function setup(options: { readonly allowed?: boolean; readonly now?: Date; reado
 }
 
 describe("AI gateway fake", () => {
+  it("keeps public JSON Schemas aligned with runtime values", async () => {
+    const schemaNames = ["ai-use-case-policy", "ai-call-record", "ai-proposal", "ai-proposal-confirmation"] as const;
+    const schemas = await Promise.all(schemaNames.map(async (name) => JSON.parse(await readFile(new URL(`../../../../contracts/ai/${name}.v1.schema.json`, import.meta.url), "utf8")) as object));
+    const validators = schemas.map((schema) => new Ajv2020({ strict: true }).compile(schema));
+    const runtime = setup();
+    const invoked = await runtime.service.invoke(metadata());
+    const confirmation = await runtime.service.confirm({ actor, decision: "accepted", operationId: crypto.randomUUID(), proposalId: invoked.proposal.proposalId, resourceReference: invoked.call.resourceReference, traceId, useCaseId: useCase.useCaseId });
+    for (const [index, value] of [useCase, invoked.call, invoked.proposal, confirmation].entries()) {
+      const validate = validators[index];
+      expect(validate?.(value), JSON.stringify(validate?.errors)).toBe(true);
+    }
+  });
+
   it("rejects unregistered and runtime-invalid use cases", async () => {
     const { service } = setup();
     await expect(service.invoke({ ...metadata(), useCaseId: "platform.unregistered" })).rejects.toMatchObject({ code: "ai_use_case_unavailable" });
