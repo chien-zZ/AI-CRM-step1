@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/ai/v1/ai-use-case-policy.schema.json",
+  "title": "AI use case policy reference V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "useCaseId", "ownerReference", "enabled", "inputSchema", "inputSchemaVersion", "outputSchema", "outputSchemaVersion", "dataPolicyVersion", "promptPolicyVersion", "modelPolicyVersion", "budgetPolicyVersion", "requiresHumanConfirmation", "maximumCostMicros", "maximumInputBytes", "maximumOutputBytes", "maximumTokens", "proposalTtlMs"],
+  "properties": {
+    "version": { "const": 1 },
+    "useCaseId": { "$ref": "#/$defs/id" },
+    "ownerReference": { "$ref": "#/$defs/reference" },
+    "enabled": { "type": "boolean" },
+    "inputSchema": { "type": "object" },
+    "inputSchemaVersion": { "$ref": "#/$defs/version" },
+    "outputSchema": { "type": "object" },
+    "outputSchemaVersion": { "$ref": "#/$defs/version" },
+    "dataPolicyVersion": { "$ref": "#/$defs/version" },
+    "promptPolicyVersion": { "$ref": "#/$defs/version" },
+    "modelPolicyVersion": { "$ref": "#/$defs/version" },
+    "budgetPolicyVersion": { "$ref": "#/$defs/version" },
+    "requiresHumanConfirmation": { "const": true },
+    "maximumCostMicros": { "type": "integer", "minimum": 1, "maximum": 1000000000 },
+    "maximumInputBytes": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "maximumOutputBytes": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "maximumTokens": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "proposalTtlMs": { "type": "integer", "minimum": 1, "maximum": 86400000 }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{2,127}$" },
+    "reference": { "type": "string", "pattern": "^[A-Za-z0-9_.:@/-]{1,255}$" },
+    "version": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.:-]{0,127}$" }
+  }
+}
