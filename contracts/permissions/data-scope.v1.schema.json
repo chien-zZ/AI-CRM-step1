@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/permissions/v1/data-scope.schema.json",
+  "title": "Structured Data Scope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "terms"],
+  "properties": {
+    "version": { "const": 1 },
+    "terms": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/term" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "value": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,254}$"
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension", "values"],
+      "properties": {
+        "dimension": { "$ref": "#/$defs/identifier" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/value" }
+        }
+      }
+    },
+    "term": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "all" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "constraints"],
+          "properties": {
+            "kind": { "const": "match" },
+            "constraints": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": { "$ref": "#/$defs/constraint" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

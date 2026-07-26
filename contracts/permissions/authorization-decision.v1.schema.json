@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/permissions/v1/authorization-decision.schema.json",
+  "title": "Authorization Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["allowed", "reason", "decisionId", "policyVersion", "evaluatedAt"],
+  "allOf": [
+    {
+      "if": {
+        "additionalProperties": true,
+        "required": ["allowed"],
+        "properties": { "allowed": { "const": true } }
+      },
+      "then": {
+        "additionalProperties": true,
+        "properties": { "reason": { "const": "allowed" } }
+      },
+      "else": {
+        "additionalProperties": true,
+        "properties": { "reason": { "not": { "const": "allowed" } } }
+      }
+    }
+  ],
+  "properties": {
+    "allowed": { "type": "boolean" },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "allowed",
+        "unknown_permission",
+        "no_applicable_grant",
+        "invalid_context",
+        "resource_context_required",
+        "scope_mismatch",
+        "policy_unavailable",
+        "policy_invalid"
+      ]
+    },
+    "decisionId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "policyVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "maxLength": 24,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    }
+  }
+}

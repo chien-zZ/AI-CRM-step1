@@ -9,6 +9,10 @@
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "test": "vitest run --config ../../../vitest.config.ts",
+    "test:integration": "vitest run src/runtime.integration.test.ts --config ../../../vitest.config.ts",
     "contracts:check": "node ../../../scripts/check/verify-package.mjs"
+  },
+  "dependencies": {
+    "redis": "5.8.2"
   }
 }
