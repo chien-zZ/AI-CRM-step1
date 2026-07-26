@@ -14,13 +14,13 @@ function fixture(failHealth = false) {
   const statements: string[] = [];
   let releases = 0;
   const connection = {
-    query(sql: string) { statements.push(sql); return Promise.resolve({}); },
+    query(sql: string, values?: readonly unknown[]) { statements.push(`${sql}:${JSON.stringify(values ?? [])}`); return Promise.resolve({ rowCount: 1, rows: [{ value: "ok" }] }); },
     release() { releases += 1; },
   };
   const pool = {
     connect() { return Promise.resolve(connection); },
     end() { return Promise.resolve(); },
-    query() { return failHealth ? Promise.reject(new Error("unavailable")) : Promise.resolve({}); },
+    query() { return failHealth ? Promise.reject(new Error("unavailable")) : Promise.resolve({ rowCount: 0, rows: [] }); },
   };
   return { pool, releases: () => releases, statements };
 }
@@ -30,7 +30,7 @@ describe("PostgresRuntime", () => {
     const state = fixture();
     const runtime = new PostgresRuntime(config, state.pool);
     await expect(runtime.withTransaction(() => runtime.withTransaction(() => Promise.resolve("done")))).resolves.toBe("done");
-    expect(state.statements).toEqual(["begin", "commit"]);
+    expect(state.statements).toEqual(["begin:[]", "commit:[]"]);
     expect(state.releases()).toBe(1);
   });
 
@@ -38,7 +38,7 @@ describe("PostgresRuntime", () => {
     const state = fixture();
     const runtime = new PostgresRuntime(config, state.pool);
     await expect(runtime.withTransaction(() => Promise.reject(new Error("work failed")))).rejects.toThrow("work failed");
-    expect(state.statements).toEqual(["begin", "rollback"]);
+    expect(state.statements).toEqual(["begin:[]", "rollback:[]"]);
     expect(state.releases()).toBe(1);
   });
 
@@ -47,5 +47,11 @@ describe("PostgresRuntime", () => {
     const unavailable = new PostgresRuntime(config, fixture(true).pool);
     await expect(ready.healthCheck()).resolves.toMatchObject({ status: "ready" });
     await expect(unavailable.healthCheck()).resolves.toMatchObject({ status: "unavailable" });
+  });
+
+  it("executes parameterized queries on the active transaction without exposing a transaction handle", async () => {
+    const state = fixture(); const runtime = new PostgresRuntime(config, state.pool);
+    await expect(runtime.withTransaction(() => runtime.execute<{ value: string }>("select $1::text value", ["synthetic"]))).resolves.toEqual({ rowCount: 1, rows: [{ value: "ok" }] });
+    expect(state.statements).toEqual(["begin:[]", "select $1::text value:[\"synthetic\"]", "commit:[]"]);
   });
 });

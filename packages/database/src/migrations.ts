@@ -75,8 +75,10 @@ export async function loadMigrations(directory: string): Promise<MigrationDefini
   return migrations;
 }
 
-export async function runMigrationsWithPool(pool: MigrationPool, directory: string): Promise<void> {
-  const migrations = await loadMigrations(directory);
+export async function runMigrationsWithPool(pool: MigrationPool, directory: string | readonly string[]): Promise<void> {
+  const directories=typeof directory==="string"?[directory]:directory;
+  const migrations=(await Promise.all(directories.map(loadMigrations))).flat().sort((left,right)=>left.version.localeCompare(right.version)||left.name.localeCompare(right.name));
+  if(new Set(migrations.map(({version})=>version)).size!==migrations.length)throw new Error("Migration versions must be globally unique across migration directories.");
   const client = await pool.connect();
   try {
     await client.query("select pg_advisory_lock($1)", [advisoryLock]);
@@ -111,7 +113,7 @@ export async function runMigrationsWithPool(pool: MigrationPool, directory: stri
   }
 }
 
-export async function runMigrations(connectionString: string, directory: string): Promise<void> {
+export async function runMigrations(connectionString: string, directory: string | readonly string[]): Promise<void> {
   const pool = new Pool({ application_name: "ai_crm_migration", connectionString, max: 1 });
   try {
     await runMigrationsWithPool(pool as unknown as MigrationPool, directory);

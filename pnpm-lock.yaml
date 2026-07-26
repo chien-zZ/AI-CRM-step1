@@ -131,7 +131,14 @@ importers:
 
   packages/platform-modules/business-configuration: {}
 
-  packages/platform-modules/eventing-outbox: {}
+  packages/platform-modules/eventing-outbox:
+    dependencies:
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../database
+      pg:
+        specifier: 8.16.3
+        version: 8.16.3
 
   packages/platform-modules/file-center: {}
 

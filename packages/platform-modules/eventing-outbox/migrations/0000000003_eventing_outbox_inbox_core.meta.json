@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "eventing-outbox",
+  "purpose": "Add durable module-owned Outbox, Inbox, job request, and isolation facts.",
+  "applicationCompatibility": "Additive; existing applications and modules are unaffected until composition.",
+  "lockImpact": "Creates a new schema and tables only; no existing application table is locked.",
+  "dataImpact": "No existing data is changed.",
+  "backfill": "None required.",
+  "recovery": "Restore the pre-deployment database backup only before the new tables receive authoritative facts; otherwise forward-fix.",
+  "forwardFix": "Append a new migration. Never modify this migration after deployment.",
+  "destructive": false
+}

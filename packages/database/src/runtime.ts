@@ -11,19 +11,25 @@ export interface DatabaseHealth {
 
 export interface DatabaseRuntime {
   close(): Promise<void>;
+  execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<DatabaseQueryResult<Row>>;
   healthCheck(): Promise<DatabaseHealth>;
   withTransaction<T>(work: () => Promise<T>): Promise<T>;
 }
 
+export interface DatabaseQueryResult<Row = Record<string, unknown>> {
+  readonly rowCount: number;
+  readonly rows: readonly Row[];
+}
+
 interface RuntimeConnection {
-  query(sql: string): Promise<unknown>;
+  query(sql: string, values?: readonly unknown[]): Promise<{ readonly rowCount?: number | null; readonly rows?: readonly unknown[] }>;
   release(): void;
 }
 
 interface RuntimePool {
   connect(): Promise<RuntimeConnection>;
   end(): Promise<void>;
-  query(sql: string): Promise<unknown>;
+  query(sql: string, values?: readonly unknown[]): Promise<{ readonly rowCount?: number | null; readonly rows?: readonly unknown[] }>;
 }
 
 export class PostgresRuntime implements DatabaseRuntime {
@@ -50,6 +56,11 @@ export class PostgresRuntime implements DatabaseRuntime {
 
   async close(): Promise<void> {
     await this.#pool.end();
+  }
+
+  async execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<DatabaseQueryResult<Row>> {
+    const result = await (this.#transaction.getStore() ?? this.#pool).query(sql, values);
+    return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
   }
 
   async healthCheck(): Promise<DatabaseHealth> {

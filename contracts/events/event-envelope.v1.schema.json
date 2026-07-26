@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://contracts.ai-crm.local/events/v1/event-envelope.schema.json",
+  "title": "AI-CRM transport-neutral event envelope v1", "type": "object", "additionalProperties": false,
+  "required": ["specversion", "id", "source", "type", "time", "datacontenttype", "dataschema", "correlationid", "data"],
+  "properties": {
+    "specversion": { "const": "1.0" }, "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "source": { "type": "string", "pattern": "^urn:ai-crm:[a-z][a-z0-9.-]*$", "maxLength": 256 },
+    "type": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+\\.v[1-9][0-9]*$", "maxLength": 160 },
+    "time": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" }, "datacontenttype": { "const": "application/json" },
+    "dataschema": { "type": "string", "pattern": "^urn:ai-crm:(events|models):[a-z0-9:-]+:v[1-9][0-9]*$", "maxLength": 512 },
+    "subject": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,254}$" }, "correlationid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "causationid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }, "traceparent": { "type": "string", "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$" },
+    "tracestate": { "type": "string", "pattern": "^[ -~]+$", "maxLength": 512 }, "data": {}
+  }
+}
