@@ -1,76 +1,6 @@
 {
   "components": {
-    "schemas": {
-      "AuthenticationError": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "enum": [
-              "authentication_required",
-              "authentication_callback_invalid",
-              "authentication_csrf_rejected",
-              "authentication_dependency_unavailable",
-              "authentication_refresh_in_progress"
-            ],
-            "type": "string"
-          },
-          "message": {
-            "maxLength": 200,
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ],
-        "type": "object"
-      },
-      "BrowserSession": {
-        "additionalProperties": false,
-        "properties": {
-          "authenticatedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "client": {
-            "const": "pc-web",
-            "type": "string"
-          },
-          "csrfToken": {
-            "maxLength": 512,
-            "minLength": 32,
-            "type": "string"
-          },
-          "expiresAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "client",
-          "authenticatedAt",
-          "expiresAt",
-          "csrfToken"
-        ],
-        "type": "object"
-      },
-      "HealthStatus": {
-        "additionalProperties": false,
-        "properties": {
-          "status": {
-            "enum": [
-              "ok",
-              "unavailable"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "type": "object"
-      }
-    }
+    "schemas": {}
   },
   "info": {
     "title": "AI-CRM API",
@@ -826,6 +756,510 @@
               }
             },
             "description": "A required dependency is unavailable or incompatible."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "completed",
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "maxLength": 511,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assigneeReference": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "candidateScopeReference": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "deepLink": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "appId": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                "type": "string"
+                              },
+                              "routeId": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "appId",
+                              "routeId"
+                            ],
+                            "type": "object"
+                          },
+                          "dueAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "projectionId": {
+                            "format": "uuid",
+                            "type": "string"
+                          },
+                          "sourceTaskId": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "sourceType": {
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                            "type": "string"
+                          },
+                          "sourceVersion": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "open",
+                              "completed",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "projectionId",
+                          "sourceType",
+                          "sourceTaskId",
+                          "sourceVersion",
+                          "status",
+                          "deepLink",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "maxLength": 511,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authorized task projections only."
+          },
+          "401": {
+            "description": "No valid internal session."
+          },
+          "403": {
+            "description": "Current object-level authorization denied."
+          },
+          "503": {
+            "description": "Authorization, storage, audit, or authoritative source is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/tasks/{sourceType}/{sourceTaskId}": {
+      "get": {
+        "operationId": "getTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sourceType",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sourceTaskId",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assigneeReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "candidateScopeReference": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "deepLink": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "appId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "routeId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appId",
+                        "routeId"
+                      ],
+                      "type": "object"
+                    },
+                    "dueAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "projectionId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "sourceTaskId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "sourceVersion": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "enum": [
+                        "open",
+                        "completed",
+                        "cancelled"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectionId",
+                    "sourceType",
+                    "sourceTaskId",
+                    "sourceVersion",
+                    "status",
+                    "deepLink",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Projection after current object-level authorization."
+          },
+          "401": {
+            "description": "No valid internal session."
+          },
+          "403": {
+            "description": "Current object-level authorization denied."
+          },
+          "404": {
+            "description": "Task projection does not exist."
+          },
+          "503": {
+            "description": "Authorization, storage, audit, or authoritative source is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/tasks/{sourceType}/{sourceTaskId}/complete": {
+      "post": {
+        "description": "Routes an idempotent completion command to the authoritative source. It does not close the projection.",
+        "operationId": "completeTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sourceType",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sourceTaskId",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "sourceCommandId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "const": "accepted"
+                    }
+                  },
+                  "required": [
+                    "sourceCommandId",
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Source command accepted; wait for a source lifecycle event."
+          },
+          "401": {
+            "description": "No valid internal session."
+          },
+          "403": {
+            "description": "Current object-level authorization denied."
+          },
+          "404": {
+            "description": "Task projection does not exist."
+          },
+          "409": {
+            "description": "Idempotency conflict or command still in progress."
+          },
+          "503": {
+            "description": "Authorization, storage, audit, or authoritative source is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ]
+      }
+    },
+    "/tasks/{sourceType}/{sourceTaskId}/reconcile": {
+      "post": {
+        "description": "Re-authorizes an operator repair and compares the projection with the authoritative source.",
+        "operationId": "reconcileTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sourceType",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sourceTaskId",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "projection": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assigneeReference": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "candidateScopeReference": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "deepLink": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "appId": {
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                              "type": "string"
+                            },
+                            "routeId": {
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "appId",
+                            "routeId"
+                          ],
+                          "type": "object"
+                        },
+                        "dueAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "projectionId": {
+                          "format": "uuid",
+                          "type": "string"
+                        },
+                        "sourceTaskId": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "sourceType": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                          "type": "string"
+                        },
+                        "sourceVersion": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "completed",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "projectionId",
+                        "sourceType",
+                        "sourceTaskId",
+                        "sourceVersion",
+                        "status",
+                        "deepLink",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "status": {
+                      "enum": [
+                        "applied",
+                        "current",
+                        "stale"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "projection"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Reconciliation result."
+          },
+          "401": {
+            "description": "No valid internal session."
+          },
+          "403": {
+            "description": "Current object-level authorization denied."
+          },
+          "503": {
+            "description": "Authorization, storage, audit, or authoritative source is unavailable; fails closed."
           }
         },
         "x-ai-crm-audiences": [

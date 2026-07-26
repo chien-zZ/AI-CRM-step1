@@ -160,7 +160,11 @@ importers:
         specifier: 8.16.3
         version: 8.16.3
 
-  packages/platform-modules/task-center: {}
+  packages/platform-modules/task-center:
+    dependencies:
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../database
 
   packages/platform-modules/workflow:
     dependencies:

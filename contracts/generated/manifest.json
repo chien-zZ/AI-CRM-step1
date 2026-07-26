@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/contracts/generate.mjs",
   "sha256": {
-    "contracts/generated/external.openapi.json": "36eff0a2c5c82a4dba9306a1de2a2c249679e7bccf0a5c9c500f3b239e342f4f",
-    "contracts/generated/internal.openapi.json": "65a6d6f101b906dd7bbe4f52bd5a5e99bec7ca17d7cc3d9f03dd871ac935a49b",
+    "contracts/generated/external.openapi.json": "1c99044c9b672cbecd038b07a5198cd365ab73be0478672736ca3dfa6cf9b1e0",
+    "contracts/generated/internal.openapi.json": "b3f6297c3c15f9e3a1f16d37f783edca1241fd04f2c5714066f74e365dd6dc03",
     "packages/api-client/src/external.ts": "48940beb26aac7e0fe1167149f0fc7fe7923a04cce37f869087f7aa1867ed98d",
-    "packages/api-client/src/index.ts": "7208c20fb4195b835b3f200e8dfc061a491ae388f43998c2865cab304e670035"
+    "packages/api-client/src/index.ts": "5a92a23c8844d35aedab7148014433e0875fcbda0291adfa1ab0214cfe070f37"
   }
 }

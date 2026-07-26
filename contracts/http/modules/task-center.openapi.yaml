@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: AI-CRM Task Center API
+  version: 0.1.0
+paths:
+  /tasks:
+    get:
+      operationId: listTasks
+      x-ai-crm-audiences: [internal]
+      parameters:
+        - { name: status, in: query, required: false, schema: { $ref: "#/components/schemas/TaskStatus" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 511 } }
+      responses:
+        "200": { description: Authorized task projections only., content: { application/json: { schema: { $ref: "#/components/schemas/TaskPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /tasks/{sourceType}/{sourceTaskId}:
+    get:
+      operationId: getTask
+      x-ai-crm-audiences: [internal]
+      parameters: [ { $ref: "#/components/parameters/SourceType" }, { $ref: "#/components/parameters/SourceTaskId" } ]
+      responses:
+        "200": { description: Projection after current object-level authorization., content: { application/json: { schema: { $ref: "#/components/schemas/TaskProjection" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Task projection does not exist. }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /tasks/{sourceType}/{sourceTaskId}/complete:
+    post:
+      operationId: completeTask
+      x-ai-crm-audiences: [internal]
+      description: Routes an idempotent completion command to the authoritative source. It does not close the projection.
+      parameters: [ { $ref: "#/components/parameters/SourceType" }, { $ref: "#/components/parameters/SourceTaskId" }, { $ref: "#/components/parameters/IdempotencyKey" } ]
+      responses:
+        "202": { description: Source command accepted; wait for a source lifecycle event., content: { application/json: { schema: { $ref: "#/components/schemas/TaskCommandResult" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Task projection does not exist. }
+        "409": { description: Idempotency conflict or command still in progress. }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /tasks/{sourceType}/{sourceTaskId}/reconcile:
+    post:
+      operationId: reconcileTask
+      x-ai-crm-audiences: [internal]
+      description: Re-authorizes an operator repair and compares the projection with the authoritative source.
+      parameters: [ { $ref: "#/components/parameters/SourceType" }, { $ref: "#/components/parameters/SourceTaskId" } ]
+      responses:
+        "200": { description: Reconciliation result., content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationResult" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+components:
+  parameters:
+    SourceType: { name: sourceType, in: path, required: true, schema: { $ref: "#/components/schemas/StableId" } }
+    SourceTaskId: { name: sourceTaskId, in: path, required: true, schema: { $ref: "#/components/schemas/StableId" } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { $ref: "#/components/schemas/StableId" } }
+  responses:
+    Unauthorized: { description: No valid internal session. }
+    Forbidden: { description: Current object-level authorization denied. }
+    Unavailable: { description: "Authorization, storage, audit, or authoritative source is unavailable; fails closed." }
+  schemas:
+    StableId: { type: string, pattern: "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$" }
+    TaskStatus: { type: string, enum: [open,completed,cancelled] }
+    TaskProjection:
+      type: object
+      additionalProperties: false
+      required: [projectionId,sourceType,sourceTaskId,sourceVersion,status,deepLink,createdAt,updatedAt]
+      properties:
+        projectionId: { type: string, format: uuid }
+        sourceType: { $ref: "#/components/schemas/StableId" }
+        sourceTaskId: { $ref: "#/components/schemas/StableId" }
+        sourceVersion: { type: integer, minimum: 1 }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        deepLink:
+          type: object
+          additionalProperties: false
+          required: [appId,routeId]
+          properties: { appId: { $ref: "#/components/schemas/StableId" }, routeId: { $ref: "#/components/schemas/StableId" } }
+        assigneeReference: { $ref: "#/components/schemas/StableId" }
+        candidateScopeReference: { $ref: "#/components/schemas/StableId" }
+        dueAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TaskPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/TaskProjection" } }, nextCursor: { type: string, maxLength: 511 } }
+    TaskCommandResult:
+      type: object
+      additionalProperties: false
+      required: [sourceCommandId,status]
+      properties: { sourceCommandId: { $ref: "#/components/schemas/StableId" }, status: { const: accepted } }
+    ReconciliationResult:
+      type: object
+      additionalProperties: false
+      required: [status,projection]
+      properties:
+        status: { type: string, enum: [applied,current,stale] }
+        projection: { $ref: "#/components/schemas/TaskProjection" }

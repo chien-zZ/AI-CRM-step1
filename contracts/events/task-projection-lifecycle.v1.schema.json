@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-crm.local/contracts/events/v1/task-projection-lifecycle.schema.json",
+  "title": "Task Projection Lifecycle Event Data v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId","sourceType","sourceTaskId","sourceVersion","occurredAt","status","deepLink"],
+  "properties": {
+    "eventId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "sourceType": { "$ref": "#/$defs/stableId" },
+    "sourceTaskId": { "$ref": "#/$defs/stableId" },
+    "sourceVersion": { "type": "integer", "minimum": 1 },
+    "occurredAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$" },
+    "status": { "enum": ["open","completed","cancelled"] },
+    "deepLink": {
+      "type": "object", "additionalProperties": false, "required": ["appId","routeId"],
+      "properties": { "appId": { "$ref": "#/$defs/stableId" }, "routeId": { "$ref": "#/$defs/stableId" } }
+    },
+    "assigneeReference": { "$ref": "#/$defs/stableId" },
+    "candidateScopeReference": { "$ref": "#/$defs/stableId" },
+    "dueAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$" }
+  },
+  "$defs": { "stableId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$" } }
+}

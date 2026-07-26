@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "task-center",
+  "purpose": "Add the module-owned task projection, processed event receipt, and source-command idempotency tables.",
+  "applicationCompatibility": "Additive; existing applications are unaffected until Task Center is composed.",
+  "lockImpact": "Creates a new schema, tables, and indexes only; no existing application table is locked.",
+  "dataImpact": "No existing data is changed.",
+  "backfill": "None required. Authoritative sources can replay lifecycle events after composition.",
+  "recovery": "Before consumers start, restore the pre-deployment backup. After use, retain accepted command receipts and forward-fix; projections can be rebuilt from authoritative source events. Expired running command leases are atomically taken over and redriven with the unchanged source idempotency key after interruption.",
+  "forwardFix": "Append a new globally numbered migration. Never modify this migration after deployment.",
+  "destructive": false
+}
