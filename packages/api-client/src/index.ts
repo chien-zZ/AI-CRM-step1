@@ -35,5 +35,25 @@ export const internalOperations = [
     "id": "getReadiness",
     "method": "GET",
     "path": "/health/ready"
+  },
+  {
+    "id": "listTasks",
+    "method": "GET",
+    "path": "/tasks"
+  },
+  {
+    "id": "getTask",
+    "method": "GET",
+    "path": "/tasks/{sourceType}/{sourceTaskId}"
+  },
+  {
+    "id": "completeTask",
+    "method": "POST",
+    "path": "/tasks/{sourceType}/{sourceTaskId}/complete"
+  },
+  {
+    "id": "reconcileTask",
+    "method": "POST",
+    "path": "/tasks/{sourceType}/{sourceTaskId}/reconcile"
   }
 ] as const;

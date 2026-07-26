@@ -69,6 +69,303 @@
           "status"
         ],
         "type": "object"
+      },
+      "ReconciliationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "projection": {
+            "additionalProperties": false,
+            "properties": {
+              "assigneeReference": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                "type": "string"
+              },
+              "candidateScopeReference": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deepLink": {
+                "additionalProperties": false,
+                "properties": {
+                  "appId": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                    "type": "string"
+                  },
+                  "routeId": {
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appId",
+                  "routeId"
+                ],
+                "type": "object"
+              },
+              "dueAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "projectionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "sourceTaskId": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                "type": "string"
+              },
+              "sourceType": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                "type": "string"
+              },
+              "sourceVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "completed",
+                  "cancelled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "projectionId",
+              "sourceType",
+              "sourceTaskId",
+              "sourceVersion",
+              "status",
+              "deepLink",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "applied",
+              "current",
+              "stale"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "projection"
+        ],
+        "type": "object"
+      },
+      "StableId": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+        "type": "string"
+      },
+      "TaskCommandResult": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceCommandId": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+            "type": "string"
+          },
+          "status": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "sourceCommandId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TaskPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assigneeReference": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                  "type": "string"
+                },
+                "candidateScopeReference": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "deepLink": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "appId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    },
+                    "routeId": {
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "appId",
+                    "routeId"
+                  ],
+                  "type": "object"
+                },
+                "dueAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "projectionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "sourceTaskId": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                  "type": "string"
+                },
+                "sourceType": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                  "type": "string"
+                },
+                "sourceVersion": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "status": {
+                  "enum": [
+                    "open",
+                    "completed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "projectionId",
+                "sourceType",
+                "sourceTaskId",
+                "sourceVersion",
+                "status",
+                "deepLink",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 511,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "TaskProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "assigneeReference": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+            "type": "string"
+          },
+          "candidateScopeReference": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deepLink": {
+            "additionalProperties": false,
+            "properties": {
+              "appId": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                "type": "string"
+              },
+              "routeId": {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "appId",
+              "routeId"
+            ],
+            "type": "object"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "projectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceTaskId": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+            "type": "string"
+          },
+          "sourceType": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,254}$",
+            "type": "string"
+          },
+          "sourceVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectionId",
+          "sourceType",
+          "sourceTaskId",
+          "sourceVersion",
+          "status",
+          "deepLink",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "TaskStatus": {
+        "enum": [
+          "open",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
       }
     }
   },
