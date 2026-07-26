@@ -1,0 +1,61 @@
+import { FileCenterError } from "./errors.js";
+import type { FileCenterStore } from "./store.js";
+import type { ContentVersion, FileLifecycleEvent, FileMetadata, ResourceLink, UploadSession } from "./types.js";
+
+interface Receipt { readonly fingerprint: string; readonly result: unknown }
+const clone = <T>(value: T): T => structuredClone(value);
+
+export class MemoryFileCenterStore implements FileCenterStore {
+  readonly files = new Map<string, FileMetadata>();
+  readonly versions = new Map<string, ContentVersion>();
+  readonly handles = new Map<string, string>();
+  readonly sessions = new Map<string, UploadSession>();
+  readonly links = new Map<string, ResourceLink>();
+  readonly events = new Map<string, FileLifecycleEvent>();
+  readonly receipts = new Map<string, Receipt>();
+
+  private receipt(operationId: string, value: string): unknown {
+    const prior = this.receipts.get(operationId);
+    if (prior && prior.fingerprint !== value) throw new FileCenterError("file_center_operation_conflict");
+    return prior?.result;
+  }
+  private save(operationId: string, value: string, result: unknown): void { this.receipts.set(operationId, { fingerprint: value, result: clone(result) }); }
+  private event(value?: FileLifecycleEvent): void { if (value) this.events.set(value.eventId, clone(value)); }
+
+  createUpload(input: Parameters<FileCenterStore["createUpload"]>[0]) {
+    const prior = this.receipt(input.operationId, input.fingerprint) as Omit<Awaited<ReturnType<FileCenterStore["createUpload"]>>, "replayed"> | undefined;
+    if (prior) return Promise.resolve({ ...clone(prior), replayed: true });
+    if (this.files.has(input.file.fileId) || this.versions.has(input.contentVersion.contentVersionId) || this.sessions.has(input.session.sessionId) || [...this.handles.values()].includes(input.objectHandle)) throw new FileCenterError("file_center_operation_conflict");
+    this.files.set(input.file.fileId, clone(input.file)); this.versions.set(input.contentVersion.contentVersionId, clone(input.contentVersion)); this.handles.set(input.contentVersion.contentVersionId, input.objectHandle); this.sessions.set(input.session.sessionId, clone(input.session));
+    const result = { contentVersion: input.contentVersion, file: input.file, objectHandle: input.objectHandle, session: input.session }; this.save(input.operationId, input.fingerprint, result); return Promise.resolve({ ...clone(result), replayed: false });
+  }
+  findContentVersion(contentVersionId: string) { const version = this.versions.get(contentVersionId); if (!version) return Promise.resolve(undefined); const file = this.files.get(version.fileId); const objectHandle = this.handles.get(contentVersionId); if (!file || !objectHandle) throw new FileCenterError("file_center_operation_conflict"); return Promise.resolve(clone({ contentVersion: version, file, objectHandle })); }
+  findFile(fileId: string) { const file = this.files.get(fileId); return Promise.resolve(file ? clone(file) : undefined); }
+  createVersionUpload(input: Parameters<FileCenterStore["createVersionUpload"]>[0]) { const prior = this.receipt(input.operationId, input.fingerprint) as Omit<Awaited<ReturnType<FileCenterStore["createVersionUpload"]>>, "replayed"> | undefined; if (prior) return Promise.resolve({ ...clone(prior), replayed: true }); const file = this.files.get(input.contentVersion.fileId); if (!file) throw new FileCenterError("file_center_not_found"); const versionNumber = Math.max(0, ...[...this.versions.values()].filter((candidate) => candidate.fileId === file.fileId).map((candidate) => candidate.versionNumber)) + 1; const contentVersion = { ...input.contentVersion, versionNumber }; if (this.versions.has(contentVersion.contentVersionId) || this.sessions.has(input.session.sessionId) || [...this.handles.values()].includes(input.objectHandle)) throw new FileCenterError("file_center_operation_conflict"); this.versions.set(contentVersion.contentVersionId, clone(contentVersion)); this.handles.set(contentVersion.contentVersionId, input.objectHandle); this.sessions.set(input.session.sessionId, clone(input.session)); const result = { contentVersion, file, objectHandle: input.objectHandle, session: input.session }; this.save(input.operationId, input.fingerprint, result); return Promise.resolve({ ...clone(result), replayed: false }); }
+  async findSession(sessionId: string) { const session = this.sessions.get(sessionId); if (!session) return undefined; const joined = await this.findContentVersion(session.contentVersionId); if (!joined) throw new FileCenterError("file_center_operation_conflict"); return clone({ ...joined, session }); }
+  findLink(linkId: string) { const link = this.links.get(linkId); return Promise.resolve(link ? clone(link) : undefined); }
+  findOperationReceipt(operationId: string, fingerprintValue: string) { const result = this.receipt(operationId, fingerprintValue); return Promise.resolve(result === undefined ? undefined : clone(result)); }
+  findActiveLink(fileId: string, contentVersionId: string, target: { resourceId: string; resourceType: string }) { const link = [...this.links.values()].find((candidate) => candidate.fileId === fileId && candidate.contentVersionId === contentVersionId && candidate.resource.resourceId === target.resourceId && candidate.resource.resourceType === target.resourceType && candidate.unlinkedAt === undefined); return Promise.resolve(link ? clone(link) : undefined); }
+  async completeUpload(input: Parameters<FileCenterStore["completeUpload"]>[0]) {
+    const prior = this.receipt(input.operationId, input.fingerprint) as { contentVersion: ContentVersion } | undefined; if (prior) return { ...clone(prior), replayed: true };
+    const joined = await this.findSession(input.sessionId); if (!joined) throw new FileCenterError("file_center_not_found");
+    if (joined.session.status !== "created" || joined.contentVersion.status !== "awaiting_upload" || input.completedAt >= joined.session.expiresAt) throw new FileCenterError("file_center_operation_conflict");
+    const contentVersion: ContentVersion = { ...joined.contentVersion, actualSizeBytes: input.sizeBytes, ...(input.checksumSha256 === undefined ? {} : { checksumSha256: input.checksumSha256 }), completedAt: input.completedAt, ...(input.detectedMediaType === undefined ? {} : { detectedMediaType: input.detectedMediaType }), status: "pending_scan" };
+    this.versions.set(contentVersion.contentVersionId, contentVersion); this.sessions.set(input.sessionId, { ...joined.session, status: "pending_scan" }); this.event(input.event);
+    const result = { contentVersion }; this.save(input.operationId, input.fingerprint, result); return { ...clone(result), replayed: false };
+  }
+  async recordScan(input: Parameters<FileCenterStore["recordScan"]>[0]) {
+    const prior = this.receipt(input.operationId, input.fingerprint) as { contentVersion: ContentVersion; objectHandle: string } | undefined; if (prior) return { ...clone(prior), replayed: true };
+    const joined = await this.findContentVersion(input.contentVersionId); if (!joined) throw new FileCenterError("file_center_not_found");
+    if (joined.contentVersion.status !== "pending_scan") throw new FileCenterError("file_center_operation_conflict");
+    const status = input.outcome === "clean" ? "available" : "quarantine_pending";
+    const contentVersion: ContentVersion = { ...joined.contentVersion, scannedAt: input.scannedAt, status };
+    this.versions.set(input.contentVersionId, contentVersion); this.event(input.event); const result = { contentVersion, objectHandle: joined.objectHandle }; this.save(input.operationId, input.fingerprint, result); return { ...clone(result), replayed: false };
+  }
+  completeQuarantine(input: Parameters<FileCenterStore["completeQuarantine"]>[0]) { const version = this.versions.get(input.contentVersionId); if (!version) throw new FileCenterError("file_center_not_found"); if (version.status === "quarantined") return Promise.resolve(clone(version)); if (version.status !== "quarantine_pending") throw new FileCenterError("file_center_operation_conflict"); const changed = { ...version, status: "quarantined" as const }; this.versions.set(input.contentVersionId, changed); this.event(input.event); return Promise.resolve(clone(changed)); }
+  linkResource(input: Parameters<FileCenterStore["linkResource"]>[0]) { const prior = this.receipt(input.operationId, input.fingerprint) as { link: ResourceLink } | undefined; if (prior) return Promise.resolve({ ...clone(prior), replayed: true }); const version = this.versions.get(input.link.contentVersionId); if (!version || version.fileId !== input.link.fileId) throw new FileCenterError("file_center_not_found"); if (version.status !== "available") throw new FileCenterError("file_center_not_ready"); if (this.links.has(input.link.linkId)) throw new FileCenterError("file_center_operation_conflict"); this.links.set(input.link.linkId, clone(input.link)); this.event(input.event); const result = { link: input.link }; this.save(input.operationId, input.fingerprint, result); return Promise.resolve({ ...clone(result), replayed: false }); }
+  unlinkResource(input: Parameters<FileCenterStore["unlinkResource"]>[0]) { const prior = this.receipt(input.operationId, input.fingerprint) as { link: ResourceLink } | undefined; if (prior) return Promise.resolve({ ...clone(prior), replayed: true }); const link = this.links.get(input.linkId); if (!link) throw new FileCenterError("file_center_not_found"); if (link.unlinkedAt !== undefined) throw new FileCenterError("file_center_operation_conflict"); const changed = { ...link, unlinkedAt: input.unlinkedAt }; this.links.set(input.linkId, changed); this.event(input.event); const result = { link: changed }; this.save(input.operationId, input.fingerprint, result); return Promise.resolve({ ...clone(result), replayed: false }); }
+  async cleanupSession(input: Parameters<FileCenterStore["cleanupSession"]>[0]) { const prior = this.receipt(input.operationId, input.fingerprint) as { objectHandle: string; session: UploadSession } | undefined; if (prior) return { ...clone(prior), replayed: true }; const joined = await this.findSession(input.sessionId); if (!joined) throw new FileCenterError("file_center_not_found"); if (joined.session.status !== "created" && joined.session.status !== "expired" && joined.session.status !== "cleanup_pending") throw new FileCenterError("file_center_operation_conflict"); const session = { ...joined.session, status: "cleanup_pending" as const }; this.sessions.set(input.sessionId, session); this.versions.set(joined.contentVersion.contentVersionId, { ...joined.contentVersion, status: "cleanup_pending" }); const result = { objectHandle: joined.objectHandle, session }; this.save(input.operationId, input.fingerprint, result); return { ...clone(result), replayed: false }; }
+  completeCleanup(sessionId: string) { const session = this.sessions.get(sessionId); if (!session) throw new FileCenterError("file_center_not_found"); if (session.status === "cleaned") return Promise.resolve(clone(session)); if (session.status !== "cleanup_pending") throw new FileCenterError("file_center_operation_conflict"); const version = this.versions.get(session.contentVersionId); if (!version || version.status !== "cleanup_pending") throw new FileCenterError("file_center_operation_conflict"); const changed = { ...session, status: "cleaned" as const }; this.versions.set(version.contentVersionId, { ...version, status: "deleted" }); this.sessions.set(sessionId, changed); return Promise.resolve(clone(changed)); }
+  markReconciled(input: Parameters<FileCenterStore["markReconciled"]>[0]) { const prior = this.receipt(input.operationId, input.fingerprint) as { contentVersion: ContentVersion } | undefined; if (prior) return Promise.resolve({ ...clone(prior), replayed: true }); const version = this.versions.get(input.contentVersionId); if (!version) throw new FileCenterError("file_center_not_found"); const contentVersion = !input.objectExists && (version.status === "pending_scan" || version.status === "available") ? { ...version, status: "object_missing" as const } : version; this.versions.set(input.contentVersionId, contentVersion); const result = { contentVersion }; this.save(input.operationId, input.fingerprint, result); return Promise.resolve({ ...clone(result), replayed: false }); }
+}

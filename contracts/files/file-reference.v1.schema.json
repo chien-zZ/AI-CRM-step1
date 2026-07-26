@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/files/v1/file-reference.schema.json",
+  "title": "Stable File Reference V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "fileId", "contentVersionId", "displayName"],
+  "properties": {
+    "version": { "const": 1 },
+    "fileId": { "$ref": "#/$defs/uuid" },
+    "contentVersionId": { "$ref": "#/$defs/uuid" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "mediaType": { "type": "string", "minLength": 3, "maxLength": 255, "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" },
+    "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+  },
+  "$defs": { "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" } }
+}

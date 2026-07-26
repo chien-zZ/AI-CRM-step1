@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/files/v1/content-version.schema.json",
+  "title": "Immutable File Content Version V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "contentVersionId", "fileId", "versionNumber", "declaredMediaType", "declaredSizeBytes", "status", "createdAt"],
+  "properties": {
+    "version": { "const": 1 }, "contentVersionId": { "$ref": "#/$defs/uuid" }, "fileId": { "$ref": "#/$defs/uuid" }, "versionNumber": { "type": "integer", "minimum": 1 },
+    "declaredMediaType": { "$ref": "#/$defs/mediaType" }, "declaredSizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "actualSizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "detectedMediaType": { "$ref": "#/$defs/mediaType" }, "checksumSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "status": { "enum": ["awaiting_upload", "pending_scan", "available", "quarantine_pending", "quarantined", "object_missing", "cleanup_pending", "deleted"] },
+    "createdAt": { "$ref": "#/$defs/dateTime" }, "completedAt": { "$ref": "#/$defs/dateTime" }, "scannedAt": { "$ref": "#/$defs/dateTime" }
+  },
+  "$defs": { "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }, "mediaType": { "type": "string", "minLength": 3, "maxLength": 255, "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" }, "dateTime": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$" } }
+}
