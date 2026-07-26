@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
-import { checkArtifacts, renderArtifacts } from "../contracts/generate.mjs";
+import { checkArtifacts, renderArtifacts, selectReferencedSchemas } from "../contracts/generate.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -25,4 +25,34 @@ test("generated contract artifacts are deterministic and tamper evident", async 
   } finally {
     await rm(artifactRoot, { force: true, recursive: true });
   }
+});
+
+test("audience bundles contain only schemas reachable from their allowlisted paths", () => {
+  const schemas = {
+    ExternalResult: {
+      type: "object",
+      properties: { item: { $ref: "#/components/schemas/SharedItem" } },
+    },
+    InternalOnly: { type: "object" },
+    SharedItem: { type: "string" },
+  };
+  const externalPaths = {
+    "/external": {
+      get: {
+        responses: {
+          200: {
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/ExternalResult" } },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(selectReferencedSchemas(schemas, externalPaths), {
+    ExternalResult: schemas.ExternalResult,
+    SharedItem: schemas.SharedItem,
+  });
+  assert.deepEqual(selectReferencedSchemas(schemas, {}), {});
 });

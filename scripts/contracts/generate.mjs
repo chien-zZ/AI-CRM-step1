@@ -52,6 +52,39 @@ function selectPaths(paths, audience) {
   return selected;
 }
 
+function decodePointerSegment(segment) {
+  return segment.replaceAll("~1", "/").replaceAll("~0", "~");
+}
+
+export function selectReferencedSchemas(schemas, paths) {
+  const pending = [];
+  const selected = {};
+
+  const collectReferences = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) collectReferences(item);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const reference = value.$ref;
+    if (typeof reference === "string" && reference.startsWith("#/components/schemas/")) {
+      pending.push(decodePointerSegment(reference.slice("#/components/schemas/".length)));
+    }
+    for (const item of Object.values(value)) collectReferences(item);
+  };
+
+  collectReferences(paths);
+  while (pending.length > 0) {
+    const name = pending.shift();
+    if (!name || name in selected) continue;
+    const schema = schemas[name];
+    if (schema === undefined) throw new Error(`OpenAPI references missing schema ${name}.`);
+    selected[name] = schema;
+    collectReferences(schema);
+  }
+  return selected;
+}
+
 function renderClient(document, audience) {
   const operations = [];
   for (const [path, pathItem] of Object.entries(document.paths)) {
@@ -90,8 +123,19 @@ export async function renderArtifacts(root) {
     Object.assign(bundle.components.schemas, document.components?.schemas ?? {});
   }
 
-  const internal = { ...bundle, paths: selectPaths(bundle.paths, "internal") };
-  const external = { ...bundle, info: { ...bundle.info, title: "AI-CRM External API" }, paths: selectPaths(bundle.paths, "external") };
+  const internalPaths = selectPaths(bundle.paths, "internal");
+  const externalPaths = selectPaths(bundle.paths, "external");
+  const internal = {
+    ...bundle,
+    components: { schemas: selectReferencedSchemas(bundle.components.schemas, internalPaths) },
+    paths: internalPaths,
+  };
+  const external = {
+    ...bundle,
+    components: { schemas: selectReferencedSchemas(bundle.components.schemas, externalPaths) },
+    info: { ...bundle.info, title: "AI-CRM External API" },
+    paths: externalPaths,
+  };
   await SwaggerParser.validate(internal);
   await SwaggerParser.validate(external);
 
