@@ -22,11 +22,11 @@ The placement is a first-stage baseline, not a capacity claim. CPU, memory, disk
 
 ## Required Secret Files
 
-Host A receives only the files declared by its Compose services: PostgreSQL role files, Redis/RabbitMQ credentials, the Keycloak database credential, the Flowable bootstrap credential, API BFF session files and TLS certificate/key files. Host B receives the shared API BFF session files and TLS certificate/key files. Each file is environment/service/purpose specific, root-owned and normally `0400` (or an explicitly reviewed `0440`).
+Host A receives only the files declared by its Compose services: PostgreSQL role files, Redis/RabbitMQ credentials, the Keycloak database credential, the Flowable bootstrap credential, API BFF session files and TLS certificate/key files. Host B receives the shared API BFF session files and TLS certificate/key files. Each file is environment/service/purpose specific. Because standalone Compose file-backed Secrets preserve host file permissions while the consumers are non-root, every mounted production Secret is root-owned, assigned to a dedicated numeric Secret-reader group and `0440`. The Secret directory remains root-owned and non-traversable by ordinary host users; no human deployment account is a standing member of the reader group.
 
 The long-running Keycloak service deliberately does not receive a bootstrap administrator credential. Initial administrator establishment or recovery is a separately approved, audited one-time operation; its temporary credential is revoked after use and is never retained in the normal Compose project.
 
-Do not mount the Secret root. Compose resolves each declared file and mounts only the named Secret into the consuming container. Missing files fail before deployment.
+Do not mount the Secret root. Compose resolves each declared file and mounts only the named Secret into the consuming container. A service receives the approved supplementary reader GID only when it declares Secret mounts, so group membership does not reveal unmounted files. Missing files, wrong ownership/mode or GID mismatch fail before deployment.
 
 ## Static Verification
 

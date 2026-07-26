@@ -14,6 +14,7 @@ services:
     <<: *service-defaults
     image: ${AI_CRM_POSTGRES_IMAGE:?immutable PostgreSQL image is required}
     user: postgres
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: ai_crm_admin
@@ -38,6 +39,7 @@ services:
     <<: *service-defaults
     image: ${AI_CRM_REDIS_IMAGE:?immutable Redis image is required}
     user: redis
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     entrypoint: [/bin/sh, /opt/ai-crm/redis-entrypoint.sh]
     secrets: [redis_password]
     volumes:
@@ -58,6 +60,7 @@ services:
     <<: *service-defaults
     image: ${AI_CRM_RABBITMQ_IMAGE:?immutable RabbitMQ image is required}
     user: rabbitmq
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     entrypoint: [/bin/sh, /opt/ai-crm/rabbitmq-entrypoint.sh]
     secrets: [rabbitmq_password]
     volumes:
@@ -78,6 +81,7 @@ services:
   keycloak:
     <<: *service-defaults
     image: ${AI_CRM_KEYCLOAK_IMAGE:?immutable Keycloak image is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     entrypoint: [/bin/sh, /opt/ai-crm/keycloak-entrypoint.sh]
     command: [start, --optimized, --health-enabled=true, --proxy-headers=xforwarded]
     environment:
@@ -103,6 +107,7 @@ services:
   flowable:
     <<: *service-defaults
     image: ${AI_CRM_FLOWABLE_IMAGE:?immutable Flowable image is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     entrypoint: [/bin/sh, /opt/ai-crm/flowable-entrypoint.sh]
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flowable
@@ -146,6 +151,7 @@ services:
     image: ${AI_CRM_API_IMAGE:?digest-pinned API image is required}
     read_only: true
     user: ${AI_CRM_APPLICATION_UID_GID:?application uid:gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     tmpfs: [/tmp]
     environment:
       NODE_ENV: production
@@ -185,6 +191,7 @@ services:
     image: ${AI_CRM_EDGE_IMAGE:?digest-pinned edge image is required}
     read_only: true
     user: ${AI_CRM_EDGE_UID:?edge uid is required}:${AI_CRM_EDGE_GID:?edge gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     tmpfs:
       - /etc/nginx/conf.d:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
       - /var/cache/nginx:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750

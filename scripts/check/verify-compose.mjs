@@ -118,6 +118,9 @@ for (const [host, definition, project, expectedServices] of productionDefinition
         errors.push(`${host}/${name} must bind published ports to the reviewed private address.`);
       }
     }
+    if ((service.secrets?.length ?? 0) > 0 && !service.group_add?.includes("${AI_CRM_SECRET_GID:?secret reader gid is required}")) {
+      errors.push(`${host}/${name} must receive only the approved supplementary Secret-reader group.`);
+    }
   }
   for (const [name, secret] of Object.entries(definition.secrets ?? {})) {
     if (typeof secret?.file !== "string" || !secret.file.startsWith("${AI_CRM_SECRET_ROOT:?")) {

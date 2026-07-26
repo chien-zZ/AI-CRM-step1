@@ -115,6 +115,12 @@ Round 1 Owner 证据：release tests 8/8；两个生产 Compose 文件经 `docke
 
 Round 1 修复后专项证据：release tests 10/10；`pnpm compose:check` 通过；部署/检查脚本 ESLint 通过；两个 Compose 仍可由 Docker 解析；真实 Production Edge read-only/non-root 启动、模板渲染与 liveness 通过。等待原 Reviewer Round 2 复查。
 
+## Independent Review Round 2 And Fix
+
+- P1 Edge 在 root-owned `0400` TLS 文件下仍不可读：确认 standalone Compose 的 file-backed Secret 不为非 root 消费者重映射权限，且同类问题影响所有非 root Secret 消费者。生产基线现统一要求挂载文件 `root:<专用 Secret-reader GID>`、`0440`；只有声明 Secret 的服务通过 `group_add` 获得该 supplementary GID，Secret 根目录不挂载、普通主机账号不作为常驻成员。Edge 容器检查改用 Docker Volume 由 root 创建 `0:<synthetic gid> 0440` 证书/私钥，断言 ownership/mode 后以 UID/GID 101 + supplementary group + 两个只读 volume-subpath 启动，覆盖真实非 root 读取语义。
+
+Round 2 修复需重新通过 Edge 容器、Compose 静态/解析、release tests、ESLint、完整 `pnpm check`，再交原 Reviewer Round 3。
+
 ## Unresolved Questions
 
 - 最终主机规格、域名/IP、镜像仓库与摘要、证书、资源限制、状态盘、真实 Owner、告警阈值、Sentry 区域、RPO/RTO 和保留期仍待上线前评审。

@@ -15,6 +15,7 @@ services:
     image: ${AI_CRM_API_IMAGE:?digest-pinned API image is required}
     read_only: true
     user: ${AI_CRM_APPLICATION_UID_GID:?application uid:gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     tmpfs: [/tmp]
     environment:
       NODE_ENV: production
@@ -76,6 +77,7 @@ services:
     image: ${AI_CRM_EDGE_IMAGE:?digest-pinned edge image is required}
     read_only: true
     user: ${AI_CRM_EDGE_UID:?edge uid is required}:${AI_CRM_EDGE_GID:?edge gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     tmpfs:
       - /etc/nginx/conf.d:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
       - /var/cache/nginx:uid=${AI_CRM_EDGE_UID:?required},gid=${AI_CRM_EDGE_GID:?required},mode=0750
