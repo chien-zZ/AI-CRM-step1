@@ -1,0 +1,110 @@
+name: ai-crm-prod-b
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+
+services:
+  api:
+    <<: *service-defaults
+    image: ${AI_CRM_API_IMAGE:?digest-pinned API image is required}
+    read_only: true
+    user: ${AI_CRM_APPLICATION_UID_GID:?application uid:gid is required}
+    tmpfs: [/tmp]
+    environment:
+      NODE_ENV: production
+      AI_CRM_RELEASE: ${AI_CRM_RELEASE_ID:?release id is required}
+      AI_CRM_KEYCLOAK_ISSUER: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}
+      AI_CRM_PC_OIDC_CLIENT_ID: ${AI_CRM_PC_OIDC_CLIENT_ID:?required}
+      AI_CRM_OIDC_API_AUDIENCE: ${AI_CRM_OIDC_API_AUDIENCE:?required}
+      AI_CRM_PC_OIDC_REDIRECT_URI: https://${AI_CRM_PUBLIC_HOST:?public host is required}/bff/auth/callback
+      AI_CRM_PC_ALLOWED_ORIGIN: https://${AI_CRM_PUBLIC_HOST:?public host is required}
+      AI_CRM_REDIS_URL: redis://${AI_CRM_STATE_HOST:?state host is required}:6379
+      AI_CRM_PC_OIDC_CLIENT_SECRET_FILE: /run/secrets/pc_oidc_client_secret
+      AI_CRM_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      AI_CRM_PC_SESSION_ENCRYPTION_KEY_FILE: /run/secrets/pc_session_encryption_key
+      AI_CRM_PC_SESSION_INDEX_KEY_FILE: /run/secrets/pc_session_index_key
+      AI_CRM_PC_SESSION_ENCRYPTION_KEY_ID: ${AI_CRM_PC_SESSION_ENCRYPTION_KEY_ID:?required}
+      AI_CRM_PC_LOGIN_TRANSACTION_TTL_SECONDS: ${AI_CRM_PC_LOGIN_TRANSACTION_TTL_SECONDS:?required}
+      AI_CRM_PC_SESSION_IDLE_TTL_SECONDS: ${AI_CRM_PC_SESSION_IDLE_TTL_SECONDS:?required}
+      AI_CRM_PC_SESSION_ABSOLUTE_TTL_SECONDS: ${AI_CRM_PC_SESSION_ABSOLUTE_TTL_SECONDS:?required}
+      AI_CRM_PC_OIDC_TIMEOUT_SECONDS: ${AI_CRM_PC_OIDC_TIMEOUT_SECONDS:?required}
+      AI_CRM_PC_REFRESH_LEASE_TTL_MS: ${AI_CRM_PC_REFRESH_LEASE_TTL_MS:?required}
+      AI_CRM_REDIS_CONNECT_TIMEOUT_MS: ${AI_CRM_REDIS_CONNECT_TIMEOUT_MS:?required}
+    secrets: [pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:${AI_CRM_API_PORT_B:?host B API port is required}:3000"]
+    networks: [app]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_API_CPU_LIMIT:?required}", memory: "${AI_CRM_API_MEMORY_LIMIT:?required}" }
+
+  worker:
+    <<: *service-defaults
+    image: ${AI_CRM_WORKER_IMAGE:?digest-pinned Worker image is required}
+    read_only: true
+    user: ${AI_CRM_APPLICATION_UID_GID:?application uid:gid is required}
+    tmpfs: [/tmp]
+    environment:
+      NODE_ENV: production
+      AI_CRM_RELEASE: ${AI_CRM_RELEASE_ID:?release id is required}
+      AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS: ${AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS:?required}
+    networks: [app]
+    healthcheck:
+      test: [CMD, node, /app/dist/worker-healthcheck.mjs]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: ${AI_CRM_WORKER_STOP_GRACE_PERIOD:?required}
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_WORKER_CPU_LIMIT:?required}", memory: "${AI_CRM_WORKER_MEMORY_LIMIT:?required}" }
+
+  edge:
+    <<: *service-defaults
+    image: ${AI_CRM_EDGE_IMAGE:?digest-pinned edge image is required}
+    read_only: true
+    user: ${AI_CRM_EDGE_UID_GID:?edge uid:gid is required}
+    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    environment:
+      AI_CRM_PUBLIC_HOST: ${AI_CRM_PUBLIC_HOST:?required}
+      AI_CRM_API_HOST_A: ${AI_CRM_API_HOST_A:?required}
+      AI_CRM_API_PORT_A: ${AI_CRM_API_PORT_A:?required}
+      AI_CRM_API_HOST_B: ${AI_CRM_API_HOST_B:?required}
+      AI_CRM_API_PORT_B: ${AI_CRM_API_PORT_B:?required}
+      AI_CRM_KEYCLOAK_PRIVATE_HOST: ${AI_CRM_STATE_HOST:?state host is required}
+    secrets: [tls_certificate, tls_private_key]
+    volumes: [../../nginx/nginx.production.conf.template:/etc/nginx/templates/default.conf.template:ro]
+    ports: ["80:8080", "443:8443"]
+    networks: [edge, app]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/health/live]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits: { cpus: "${AI_CRM_EDGE_CPU_LIMIT:?required}", memory: "${AI_CRM_EDGE_MEMORY_LIMIT:?required}" }
+
+networks:
+  edge: {}
+  app: {}
+
+secrets:
+  redis_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/redis_password" }
+  pc_oidc_client_secret: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_oidc_client_secret" }
+  pc_session_encryption_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_encryption_key" }
+  pc_session_index_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_index_key" }
+  tls_certificate: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/tls_certificate" }
+  tls_private_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/tls_private_key" }
