@@ -58,15 +58,15 @@
 - 多个有效 Assignment 原样返回；调用方可以显式选择一个 Assignment，服务端不会选择隐式第一条。
 - 写命令必须提供 UUID `operationId`、Actor、Reason、Trace，并先通过必填 `OrganizationCommandAuthorizer`；该端口不硬编码角色或权限码。
 - `OrganizationStore.commit` 把状态、幂等 Receipt、包含目标的审计 Intent 和 transport-neutral 事件 Intent 作为一个原子提交边界。
-- 内存 Store 覆盖核心不变量；PostgreSQL Store 使用参数化 SQL，包根不导出 Drizzle Table、数据库行、Query Builder 或事务句柄。
+- 内存 Store 覆盖核心不变量；PostgreSQL Store 使用参数化 SQL；包根只暴露模块专用的 ambient-transaction Persistence Runtime，不导出 Store 写入口、Drizzle Table、数据库行、Query Builder 或事务句柄。
 - 私有 Drizzle Schema 与 `0000000002_organization_effective_dated_core` 迁移创建模块自有 `organization` Schema；复合外键锁定 Assignment 的 Person/Employment 和 Position/Unit 一致性。
 - PostgreSQL Trigger 使用确定顺序的事务级 Advisory Lock 拒绝并发重叠主体关联，并拒绝同一组织单元的重叠 Placement。
 - 模块迁移命令只读取 `DATABASE_MIGRATION_URL_FILE`，复用专用迁移凭据、Checksum 和全局迁移锁；应用启动不自动迁移。
 
 ## Verification Evidence
 
-- 默认组织测试：10 项通过，3 项环境门控 PostgreSQL 测试按设计跳过。
-- 真实 PostgreSQL 17.5 集成：3 项通过，覆盖空库基础/模块迁移、上下文持久化、审计/事件/Receipt 同事务、事件目标与生效时间、故障回滚和并发主体关联冲突。
+- 默认组织测试：14 项通过，4 项环境门控 PostgreSQL 测试按设计跳过。
+- 真实 PostgreSQL 17.5 集成：4 项通过，覆盖空库基础/模块迁移、上下文持久化、审计/事件/Receipt 同事务、事件目标与生效时间、故障回滚、并发主体关联冲突，以及未来时点层级循环的数据库拒绝与稳定错误映射。
 - 一次性执行器使用随机临时文件式 Secret、回环随机端口和固定镜像；验证后容器与临时 Secret 目录已清理。
 - 合同生成与 `pnpm contracts:check`：通过，28/28 包成功。
 - `pnpm check`：通过；28 个 Workspace 包共 140 个 build、lint、typecheck、test、contracts:check 任务全部成功，仓库边界、合同确定性和 Compose 静态安全检查通过。
@@ -82,3 +82,28 @@
 - Secrets：生产/测试数据库连接只接受文件引用；集成随机 Secret 不进入参数、环境值或日志并在结束后清理。
 - Failure Modes：无关联、关联冲突、无有效 Employment、无效/缺失 Assignment、层级循环/损坏、非法区间、授权拒绝、幂等冲突和数据库事务失败均失败关闭。
 - Independent Review：本节是实现者自查，不能替代质量清单要求的非原实现者 Review；IAM-02 尚未声明通过 G2。
+
+## 2026-07-26 Self-Review And Repair Loop
+
+### Loop 1：Authorization、Idempotency、Public Boundary
+
+- 修复 Authorizer 缺少目标实体：现在每次写授权都包含稳定 Action、Actor、Entity Type、Entity ID 和 Operation ID，支持对象级服务端裁决。
+- 授权前移到任何实体读取之前；未授权命令不能通过 `not found` 或关系校验结果探测组织事实。
+- 幂等指纹加入 Actor 与 Reason，同时保留 Trace 可变化；跨主体或改变语义复用 Operation ID 失败关闭。
+- 包根不再导出 Store、Write 或可直接提交状态的工厂；只导出授权内置的 Service Factory/API 和模块专用 Persistence Runtime。
+- 显式 Assignment 选择先过滤再校验路径；一个损坏或关闭的无关 Assignment 不会撤销其他仍有效上下文。
+
+### Loop 2：Effective Time、Hierarchy、Migration
+
+- 新增父子有效区间包含校验；Position、Placement 和 Assignment 不能延伸超过其 Unit、Parent、Employment 或 Position 的有效区间。
+- 上下文解析现在验证完整组织路径的唯一 Placement、节点有效性和循环，路径损坏失败关闭。
+- 循环检查覆盖新 Placement 区间内所有已排定 Placement 起点，不只检查创建瞬间。
+- PostgreSQL Trigger 使用全局层级 Advisory Lock 串行化层级写入，并在全部相关未来边界递归检查循环；数据库 `P1001` 映射为稳定 `organization_hierarchy_cycle`。
+- Drizzle Schema 补齐 SQL 迁移中的 Check、复合唯一约束、复合外键和 Receipt 长度约束，消除 Schema/迁移漂移。
+
+### Loop 3：Audit、Composition、Documentation
+
+- 成功审计 Intent 显式记录 `result=succeeded`；拒绝决策由 Authorizer/IAM-03 的授权审计边界拥有。
+- PostgreSQL Factory 的公共参数收敛为模块专用 ambient-transaction Persistence Runtime，不暴露事务句柄或数据库模型。
+- 文档明确上下文解析只接受服务端已验证主体；Memory Service 只用于测试/合成 Fixture，禁止作为生产事实存储。
+- 第三轮修复后的再次复审未发现新的 Authorization、Idempotency、Transactions、Migrations、Observability、Backward Compatibility、Secrets 或 Failure Modes 问题。

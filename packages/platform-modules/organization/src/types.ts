@@ -23,11 +23,28 @@ export interface CommandMetadata {
 export interface OrganizationCommandAuthorizationRequest {
   readonly action: string;
   readonly actor: ActorReference;
+  readonly entityId: string;
+  readonly entityType: string;
   readonly operationId: string;
 }
 
 export interface OrganizationCommandAuthorizer {
   authorize(request: OrganizationCommandAuthorizationRequest): Promise<void>;
+}
+
+export interface OrganizationServiceApi {
+  closeAssignment(command: CloseEffectiveFactCommand): Promise<void>;
+  closeEmployment(command: CloseEffectiveFactCommand): Promise<void>;
+  closeOrganizationUnitPlacement(command: CloseEffectiveFactCommand): Promise<void>;
+  closeSubjectAssociation(command: CloseEffectiveFactCommand): Promise<void>;
+  createAssignment(command: CreateAssignmentCommand): Promise<void>;
+  createEmployment(command: CreateEmploymentCommand): Promise<void>;
+  createOrganizationUnit(command: CreateOrganizationUnitCommand): Promise<void>;
+  createOrganizationUnitPlacement(command: CreateOrganizationUnitPlacementCommand): Promise<void>;
+  createPosition(command: CreatePositionCommand): Promise<void>;
+  createSubjectAssociation(command: CreateSubjectAssociationCommand): Promise<void>;
+  createWorkforcePerson(command: CreateWorkforcePersonCommand): Promise<void>;
+  resolveWorkforceContext(subject: AuthenticationSubject, at: string, assignmentId?: string): Promise<WorkforceContext>;
 }
 
 export interface WorkforcePerson {

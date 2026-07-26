@@ -1,8 +1,6 @@
 export { OrganizationError, type OrganizationErrorCode } from "./errors.js";
-export { createMemoryOrganizationStore } from "./memory-store.js";
-export { createPostgresOrganizationStore } from "./postgres-store.js";
-export { OrganizationService } from "./service.js";
-export type { OrganizationStore, OrganizationWrite } from "./store.js";
+export { createMemoryOrganizationService, createPostgresOrganizationService } from "./factory.js";
+export type { OrganizationPersistenceResult, OrganizationPersistenceRuntime } from "./postgres-store.js";
 export type {
   ActorReference,
   Assignment,
@@ -22,6 +20,7 @@ export type {
   OrganizationUnitPlacement,
   OrganizationCommandAuthorizationRequest,
   OrganizationCommandAuthorizer,
+  OrganizationServiceApi,
   Position,
   SubjectAssociation,
   WorkforceContext,

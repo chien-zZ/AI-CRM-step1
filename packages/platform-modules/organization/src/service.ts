@@ -14,11 +14,12 @@ import type {
   CreateSubjectAssociationCommand,
   CreateWorkforcePersonCommand,
   OrganizationCommandAuthorizer,
+  OrganizationServiceApi,
   WorkforceContext,
 } from "./types.js";
-import { isActive, requireId, requireInterval, requireText, requireTimestamp } from "./validation.js";
+import { intervalContains, isActive, requireId, requireInterval, requireText, requireTimestamp } from "./validation.js";
 
-export class OrganizationService {
+export class OrganizationService implements OrganizationServiceApi {
   constructor(
     private readonly store: OrganizationStore,
     private readonly authorizer: OrganizationCommandAuthorizer,
@@ -28,6 +29,7 @@ export class OrganizationService {
     this.#metadata(command);
     requireId(command.workforcePersonId);
     requireTimestamp(command.recordedAt);
+    await this.#authorize(command, "workforce_person_created", "workforce_person", command.workforcePersonId);
     await this.#commit(command, "workforce_person_created", "organization.workforce_person.created.v1", {
       kind: "create_person",
       person: { recordedAt: command.recordedAt, workforcePersonId: command.workforcePersonId },
@@ -38,6 +40,7 @@ export class OrganizationService {
     this.#metadata(command);
     this.#intervalEntity(command.employmentId, command);
     requireId(command.workforcePersonId);
+    await this.#authorize(command, "employment_created", "employment", command.employmentId);
     if (!await this.store.findWorkforcePerson(command.workforcePersonId)) throw new OrganizationError("entity_not_found");
     await this.#commit(command, "employment_created", "organization.employment.created.v1", {
       employment: this.#withoutMetadata(command), kind: "create_employment",
@@ -48,10 +51,13 @@ export class OrganizationService {
     this.#metadata(command);
     this.#intervalEntity(command.organizationUnitId, command);
     requireId(command.placementId);
+    await this.#authorize(command, "organization_unit_created", "organization_unit", command.organizationUnitId);
     if (command.parentOrganizationUnitId) {
       requireId(command.parentOrganizationUnitId);
-      if (!await this.store.findOrganizationUnit(command.parentOrganizationUnitId)) throw new OrganizationError("entity_not_found");
-      await this.#assertNoHierarchyCycle(command.organizationUnitId, command.parentOrganizationUnitId, command.effectiveFrom);
+      const parent = await this.store.findOrganizationUnit(command.parentOrganizationUnitId);
+      if (!parent) throw new OrganizationError("entity_not_found");
+      if (!intervalContains(parent, command)) throw new OrganizationError("effective_interval_invalid");
+      await this.#assertNoHierarchyCycle(command.organizationUnitId, command.parentOrganizationUnitId, command);
     }
     await this.#commit(command, "organization_unit_created", "organization.unit.created.v1", {
       kind: "create_organization_unit",
@@ -68,8 +74,10 @@ export class OrganizationService {
     this.#metadata(command);
     this.#intervalEntity(command.positionId, command);
     requireId(command.organizationUnitId);
+    await this.#authorize(command, "position_created", "position", command.positionId);
     const unit = await this.store.findOrganizationUnit(command.organizationUnitId);
-    if (!unit || !isActive(unit, command.effectiveFrom)) throw new OrganizationError("entity_not_found");
+    if (!unit) throw new OrganizationError("entity_not_found");
+    if (!intervalContains(unit, command)) throw new OrganizationError("effective_interval_invalid");
     await this.#commit(command, "position_created", "organization.position.created.v1", {
       kind: "create_position", position: this.#withoutMetadata(command),
     });
@@ -79,13 +87,16 @@ export class OrganizationService {
     this.#metadata(command);
     this.#intervalEntity(command.placementId, command);
     requireId(command.organizationUnitId);
+    await this.#authorize(command, "organization_unit_placement_created", "organization_unit_placement", command.placementId);
     const unit = await this.store.findOrganizationUnit(command.organizationUnitId);
-    if (!unit || !isActive(unit, command.effectiveFrom)) throw new OrganizationError("entity_not_found");
+    if (!unit) throw new OrganizationError("entity_not_found");
+    if (!intervalContains(unit, command)) throw new OrganizationError("effective_interval_invalid");
     if (command.parentOrganizationUnitId) {
       requireId(command.parentOrganizationUnitId);
       const parent = await this.store.findOrganizationUnit(command.parentOrganizationUnitId);
-      if (!parent || !isActive(parent, command.effectiveFrom)) throw new OrganizationError("entity_not_found");
-      await this.#assertNoHierarchyCycle(command.organizationUnitId, command.parentOrganizationUnitId, command.effectiveFrom);
+      if (!parent) throw new OrganizationError("entity_not_found");
+      if (!intervalContains(parent, command)) throw new OrganizationError("effective_interval_invalid");
+      await this.#assertNoHierarchyCycle(command.organizationUnitId, command.parentOrganizationUnitId, command);
     }
     await this.#commit(command, "organization_unit_placement_created", "organization.unit_placement.created.v1", {
       kind: "create_organization_unit_placement", placement: this.#withoutMetadata(command),
@@ -96,14 +107,19 @@ export class OrganizationService {
     this.#metadata(command);
     this.#intervalEntity(command.assignmentId, command);
     for (const id of [command.workforcePersonId, command.employmentId, command.organizationUnitId, command.positionId]) requireId(id);
+    await this.#authorize(command, "assignment_created", "assignment", command.assignmentId);
     const [employment, unit, position] = await Promise.all([
       this.store.findEmployment(command.employmentId),
       this.store.findOrganizationUnit(command.organizationUnitId),
       this.store.findPosition(command.positionId),
     ]);
-    if (!employment || employment.workforcePersonId !== command.workforcePersonId || !isActive(employment, command.effectiveFrom)
-      || !unit || !isActive(unit, command.effectiveFrom) || !position || position.organizationUnitId !== command.organizationUnitId
-      || !isActive(position, command.effectiveFrom)) throw new OrganizationError("entity_not_found");
+    if (!employment || employment.workforcePersonId !== command.workforcePersonId
+      || !unit || !position || position.organizationUnitId !== command.organizationUnitId) {
+      throw new OrganizationError("entity_not_found");
+    }
+    if (!intervalContains(employment, command) || !intervalContains(unit, command) || !intervalContains(position, command)) {
+      throw new OrganizationError("effective_interval_invalid");
+    }
     await this.#commit(command, "assignment_created", "organization.assignment.created.v1", {
       assignment: this.#withoutMetadata(command), kind: "create_assignment",
     });
@@ -114,6 +130,7 @@ export class OrganizationService {
     this.#intervalEntity(command.associationId, command);
     requireId(command.workforcePersonId);
     this.#subject(command);
+    await this.#authorize(command, "subject_association_created", "subject_association", command.associationId);
     if (!await this.store.findWorkforcePerson(command.workforcePersonId)) throw new OrganizationError("entity_not_found");
     await this.#commit(command, "subject_association_created", "organization.subject_association.created.v1", {
       association: this.#withoutMetadata(command), kind: "create_subject_association",
@@ -149,6 +166,11 @@ export class OrganizationService {
     const activeEmploymentIds = new Set(employments.map(({ employmentId }) => employmentId));
     let assignments = (await this.store.listActiveAssignments(workforcePersonId, at))
       .filter((item) => activeEmploymentIds.has(item.employmentId));
+    if (assignmentId) {
+      requireId(assignmentId);
+      assignments = assignments.filter((item) => item.assignmentId === assignmentId);
+      if (assignments.length !== 1) throw new OrganizationError("assignment_not_active");
+    }
     for (const assignment of assignments) {
       const [unit, position] = await Promise.all([
         this.store.findOrganizationUnit(assignment.organizationUnitId),
@@ -158,11 +180,7 @@ export class OrganizationService {
         || !isActive(unit, at) || !isActive(position, at)) {
         throw new OrganizationError("organization_path_invalid");
       }
-    }
-    if (assignmentId) {
-      requireId(assignmentId);
-      assignments = assignments.filter((item) => item.assignmentId === assignmentId);
-      if (assignments.length !== 1) throw new OrganizationError("assignment_not_active");
+      await this.#assertValidOrganizationPath(assignment.organizationUnitId, at);
     }
     return {
       assignments: assignments.map((assignment) => this.#assignmentReference(assignment)),
@@ -173,12 +191,34 @@ export class OrganizationService {
     };
   }
 
-  async #assertNoHierarchyCycle(unitId: string, parentId: string, at: string): Promise<void> {
+  async #assertNoHierarchyCycle(unitId: string, parentId: string, interval: { readonly effectiveFrom: string; readonly effectiveTo?: string }): Promise<void> {
+    const changeTimes = await this.store.listPlacementChangeTimes(interval.effectiveFrom, interval.effectiveTo);
+    for (const at of [interval.effectiveFrom, ...changeTimes]) await this.#assertNoHierarchyCycleAt(unitId, parentId, at);
+  }
+
+  async #assertNoHierarchyCycleAt(unitId: string, parentId: string, at: string): Promise<void> {
     const visited = new Set([unitId]);
     let current: string | undefined = parentId;
     while (current) {
       if (visited.has(current)) throw new OrganizationError("organization_hierarchy_cycle");
       visited.add(current);
+      const unit = await this.store.findOrganizationUnit(current);
+      if (!unit || !isActive(unit, at)) throw new OrganizationError("organization_path_invalid");
+      const placements = await this.store.listActivePlacements(current, at);
+      const [placement] = placements;
+      if (!placement || placements.length !== 1) throw new OrganizationError("organization_path_invalid");
+      current = placement.parentOrganizationUnitId;
+    }
+  }
+
+  async #assertValidOrganizationPath(unitId: string, at: string): Promise<void> {
+    const visited = new Set<string>();
+    let current: string | undefined = unitId;
+    while (current) {
+      if (visited.has(current)) throw new OrganizationError("organization_hierarchy_cycle");
+      visited.add(current);
+      const unit = await this.store.findOrganizationUnit(current);
+      if (!unit || !isActive(unit, at)) throw new OrganizationError("organization_path_invalid");
       const placements = await this.store.listActivePlacements(current, at);
       const [placement] = placements;
       if (!placement || placements.length !== 1) throw new OrganizationError("organization_path_invalid");
@@ -190,6 +230,10 @@ export class OrganizationService {
     this.#metadata(command);
     requireId(command.factId);
     requireTimestamp(command.effectiveTo);
+    const entityType = kind === "close_assignment" ? "assignment"
+      : kind === "close_employment" ? "employment"
+        : kind === "close_organization_unit_placement" ? "organization_unit_placement" : "subject_association";
+    await this.#authorize(command, auditAction, entityType, command.factId);
     const fact = kind === "close_assignment"
       ? await this.store.findAssignment(command.factId)
       : kind === "close_employment"
@@ -211,13 +255,18 @@ export class OrganizationService {
   }
 
   async #commit(command: CommandMetadata, auditAction: string, eventType: string, write: OrganizationWrite): Promise<void> {
-    await this.authorizer.authorize({ action: auditAction, actor: command.actor, operationId: command.operationId });
-    const fingerprint = createHash("sha256").update(JSON.stringify({ auditAction, write })).digest("hex");
+    const fingerprint = createHash("sha256").update(JSON.stringify({
+      actor: command.actor, auditAction, reason: command.reason, write,
+    })).digest("hex");
     const commit: OrganizationCommit = {
       actor: command.actor, auditAction, eventType, fingerprint, operationId: command.operationId,
       reason: command.reason, traceId: command.traceId, write,
     };
     await this.store.commit(commit);
+  }
+
+  async #authorize(command: CommandMetadata, action: string, entityType: string, entityId: string): Promise<void> {
+    await this.authorizer.authorize({ action, actor: command.actor, entityId, entityType, operationId: command.operationId });
   }
 
   #assignmentReference(assignment: Assignment) {

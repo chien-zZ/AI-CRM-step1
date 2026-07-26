@@ -1,5 +1,5 @@
 import { OrganizationError } from "./errors.js";
-import type { OrganizationCommit, OrganizationCommitResult, OrganizationStore, OrganizationWrite } from "./store.js";
+import { describeOrganizationWrite, type OrganizationCommit, type OrganizationCommitResult, type OrganizationStore, type OrganizationWrite } from "./store.js";
 import type {
   Assignment,
   AuthenticationSubject,
@@ -11,13 +11,13 @@ import type {
   WorkforcePerson,
 } from "./types.js";
 
-export interface OrganizationQueryResult<Row = Record<string, unknown>> {
+export interface OrganizationPersistenceResult<Row = Record<string, unknown>> {
   readonly rowCount: number;
   readonly rows: readonly Row[];
 }
 
-export interface OrganizationQueryExecutor {
-  execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<OrganizationQueryResult<Row>>;
+export interface OrganizationPersistenceRuntime {
+  execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<OrganizationPersistenceResult<Row>>;
   recordAuditIntent(intent: {
     readonly action: string;
     readonly actorId: string;
@@ -26,6 +26,7 @@ export interface OrganizationQueryExecutor {
     readonly entityType: string;
     readonly operationId: string;
     readonly reason: string;
+    readonly result: "succeeded";
     readonly traceId: string;
   }): Promise<void>;
   recordEventIntent(intent: {
@@ -46,7 +47,7 @@ interface IntervalRow {
 }
 
 class PostgresOrganizationStore implements OrganizationStore {
-  constructor(private readonly executor: OrganizationQueryExecutor) {}
+  constructor(private readonly executor: OrganizationPersistenceRuntime) {}
 
   async commit(command: OrganizationCommit): Promise<OrganizationCommitResult> {
     return this.executor.withTransaction(async () => {
@@ -65,7 +66,7 @@ class PostgresOrganizationStore implements OrganizationStore {
       }
 
       await this.#apply(command.write);
-      const target = describeWrite(command.write);
+      const target = describeOrganizationWrite(command.write);
       await this.executor.recordAuditIntent({
         action: command.auditAction,
         actorId: command.actor.actorId,
@@ -74,6 +75,7 @@ class PostgresOrganizationStore implements OrganizationStore {
         entityType: target.entityType,
         operationId: command.operationId,
         reason: command.reason,
+        result: "succeeded",
         traceId: command.traceId,
       });
       await this.executor.recordEventIntent({
@@ -145,6 +147,15 @@ class PostgresOrganizationStore implements OrganizationStore {
     return result.rows.map(placement);
   }
 
+  async listPlacementChangeTimes(from: string, to?: string): Promise<readonly string[]> {
+    const result = await this.executor.execute<{ effective_from: Date | string }>(
+      `select distinct effective_from from organization.organization_unit_placements
+       where effective_from > $1::timestamptz and ($2::timestamptz is null or effective_from < $2::timestamptz)
+       order by effective_from`, [from, to ?? null],
+    );
+    return result.rows.map(({ effective_from: value }) => iso(value));
+  }
+
   async listActiveSubjectAssociations(subject: AuthenticationSubject, at: string): Promise<readonly SubjectAssociation[]> {
     const result = await this.executor.execute<AssociationRow>(
       `select * from organization.subject_associations where issuer = $1 and subject = $2
@@ -197,6 +208,7 @@ class PostgresOrganizationStore implements OrganizationStore {
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === "23505" && write.kind === "create_subject_association") throw new OrganizationError("conflicting_subject_association");
+      if (code === "P1001") throw new OrganizationError("organization_hierarchy_cycle");
       if (code === "23503") throw new OrganizationError("entity_not_found");
       if (code === "23505" || code === "23514" || code === "P0001") throw new OrganizationError("entity_conflict");
       throw error;
@@ -230,25 +242,6 @@ const position = (row: PositionRow): Position => ({ ...interval(row), organizati
 const assignment = (row: AssignmentRow): Assignment => ({ ...interval(row), assignmentId: row.assignment_id, employmentId: row.employment_id, organizationUnitId: row.organization_unit_id, positionId: row.position_id, workforcePersonId: row.workforce_person_id });
 const association = (row: AssociationRow): SubjectAssociation => ({ ...interval(row), associationId: row.association_id, issuer: row.issuer, subject: row.subject, workforcePersonId: row.workforce_person_id });
 
-function describeWrite(write: OrganizationWrite): {
-  readonly effectiveAt: string;
-  readonly entityId: string;
-  readonly entityType: string;
-  readonly workforcePersonId?: string;
-} {
-  if (write.kind === "create_person") return { effectiveAt: write.person.recordedAt, entityId: write.person.workforcePersonId, entityType: "workforce_person", workforcePersonId: write.person.workforcePersonId };
-  if (write.kind === "create_employment") return { effectiveAt: write.employment.effectiveFrom, entityId: write.employment.employmentId, entityType: "employment", workforcePersonId: write.employment.workforcePersonId };
-  if (write.kind === "create_organization_unit") return { effectiveAt: write.unit.effectiveFrom, entityId: write.unit.organizationUnitId, entityType: "organization_unit" };
-  if (write.kind === "create_organization_unit_placement") return { effectiveAt: write.placement.effectiveFrom, entityId: write.placement.placementId, entityType: "organization_unit_placement" };
-  if (write.kind === "create_position") return { effectiveAt: write.position.effectiveFrom, entityId: write.position.positionId, entityType: "position" };
-  if (write.kind === "create_assignment") return { effectiveAt: write.assignment.effectiveFrom, entityId: write.assignment.assignmentId, entityType: "assignment", workforcePersonId: write.assignment.workforcePersonId };
-  if (write.kind === "create_subject_association") return { effectiveAt: write.association.effectiveFrom, entityId: write.association.associationId, entityType: "subject_association", workforcePersonId: write.association.workforcePersonId };
-  const entityType = write.kind === "close_employment" ? "employment"
-    : write.kind === "close_assignment" ? "assignment"
-      : write.kind === "close_organization_unit_placement" ? "organization_unit_placement" : "subject_association";
-  return { effectiveAt: write.effectiveTo, entityId: write.factId, entityType, ...(write.workforcePersonId ? { workforcePersonId: write.workforcePersonId } : {}) };
-}
-
-export function createPostgresOrganizationStore(executor: OrganizationQueryExecutor): OrganizationStore {
+export function createPostgresOrganizationStore(executor: OrganizationPersistenceRuntime): OrganizationStore {
   return new PostgresOrganizationStore(executor);
 }

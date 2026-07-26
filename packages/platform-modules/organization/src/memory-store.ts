@@ -77,6 +77,14 @@ class MemoryOrganizationStore implements OrganizationStore {
     return Promise.resolve([...this.#placements.values()].filter((item) => item.organizationUnitId === id && isActive(item, at)));
   }
 
+  listPlacementChangeTimes(from: string, to?: string): Promise<readonly string[]> {
+    const fromTime = Date.parse(from);
+    const toTime = to ? Date.parse(to) : Number.POSITIVE_INFINITY;
+    return Promise.resolve([...new Set([...this.#placements.values()]
+      .map(({ effectiveFrom }) => effectiveFrom)
+      .filter((value) => Date.parse(value) > fromTime && Date.parse(value) < toTime))].sort());
+  }
+
   listActiveSubjectAssociations(subject: AuthenticationSubject, at: string): Promise<readonly SubjectAssociation[]> {
     return Promise.resolve([...this.#associations.values()].filter((item) => item.issuer === subject.issuer && item.subject === subject.subject && isActive(item, at)));
   }

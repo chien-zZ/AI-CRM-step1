@@ -37,3 +37,9 @@ export function intervalsOverlap(left: EffectiveInterval, right: EffectiveInterv
   const rightEnd = right.effectiveTo ? Date.parse(right.effectiveTo) : Number.POSITIVE_INFINITY;
   return Date.parse(left.effectiveFrom) < rightEnd && Date.parse(right.effectiveFrom) < leftEnd;
 }
+
+export function intervalContains(container: EffectiveInterval, contained: EffectiveInterval): boolean {
+  if (Date.parse(container.effectiveFrom) > Date.parse(contained.effectiveFrom)) return false;
+  if (container.effectiveTo === undefined) return true;
+  return contained.effectiveTo !== undefined && Date.parse(contained.effectiveTo) <= Date.parse(container.effectiveTo);
+}

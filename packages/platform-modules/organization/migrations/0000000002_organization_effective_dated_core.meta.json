@@ -2,7 +2,7 @@
   "moduleOwner": "organization",
   "purpose": "Create the business-neutral effective-dated workforce, organization, position, assignment, subject-association, and idempotency receipt structures.",
   "applicationCompatibility": ">=0.0.0",
-  "lockImpact": "Creates a new module-owned schema, tables, indexes, functions, and triggers only; no existing application table is rewritten or locked.",
+  "lockImpact": "Creates a new module-owned schema, tables, indexes, functions, and triggers only; no existing application table is rewritten or locked. At runtime, placement writes take one transaction-scoped organization hierarchy advisory lock so concurrent hierarchy changes are serialized.",
   "dataImpact": "Creates empty organization structures. No people, company units, positions, assignments, authentication subjects, or business data are inserted.",
   "backfill": "Not required. The first release starts with empty structures and only accepts explicit controlled commands.",
   "destructive": false,

@@ -117,8 +117,10 @@ CREATE FUNCTION organization.reject_overlapping_unit_placement()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  checkpoint timestamptz;
 BEGIN
-  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.organization_unit_id::text, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0));
   IF EXISTS (
     SELECT 1 FROM organization.organization_unit_placements existing
     WHERE existing.placement_id <> NEW.placement_id
@@ -127,6 +129,33 @@ BEGIN
         && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
   ) THEN
     RAISE EXCEPTION 'overlapping organization unit placement' USING ERRCODE = '23505';
+  END IF;
+  IF NEW.parent_organization_unit_id IS NOT NULL THEN
+    FOR checkpoint IN
+      SELECT NEW.effective_from
+      UNION
+      SELECT existing.effective_from
+      FROM organization.organization_unit_placements existing
+      WHERE existing.effective_from > NEW.effective_from
+        AND (NEW.effective_to IS NULL OR existing.effective_from < NEW.effective_to)
+    LOOP
+      IF EXISTS (
+        WITH RECURSIVE ancestors(organization_unit_id) AS (
+          SELECT NEW.parent_organization_unit_id
+          UNION
+          SELECT placement.parent_organization_unit_id
+          FROM ancestors
+          JOIN organization.organization_unit_placements placement
+            ON placement.organization_unit_id = ancestors.organization_unit_id
+          WHERE placement.parent_organization_unit_id IS NOT NULL
+            AND placement.effective_from <= checkpoint
+            AND (placement.effective_to IS NULL OR placement.effective_to > checkpoint)
+        )
+        SELECT 1 FROM ancestors WHERE organization_unit_id = NEW.organization_unit_id
+      ) THEN
+        RAISE EXCEPTION 'organization hierarchy cycle' USING ERRCODE = 'P1001';
+      END IF;
+    END LOOP;
   END IF;
   RETURN NEW;
 END;

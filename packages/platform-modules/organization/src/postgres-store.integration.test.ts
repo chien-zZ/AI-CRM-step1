@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { runMigrations } from "@ai-crm/database";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPostgresOrganizationStore, type OrganizationQueryExecutor, type OrganizationQueryResult } from "./postgres-store.js";
+import { createPostgresOrganizationStore, type OrganizationPersistenceResult, type OrganizationPersistenceRuntime } from "./postgres-store.js";
 import { OrganizationService } from "./service.js";
 
 const urlFile = process.env.TEST_ORGANIZATION_DATABASE_URL_FILE;
@@ -24,7 +24,7 @@ suite("PostgreSQL organization store", () => {
     await pool.query("create schema if not exists organization_test");
     await pool.query(`create table if not exists organization_test.audit_intents (
       operation_id uuid primary key, action text not null, actor_id text not null, actor_type text not null,
-      entity_type text not null, entity_id uuid not null, reason text not null, trace_id text not null
+      entity_type text not null, entity_id uuid not null, reason text not null, result text not null, trace_id text not null
     )`);
     await pool.query(`create table if not exists organization_test.event_intents (
       operation_id uuid primary key, event_type text not null, entity_type text not null, entity_id uuid not null,
@@ -50,13 +50,15 @@ suite("PostgreSQL organization store", () => {
     expect(closedEvent.rows[0]).toMatchObject({ entity_id: fixture.assignment, workforce_person_id: fixture.person });
     expect(closedEvent.rows[0]?.effective_at.toISOString()).toBe(closedAt);
 
-    const counts = await pool.query<{ audit: string; event: string; receipt: string }>(`select
+    const counts = await pool.query<{ audit: string; audit_succeeded: boolean; event: string; receipt: string }>(`select
       (select count(*) from organization_test.audit_intents)::text as audit,
+      (select bool_and(result = 'succeeded') from organization_test.audit_intents) as audit_succeeded,
       (select count(*) from organization_test.event_intents)::text as event,
       (select count(*) from organization.operation_receipts)::text as receipt`);
     expect(Number(counts.rows[0]?.audit)).toBeGreaterThanOrEqual(6);
     expect(counts.rows[0]?.audit).toBe(counts.rows[0]?.event);
     expect(counts.rows[0]?.audit).toBe(counts.rows[0]?.receipt);
+    expect(counts.rows[0]?.audit_succeeded).toBe(true);
   });
 
   it("rolls back state, receipt, and audit when event intent persistence fails", async () => {
@@ -89,26 +91,63 @@ suite("PostgreSQL organization store", () => {
     expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
     expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
   });
+
+  it("rejects a database-level hierarchy cycle that starts at a future scheduled boundary", async () => {
+    const first = randomUUID();
+    const second = randomUUID();
+    const at = "2028-01-01T00:00:00.000Z";
+    const middle = "2028-02-01T00:00:00.000Z";
+    const future = "2028-03-01T00:00:00.000Z";
+    await pool.query("insert into organization.organization_units (organization_unit_id, effective_from) values ($1, $3), ($2, $3)", [first, second, at]);
+    await pool.query(`insert into organization.organization_unit_placements
+      (placement_id, organization_unit_id, effective_from, effective_to) values ($1, $2, $3, $4)`,
+    [randomUUID(), first, at, middle]);
+    await pool.query(`insert into organization.organization_unit_placements
+      (placement_id, organization_unit_id, effective_from, effective_to) values ($1, $2, $3, $4)`,
+    [randomUUID(), second, at, future]);
+    await pool.query(`insert into organization.organization_unit_placements
+      (placement_id, organization_unit_id, parent_organization_unit_id, effective_from) values ($1, $2, $3, $4)`,
+    [randomUUID(), second, first, future]);
+    const store = createPostgresOrganizationStore(executor);
+    await expect(store.commit({
+      actor: metadata().actor,
+      auditAction: "organization_unit_placement_created",
+      eventType: "organization.unit_placement.created.v1",
+      fingerprint: "1".repeat(64),
+      operationId: randomUUID(),
+      reason: "synthetic future-cycle acceptance",
+      traceId: "trace-future-cycle",
+      write: {
+        kind: "create_organization_unit_placement",
+        placement: {
+          effectiveFrom: middle,
+          organizationUnitId: first,
+          parentOrganizationUnitId: second,
+          placementId: randomUUID(),
+        },
+      },
+    })).rejects.toMatchObject({ code: "organization_hierarchy_cycle" });
+  });
 });
 
-class TestExecutor implements OrganizationQueryExecutor {
+class TestExecutor implements OrganizationPersistenceRuntime {
   readonly #transaction = new AsyncLocalStorage<PoolClient>();
   failNextEvent = false;
   constructor(private readonly pool: Pool) {}
 
-  async execute<Row>(sql: string, values?: readonly unknown[]): Promise<OrganizationQueryResult<Row>> {
+  async execute<Row>(sql: string, values?: readonly unknown[]): Promise<OrganizationPersistenceResult<Row>> {
     const result = await (this.#transaction.getStore() ?? this.pool).query(sql, values ? [...values] : undefined);
     return { rowCount: result.rowCount ?? 0, rows: result.rows as Row[] };
   }
 
-  async recordAuditIntent(intent: Parameters<OrganizationQueryExecutor["recordAuditIntent"]>[0]): Promise<void> {
+  async recordAuditIntent(intent: Parameters<OrganizationPersistenceRuntime["recordAuditIntent"]>[0]): Promise<void> {
     await this.execute(`insert into organization_test.audit_intents
-      (operation_id, action, actor_id, actor_type, entity_type, entity_id, reason, trace_id)
-      values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [intent.operationId, intent.action, intent.actorId, intent.actorType, intent.entityType, intent.entityId, intent.reason, intent.traceId]);
+      (operation_id, action, actor_id, actor_type, entity_type, entity_id, reason, result, trace_id)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [intent.operationId, intent.action, intent.actorId, intent.actorType, intent.entityType, intent.entityId, intent.reason, intent.result, intent.traceId]);
   }
 
-  async recordEventIntent(intent: Parameters<OrganizationQueryExecutor["recordEventIntent"]>[0]): Promise<void> {
+  async recordEventIntent(intent: Parameters<OrganizationPersistenceRuntime["recordEventIntent"]>[0]): Promise<void> {
     if (this.failNextEvent) {
       this.failNextEvent = false;
       throw new Error("synthetic event failure");
