@@ -1,9 +1,9 @@
 # PRC-02 Task Center
 
-- Status: first independent-review findings repaired; Agent C re-review pending
+- Status: second independent-review finding repaired; Agent C re-review pending
 - Branch: `task/PRC-02-task-center`
 - Owner: Agent A (L1)
-- Independent Reviewer: Agent C (round 1 complete; re-review required)
+- Independent Reviewer: Agent C (round 2 complete; re-review required)
 
 ## Objective
 
@@ -89,6 +89,12 @@ Agent C reported five actionable findings:
 
 All five findings have repair evidence, but PRC-02 remains below G2 until the same Agent C re-reviews the complete diff and reports zero actionable findings.
 
+### Independent Review Round 2 Repair (2026-07-26)
+
+Agent C found one remaining P1: the UTC lexical pattern combined with `Date.parse` accepted calendar values that JavaScript silently normalized, including a non-leap-year February 29, April 31, and `24:00:00`. Runtime validation now checks Gregorian leap-year/month-day limits and `00-23:00-59:00-59` fields directly without normalization. Regression coverage applies each invalid value independently to both `occurredAt` and `dueAt`, and confirms a valid leap day plus the reviewed 0/1/9 fractional-second boundaries. The lexical JSON Schema boundary remains unchanged; runtime provides the required calendar-semantic validation that a pattern alone cannot express.
+
+This P1 has repair evidence, but PRC-02 remains below G2 until Agent C re-reviews the exact repair commit and the full original finding set.
+
 ## Owner Self-review (2026-07-26, after round 1 repairs)
 
 - Authorization: no default-allow implementation exists; all query/action methods use injected fail-closed authorization, with per-object filtering for list results.
@@ -107,7 +113,7 @@ Owner review repaired: duplicate accepted commands now close their audit phase; 
 - `pnpm --filter @ai-crm/platform-task-center lint`: passed.
 - `pnpm --filter @ai-crm/platform-task-center typecheck`: passed.
 - `pnpm --filter @ai-crm/platform-task-center build`: passed.
-- `pnpm --filter @ai-crm/platform-task-center test`: 28 tests passed; 3 PostgreSQL tests skipped by the unit runner as intended.
+- `pnpm --filter @ai-crm/platform-task-center test`: 35 tests passed; 3 PostgreSQL tests skipped by the unit runner as intended.
 - `pnpm --filter @ai-crm/platform-task-center test:integration`: 3/3 passed against isolated PostgreSQL, including root/module migrations, canonical event deduplication, atomic lease takeover, stale-owner isolation, stable accepted receipts, ambiguous interruption redrive, source-side idempotency, and Compose cleanup.
 - `pnpm contracts:check`: passed; source/generated consistency and audience-reachable schema pruning are verified.
 - `pnpm check`: passed, 140/140 tasks successful.
