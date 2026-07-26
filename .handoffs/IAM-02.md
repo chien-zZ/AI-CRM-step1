@@ -1,6 +1,6 @@
 # IAM-02 Organization Effective-Dated Core
 
-- Status: implementation complete; pending independent G2 review
+- Status: independent review complete; G2 accepted
 - Owner: 当前会话
 - Allowed paths: `packages/platform-modules/organization`、其模块迁移、`contracts/models`、根 Lockfile、本任务 handoff
 
@@ -107,3 +107,9 @@
 - PostgreSQL Factory 的公共参数收敛为模块专用 ambient-transaction Persistence Runtime，不暴露事务句柄或数据库模型。
 - 文档明确上下文解析只接受服务端已验证主体；Memory Service 只用于测试/合成 Fixture，禁止作为生产事实存储。
 - 第三轮修复后的再次复审未发现新的 Authorization、Idempotency、Transactions、Migrations、Observability、Backward Compatibility、Secrets 或 Failure Modes 问题。
+
+## 2026-07-26 Independent Review Result
+
+- 独立 Review 已完成并由项目负责人确认通过。
+- Review 覆盖 Authorization、Idempotency、Transactions、Migrations、Observability、Backward Compatibility、Secrets 与 Failure Modes；修复已包含在 `IAM-02: harden organization review findings`。
+- IAM-02 公共入口、合同、迁移和测试证据已接受，工作包通过 G2，可进入后续 IAM-03 工作包。
