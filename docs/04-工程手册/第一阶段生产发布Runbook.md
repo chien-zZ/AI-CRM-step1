@@ -22,7 +22,7 @@
 
 1. 在两台主机分别确认目标项目名只能是 `ai-crm-prod-a` 或 `ai-crm-prod-b`，确认私网地址属于批准网段。
 2. 从批准 manifest 生成仅含 release ID/镜像引用的 `images.vars`，与 root-owned 非敏感 host vars 分开保存；不使用隐式 `.env`。
-3. 逐项检查 Secret 文件存在、root ownership、`0400`/批准的 `0440`、消费者最小化和只读单文件挂载。任何命令和日志均不得输出内容。
+3. 逐项检查 Secret 文件存在、`root:<专用 Secret-reader GID>` ownership、`0440`、消费者最小化和只读单文件挂载。Compose 中只有声明 Secret 的服务获得该 supplementary GID；普通主机账号不得长期加入该组。任何命令和日志均不得输出内容。
 4. 分别执行 `docker compose ... config --quiet` 和 `docker compose ... pull`。禁止把两个 Compose 文件合并，禁止 Docker Socket、特权容器和公网状态端口。
 
 Keycloak 首次管理员建立或恢复必须在受控维护窗口使用独立、临时、文件式凭据执行并进入安全审计；完成后立即撤销。常驻 Keycloak Compose 服务不挂载 bootstrap 管理员凭据，也不使用开发 Realm import。
