@@ -1,8 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:ai-crm:permissions:authorization:authorization-policy:v1",
-  "x-ai-crm-owner": "authorization",
-  "x-ai-crm-version": "1.0.0",
+  "$id": "https://contracts.ai-crm.local/permissions/v1/authorization-policy.schema.json",
   "title": "Authorization Policy Snapshot",
   "type": "object",
   "additionalProperties": false,
@@ -26,10 +24,9 @@
     }
   },
   "$defs": {
-    "uuid": { "type": "string", "format": "uuid" },
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
     "timestamp": {
       "type": "string",
-      "format": "date-time",
       "maxLength": 24,
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
     },
@@ -163,10 +160,10 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["kind", "personId"],
+              "required": ["kind", "workforcePersonId"],
               "properties": {
-                "kind": { "const": "person" },
-                "personId": { "$ref": "#/$defs/uuid" }
+                "kind": { "const": "workforce_person" },
+                "workforcePersonId": { "$ref": "#/$defs/uuid" }
               }
             },
             {

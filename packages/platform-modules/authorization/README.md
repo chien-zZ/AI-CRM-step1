@@ -17,6 +17,7 @@ External access distinguishes anonymous requests, restricted invitation capabili
 - Use `batchCheck` for bounded independent checks. It preserves input order and the semantics of individual checks.
 - An Assignment grant applies only when callers explicitly select that active Assignment. Concurrent Assignments are never silently unioned. Person grants are explicit controlled exceptions, not inferred defaults.
 - Every result must pass through the required decision recorder. Recorder failure makes authorization unavailable, including when the policy evaluation would otherwise allow.
+- Decision audit intents include the stable Workforce Person, explicit Assignment when selected, decision ID, and W3C Trace ID. These are audit facts, not technical log or metric fields; bounded telemetry continues to exclude identity and resource-context values.
 
 ## Cache And Policy Store
 

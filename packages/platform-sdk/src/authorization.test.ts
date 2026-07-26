@@ -15,12 +15,12 @@ describe("platform authorization client", () => {
     };
     const service = {
       assertAllowed: vi.fn(),
-      batchCheck: vi.fn(async () => [decision]),
-      check: vi.fn(async () => decision),
-      resolveDataScope: vi.fn(async () => ({ decision })),
+      batchCheck: vi.fn(() => Promise.resolve([decision])),
+      check: vi.fn(() => Promise.resolve(decision)),
+      resolveDataScope: vi.fn(() => Promise.resolve({ decision })),
     } satisfies Pick<AuthorizationService, "assertAllowed" | "batchCheck" | "check" | "resolveDataScope">;
     const client = createPlatformAuthorizationClient(service);
-    const subject = { activeAssignmentIds: [], personId: "60000000-0000-4000-8000-000000000002" };
+    const subject = { activeAssignmentIds: [], workforcePersonId: "60000000-0000-4000-8000-000000000002" };
     const request = { action: "read", resource: "synthetic.record" };
 
     await expect(client.check(subject, request)).resolves.toBe(decision);

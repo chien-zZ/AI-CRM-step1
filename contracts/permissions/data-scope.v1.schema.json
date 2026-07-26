@@ -1,8 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:ai-crm:permissions:authorization:data-scope:v1",
-  "x-ai-crm-owner": "authorization",
-  "x-ai-crm-version": "1.0.0",
+  "$id": "https://contracts.ai-crm.local/permissions/v1/data-scope.schema.json",
   "title": "Structured Data Scope",
   "type": "object",
   "additionalProperties": false,

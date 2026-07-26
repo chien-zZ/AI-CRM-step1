@@ -167,8 +167,8 @@ export const validatePolicySnapshot = (value: unknown, expectedVersion: string):
     if (grantIds.has(grantId) || !roles.has(roleId) || !isRecord(grantRecord["subject"])) invalid();
     grantIds.add(grantId);
     const subject = grantRecord["subject"] as Record<string, unknown>;
-    const normalizedSubject = subject["kind"] === "person" && exactKeys(subject, ["kind", "personId"])
-      ? Object.freeze({ kind: "person" as const, personId: uuid(subject["personId"]) })
+    const normalizedSubject = subject["kind"] === "workforce_person" && exactKeys(subject, ["kind", "workforcePersonId"])
+      ? Object.freeze({ kind: "workforce_person" as const, workforcePersonId: uuid(subject["workforcePersonId"]) })
       : subject["kind"] === "assignment" && exactKeys(subject, ["assignmentId", "kind"])
         ? Object.freeze({ assignmentId: uuid(subject["assignmentId"]), kind: "assignment" as const })
         : invalid();
@@ -181,30 +181,40 @@ export const validatePolicySnapshot = (value: unknown, expectedVersion: string):
   return Object.freeze({ grants: Object.freeze(grants), permissions, roles, version });
 };
 
-export const validateSubjectContext = (value: AuthorizationSubjectContext): Readonly<AuthorizationSubjectContext> | undefined => {
-  if (!UUID.test(value.personId) || !Array.isArray(value.activeAssignmentIds) ||
-    value.activeAssignmentIds.length > 128 || value.activeAssignmentIds.some((id) => !UUID.test(id)) ||
-    new Set(value.activeAssignmentIds).size !== value.activeAssignmentIds.length ||
-    (value.selectedAssignmentId !== undefined &&
-      (!UUID.test(value.selectedAssignmentId) || !value.activeAssignmentIds.includes(value.selectedAssignmentId)))) return undefined;
+export const validateSubjectContext = (value: unknown): Readonly<AuthorizationSubjectContext> | undefined => {
+  if (!isRecord(value) || typeof value["workforcePersonId"] !== "string" || !UUID.test(value["workforcePersonId"]) ||
+    !Array.isArray(value["activeAssignmentIds"])) return undefined;
+  const activeAssignmentIds = value["activeAssignmentIds"].filter((id): id is string => typeof id === "string");
+  const selectedAssignmentId = value["selectedAssignmentId"];
+  if (activeAssignmentIds.length !== value["activeAssignmentIds"].length || activeAssignmentIds.length > 128 ||
+    activeAssignmentIds.some((id) => !UUID.test(id)) || new Set(activeAssignmentIds).size !== activeAssignmentIds.length ||
+    (selectedAssignmentId !== undefined && (typeof selectedAssignmentId !== "string" ||
+      !UUID.test(selectedAssignmentId) || !activeAssignmentIds.includes(selectedAssignmentId)))) return undefined;
   return Object.freeze({
-    activeAssignmentIds: Object.freeze([...value.activeAssignmentIds].sort()),
-    personId: value.personId,
-    ...(value.selectedAssignmentId === undefined ? {} : { selectedAssignmentId: value.selectedAssignmentId }),
+    activeAssignmentIds: Object.freeze([...activeAssignmentIds].sort()),
+    ...(selectedAssignmentId === undefined ? {} : { selectedAssignmentId }),
+    workforcePersonId: value["workforcePersonId"],
   });
 };
 
-export const validatePermissionRequest = (value: PermissionRequest): Readonly<PermissionRequest> | undefined => {
-  if (!IDENTIFIER.test(value.resource) || value.resource.length > 128 ||
-    !ACTION.test(value.action) || value.action.length > 64) return undefined;
-  if (value.resourceContext === undefined) return Object.freeze({ action: value.action, resource: value.resource });
-  if (!isRecord(value.resourceContext) || Object.keys(value.resourceContext).length > 32) return undefined;
-  const entries = Object.entries(value.resourceContext);
+export const validatePermissionRequest = (value: unknown): Readonly<PermissionRequest> | undefined => {
+  if (!isRecord(value) || typeof value["resource"] !== "string" || typeof value["action"] !== "string" ||
+    !IDENTIFIER.test(value["resource"]) || value["resource"].length > 128 ||
+    !ACTION.test(value["action"]) || value["action"].length > 64) return undefined;
+  if (value["resourceContext"] === undefined) return Object.freeze({ action: value["action"], resource: value["resource"] });
+  if (!isRecord(value["resourceContext"]) || Object.keys(value["resourceContext"]).length > 32) return undefined;
+  const entries = Object.entries(value["resourceContext"]);
   if (entries.some(([dimension, item]) => !IDENTIFIER.test(dimension) || dimension.length > 128 ||
     typeof item !== "string" || !VALUE.test(item))) return undefined;
+  const resourceContext: Record<string, string> = {};
+  for (const [dimension, item] of entries) {
+    if (typeof item === "string") resourceContext[dimension] = item;
+  }
   return Object.freeze({
-    action: value.action, resource: value.resource,
-    resourceContext: Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)))),
+    action: value["action"], resource: value["resource"],
+    resourceContext: Object.freeze(Object.fromEntries(
+      Object.entries(resourceContext).sort(([left], [right]) => left.localeCompare(right)),
+    )),
   });
 };
 

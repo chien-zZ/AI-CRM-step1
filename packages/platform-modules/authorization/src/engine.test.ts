@@ -26,7 +26,7 @@ const subject = (selectedAssignmentId?: string): AuthorizationSubjectContext => 
     SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha,
     SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentBeta,
   ],
-  personId: SYNTHETIC_AUTHORIZATION_FIXTURE.personId,
+  workforcePersonId: SYNTHETIC_AUTHORIZATION_FIXTURE.workforcePersonId,
   ...(selectedAssignmentId === undefined ? {} : { selectedAssignmentId }),
 });
 
@@ -58,7 +58,7 @@ describe("authorization engine", () => {
       .resolves.toMatchObject({ allowed: false, reason: "resource_context_required" });
     await expect(service.check({
       activeAssignmentIds: [SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha],
-      personId: SYNTHETIC_AUTHORIZATION_FIXTURE.personId,
+      workforcePersonId: SYNTHETIC_AUTHORIZATION_FIXTURE.workforcePersonId,
       selectedAssignmentId: SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentBeta,
     }, scopedRequest("beta"))).resolves.toMatchObject({ allowed: false, reason: "invalid_context" });
   });
@@ -112,8 +112,8 @@ describe("authorization engine", () => {
     };
     const store = new InMemoryAuthorizationPolicyStore(snapshot);
     const service = createAuthorizationService(
-      { recorder: { record: async () => undefined }, store },
-      { cacheTtlSeconds: 60, clock: () => new Date("2026-02-01T00:00:00.000Z") },
+      { recorder: { record: () => Promise.resolve() }, store },
+      { cacheTtlSeconds: 60, clock: () => new Date("2026-02-01T00:00:00.000Z"), traceId: () => "1234567890abcdef1234567890abcdef" },
     );
     await expect(service.check(subject(SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha), scopedRequest("alpha")))
       .resolves.toMatchObject({ allowed: false, reason: "no_applicable_grant" });
@@ -126,9 +126,9 @@ describe("authorization engine", () => {
     const service = createAuthorizationService({
       cache,
       observer: { record: (event) => events.push(event) },
-      recorder: { record: async () => undefined },
+      recorder: { record: () => Promise.resolve() },
       store,
-    }, { cacheTtlSeconds: 60, clock: () => new Date("2026-02-01T00:00:00.000Z") });
+    }, { cacheTtlSeconds: 60, clock: () => new Date("2026-02-01T00:00:00.000Z"), traceId: () => "1234567890abcdef1234567890abcdef" });
     const input = subject(SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha);
     await service.check(input, scopedRequest("alpha"));
     await service.check(input, scopedRequest("alpha"));
@@ -168,28 +168,28 @@ describe("authorization engine", () => {
   it("fails closed for unavailable or invalid policy snapshots", async () => {
     const records: AuthorizationDecisionRecord[] = [];
     const unavailable = createAuthorizationService({
-      recorder: { record: async (record) => { records.push(record); } },
+      recorder: { record: (record) => { records.push(record); return Promise.resolve(); } },
       store: {
-        currentVersion: async () => { throw new Error("synthetic unavailable"); },
-        load: async () => undefined,
+        currentVersion: () => Promise.reject(new Error("synthetic unavailable")),
+        load: () => Promise.resolve(undefined),
       },
-    }, { cacheTtlSeconds: 60 });
+    }, { cacheTtlSeconds: 60, traceId: () => "1234567890abcdef1234567890abcdef" });
     await expect(unavailable.check(subject(), SYNTHETIC_AUTHORIZATION_FIXTURE.unscopedPermission))
       .resolves.toMatchObject({ allowed: false, reason: "policy_unavailable" });
 
     const invalid = createAuthorizationService({
-      recorder: { record: async () => undefined },
-      store: { currentVersion: async () => "broken-v1", load: async () => ({ version: "broken-v1" }) },
-    }, { cacheTtlSeconds: 60 });
+      recorder: { record: () => Promise.resolve() },
+      store: { currentVersion: () => Promise.resolve("broken-v1"), load: () => Promise.resolve({ version: "broken-v1" }) },
+    }, { cacheTtlSeconds: 60, traceId: () => "1234567890abcdef1234567890abcdef" });
     await expect(invalid.check(subject(), SYNTHETIC_AUTHORIZATION_FIXTURE.unscopedPermission))
       .resolves.toMatchObject({ allowed: false, reason: "policy_invalid" });
   });
 
   it("does not return a decision when mandatory recording fails", async () => {
     const service = createAuthorizationService({
-      recorder: { record: async () => { throw new Error("synthetic recorder failure"); } },
+      recorder: { record: () => Promise.reject(new Error("synthetic recorder failure")) },
       store: new InMemoryAuthorizationPolicyStore(),
-    }, { cacheTtlSeconds: 60, clock: () => new Date("2026-02-01T00:00:00.000Z") });
+    }, { cacheTtlSeconds: 60, clock: () => new Date("2026-02-01T00:00:00.000Z"), traceId: () => "1234567890abcdef1234567890abcdef" });
     await expect(service.check(subject(), SYNTHETIC_AUTHORIZATION_FIXTURE.unscopedPermission))
       .rejects.toBeInstanceOf(AuthorizationUnavailableError);
   });
@@ -197,11 +197,12 @@ describe("authorization engine", () => {
   it("does not return or record a decision with a malformed generated id", async () => {
     const records: AuthorizationDecisionRecord[] = [];
     const service = createAuthorizationService({
-      recorder: { record: async (record) => { records.push(record); } },
+      recorder: { record: (record) => { records.push(record); return Promise.resolve(); } },
       store: new InMemoryAuthorizationPolicyStore(),
     }, {
       cacheTtlSeconds: 60,
       decisionId: () => "not-a-uuid",
+      traceId: () => "1234567890abcdef1234567890abcdef",
     });
     await expect(service.check(subject(), SYNTHETIC_AUTHORIZATION_FIXTURE.unscopedPermission))
       .rejects.toBeInstanceOf(AuthorizationUnavailableError);
@@ -213,9 +214,12 @@ describe("authorization engine", () => {
     const decision = await service.check(
       subject(SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha), scopedRequest("beta"),
     );
-    expect(() => service.assertAllowed(decision)).toThrow(AuthorizationDeniedError);
-    expect(JSON.stringify(records)).not.toContain(SYNTHETIC_AUTHORIZATION_FIXTURE.personId);
-    expect(JSON.stringify(records)).not.toContain(SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha);
+    expect(() => { service.assertAllowed(decision); }).toThrow(AuthorizationDeniedError);
+    expect(records.at(-1)).toMatchObject({
+      selectedAssignmentId: SYNTHETIC_AUTHORIZATION_FIXTURE.assignmentAlpha,
+      traceId: "1234567890abcdef1234567890abcdef",
+      workforcePersonId: SYNTHETIC_AUTHORIZATION_FIXTURE.workforcePersonId,
+    });
     expect(JSON.stringify(records)).not.toContain("beta");
   });
 });

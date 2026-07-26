@@ -7,24 +7,24 @@ class FakeRedis {
   readonly #sets = new Map<string, Set<string>>();
   readonly #strings = new Map<string, string>();
 
-  public async send(command: readonly string[]): Promise<unknown> {
+  public send(command: readonly string[]): Promise<unknown> {
     (this.commands as string[][]).push([...command]);
     const [operation, key, ...args] = command;
-    if (operation === "GET") return this.#strings.get(key ?? "") ?? null;
-    if (operation === "SET") { this.#strings.set(key ?? "", args[0] ?? ""); return "OK"; }
+    if (operation === "GET") return Promise.resolve(this.#strings.get(key ?? "") ?? null);
+    if (operation === "SET") { this.#strings.set(key ?? "", args[0] ?? ""); return Promise.resolve("OK"); }
     if (operation === "SADD") {
       const values = this.#sets.get(key ?? "") ?? new Set<string>();
       for (const value of args) values.add(value);
       this.#sets.set(key ?? "", values);
-      return args.length;
+      return Promise.resolve(args.length);
     }
-    if (operation === "SMEMBERS") return [...(this.#sets.get(key ?? "") ?? [])];
+    if (operation === "SMEMBERS") return Promise.resolve([...(this.#sets.get(key ?? "") ?? [])]);
     if (operation === "DEL") {
       for (const target of [key, ...args]) { if (target !== undefined) { this.#sets.delete(target); this.#strings.delete(target); } }
-      return 1;
+      return Promise.resolve(1);
     }
-    if (operation === "EXPIRE") return 1;
-    throw new Error("unsupported synthetic command");
+    if (operation === "EXPIRE") return Promise.resolve(1);
+    return Promise.reject(new Error("unsupported synthetic command"));
   }
 }
 

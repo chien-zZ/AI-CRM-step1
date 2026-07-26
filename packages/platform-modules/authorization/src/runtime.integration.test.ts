@@ -17,9 +17,9 @@ runIntegration("Redis authorization cache integration", () => {
     const suffix = randomBytes(8).toString("hex");
     const namespace = `ai-crm:authorization:test:${suffix}`;
     const policyVersion = "synthetic-integration-v1";
-    const personId = "70000000-0000-4000-8000-000000000001";
+    const workforcePersonId = "70000000-0000-4000-8000-000000000001";
     const assignmentId = "70000000-0000-4000-8000-000000000002";
-    const cacheKey = createHash("sha256").update(JSON.stringify({ assignmentId, personId })).digest("hex");
+    const cacheKey = createHash("sha256").update(JSON.stringify({ assignmentId, workforcePersonId })).digest("hex");
     const url = "redis://127.0.0.1:6379";
     const connected = await connectRedisAuthorizationCache({
       allowInsecureDevelopment: true,
@@ -42,7 +42,7 @@ runIntegration("Redis authorization cache integration", () => {
 
       const keys = await inspector.keys(`${namespace}:*`);
       expect(keys).toHaveLength(2);
-      expect(keys.every((key) => !key.includes(personId) && !key.includes(assignmentId))).toBe(true);
+      expect(keys.every((key) => !key.includes(workforcePersonId) && !key.includes(assignmentId))).toBe(true);
       const decisionKey = keys.find((key) => key.includes(":decision:"));
       expect(decisionKey).toBeDefined();
       await expect(inspector.ttl(decisionKey ?? "missing")).resolves.toBeGreaterThan(0);

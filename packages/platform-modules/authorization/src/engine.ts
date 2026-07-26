@@ -30,6 +30,7 @@ import type {
 
 const UNAVAILABLE_VERSION = "unavailable";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const TRACE_ID = /^(?!0{32})[0-9a-f]{32}$/u;
 
 const recordSafely = (observer: AuthorizationObserver | undefined, event: Parameters<AuthorizationObserver["record"]>[0]): void => {
   try {
@@ -49,8 +50,8 @@ const applicableGrant = (
   grant: ValidatedGrant,
   subject: Readonly<AuthorizationSubjectContext>,
   at: Date,
-): boolean => isActive(grant, at) && (grant.subject.kind === "person"
-  ? grant.subject.personId === subject.personId
+): boolean => isActive(grant, at) && (grant.subject.kind === "workforce_person"
+  ? grant.subject.workforcePersonId === subject.workforcePersonId
   : subject.selectedAssignmentId !== undefined && grant.subject.assignmentId === subject.selectedAssignmentId);
 
 const normalizeCombinedScope = (terms: readonly DataScopeTerm[]): Readonly<DataScope> => {
@@ -139,15 +140,16 @@ export const createAuthorizationService = (
   dependencies: EngineDependencies,
   options: AuthorizationServiceOptions,
 ): AuthorizationService => {
-  if (!Number.isInteger(options.cacheTtlSeconds) || options.cacheTtlSeconds < 1 || options.cacheTtlSeconds > 86_400) {
+  if (!Number.isInteger(options.cacheTtlSeconds) || options.cacheTtlSeconds < 1 || options.cacheTtlSeconds > 86_400 ||
+    typeof options.traceId !== "function") {
     throw new TypeError("AUTHORIZATION_INVALID_CONFIGURATION");
   }
   const clock = options.clock ?? (() => new Date());
   const newDecisionId = options.decisionId ?? randomUUID;
 
   const decide = async (
-    subjectInput: AuthorizationSubjectContext,
-    requestInput: PermissionRequest,
+    subjectInput: unknown,
+    requestInput: unknown,
     operation: "batch_check" | "check" | "resolve_data_scope",
   ): Promise<{ readonly decision: Readonly<AuthorizationDecision>; readonly scope?: Readonly<DataScope> }> => {
     const startedAt = performance.now();
@@ -175,7 +177,7 @@ export const createAuthorizationService = (
           policyVersion: UNAVAILABLE_VERSION,
           reason: error instanceof PolicyValidationError ? "policy_invalid" : "policy_unavailable",
         };
-        return finalize(evaluation, request, operation, cacheStatus, startedAt, evaluatedAt);
+        return finalize(evaluation, request, subject, operation, cacheStatus, startedAt, evaluatedAt);
       }
       const evaluationOperation = operation === "resolve_data_scope" ? operation : "check";
       const fresh = evaluatePolicy(policy, subject, request, at, evaluationOperation);
@@ -206,6 +208,7 @@ export const createAuthorizationService = (
     return finalize(
       evaluation,
       request ?? Object.freeze({ action: "invalid", resource: "invalid.invalid" }),
+      subject,
       operation,
       cacheStatus,
       startedAt,
@@ -216,13 +219,20 @@ export const createAuthorizationService = (
   const finalize = async (
     evaluation: CachedAuthorizationEvaluation,
     request: Readonly<PermissionRequest>,
+    subject: Readonly<AuthorizationSubjectContext> | undefined,
     operation: "batch_check" | "check" | "resolve_data_scope",
     cacheStatus: "error" | "hit" | "miss" | "not_used",
     startedAt: number,
     evaluatedAt: string,
   ): Promise<{ readonly decision: Readonly<AuthorizationDecision>; readonly scope?: Readonly<DataScope> }> => {
     const decisionId = newDecisionId();
-    if (!UUID.test(decisionId)) throw new AuthorizationUnavailableError();
+    let traceId: string;
+    try {
+      traceId = options.traceId();
+    } catch {
+      throw new AuthorizationUnavailableError();
+    }
+    if (!UUID.test(decisionId) || !TRACE_ID.test(traceId)) throw new AuthorizationUnavailableError();
     const decision = Object.freeze({
       allowed: evaluation.allowed,
       decisionId,
@@ -241,6 +251,9 @@ export const createAuthorizationService = (
         policyVersion: decision.policyVersion,
         reason: decision.reason,
         resource: request.resource,
+        ...(subject?.selectedAssignmentId === undefined ? {} : { selectedAssignmentId: subject.selectedAssignmentId }),
+        traceId,
+        ...(subject === undefined ? {} : { workforcePersonId: subject.workforcePersonId }),
       });
     } catch {
       throw new AuthorizationUnavailableError();
@@ -262,7 +275,7 @@ export const createAuthorizationService = (
     async batchCheck(subject: AuthorizationSubjectContext, requests: readonly PermissionRequest[]) {
       if (!Array.isArray(requests) || requests.length > 256) throw new TypeError("AUTHORIZATION_BATCH_TOO_LARGE");
       const results = [];
-      for (const request of requests) {
+      for (const request of requests as readonly unknown[]) {
         results.push((await decide(subject, request, "batch_check")).decision);
       }
       return Object.freeze(results);

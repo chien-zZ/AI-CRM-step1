@@ -31,7 +31,7 @@ export interface RoleDefinition {
 
 export type GrantSubject =
   | { readonly assignmentId: string; readonly kind: "assignment" }
-  | { readonly kind: "person"; readonly personId: string };
+  | { readonly kind: "workforce_person"; readonly workforcePersonId: string };
 
 export interface EffectiveRoleGrant {
   readonly grantId: string;
@@ -50,8 +50,8 @@ export interface AuthorizationPolicySnapshot {
 
 export interface AuthorizationSubjectContext {
   readonly activeAssignmentIds: readonly string[];
-  readonly personId: string;
   readonly selectedAssignmentId?: string;
+  readonly workforcePersonId: string;
 }
 
 export interface PermissionRequest {
@@ -116,6 +116,9 @@ export interface AuthorizationDecisionRecord {
   readonly policyVersion: string;
   readonly reason: AuthorizationDecisionReason;
   readonly resource: string;
+  readonly selectedAssignmentId?: string;
+  readonly traceId: string;
+  readonly workforcePersonId?: string;
 }
 
 export interface AuthorizationDecisionRecorder {
@@ -155,4 +158,5 @@ export interface AuthorizationServiceOptions {
   readonly cacheTtlSeconds: number;
   readonly clock?: () => Date;
   readonly decisionId?: () => string;
+  readonly traceId: () => string;
 }

@@ -12,7 +12,7 @@ import type {
 export const SYNTHETIC_AUTHORIZATION_FIXTURE = Object.freeze({
   assignmentAlpha: "50000000-0000-4000-8000-000000000001",
   assignmentBeta: "50000000-0000-4000-8000-000000000002",
-  personId: "50000000-0000-4000-8000-000000000003",
+  workforcePersonId: "50000000-0000-4000-8000-000000000003",
   policyVersion: "synthetic-v1",
   scopedPermission: Object.freeze({ action: "read", resource: "synthetic.record" }),
   unscopedPermission: Object.freeze({ action: "execute", resource: "synthetic.operation" }),
@@ -73,7 +73,7 @@ export const syntheticPolicySnapshot = (): AuthorizationPolicySnapshot => ({
     {
       grantId: "52000000-0000-4000-8000-000000000003",
       roleId: "51000000-0000-4000-8000-000000000003",
-      subject: { kind: "person", personId: SYNTHETIC_AUTHORIZATION_FIXTURE.personId },
+      subject: { kind: "workforce_person", workforcePersonId: SYNTHETIC_AUTHORIZATION_FIXTURE.workforcePersonId },
       validFrom: "2026-01-01T00:00:00.000Z",
     },
   ],
@@ -88,8 +88,8 @@ export class InMemoryAuthorizationPolicyStore implements AuthorizationPolicyStor
     this.#snapshots.set(snapshot.version, snapshot);
   }
 
-  public async currentVersion(): Promise<string> { return this.#version; }
-  public async load(version: string): Promise<unknown> { return this.#snapshots.get(version); }
+  public currentVersion(): Promise<string> { return Promise.resolve(this.#version); }
+  public load(version: string): Promise<unknown> { return Promise.resolve(this.#snapshots.get(version)); }
   public publish(snapshot: AuthorizationPolicySnapshot): void {
     this.#snapshots.set(snapshot.version, snapshot);
     this.#version = snapshot.version;
@@ -101,25 +101,26 @@ export class InMemoryAuthorizationCache implements AuthorizationCache {
   public readonly invalidated: string[] = [];
   public readonly values = new Map<string, CachedAuthorizationEvaluation>();
 
-  public async get(key: string): Promise<CachedAuthorizationEvaluation | undefined> {
-    if (this.fail) throw new Error("synthetic cache failure");
-    return this.values.get(key);
+  public get(key: string): Promise<CachedAuthorizationEvaluation | undefined> {
+    return this.fail ? Promise.reject(new Error("synthetic cache failure")) : Promise.resolve(this.values.get(key));
   }
-  public async invalidatePolicyVersion(version: string): Promise<void> {
-    if (this.fail) throw new Error("synthetic cache failure");
+  public invalidatePolicyVersion(version: string): Promise<void> {
+    if (this.fail) return Promise.reject(new Error("synthetic cache failure"));
     this.invalidated.push(version);
     this.values.clear();
+    return Promise.resolve();
   }
-  public async set(
+  public set(
     key: string,
     value: CachedAuthorizationEvaluation,
     _ttlSeconds: number,
     _policyVersion: string,
   ): Promise<void> {
-    if (this.fail) throw new Error("synthetic cache failure");
+    if (this.fail) return Promise.reject(new Error("synthetic cache failure"));
     void _ttlSeconds;
     void _policyVersion;
     this.values.set(key, value);
+    return Promise.resolve();
   }
 }
 
@@ -136,11 +137,12 @@ export const createSyntheticAuthorizationService = (
   const store = new InMemoryAuthorizationPolicyStore();
   let sequence = 1;
   const service = createAuthorizationService(
-    { cache, recorder: { record: async (record) => { records.push(record); } }, store },
+    { cache, recorder: { record: (record) => { records.push(record); return Promise.resolve(); } }, store },
     {
       cacheTtlSeconds: options.cacheTtlSeconds ?? 60,
       clock: options.clock ?? (() => new Date("2026-02-01T00:00:00.000Z")),
       decisionId: options.decisionId ?? (() => `53000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}`),
+      traceId: options.traceId ?? (() => "1234567890abcdef1234567890abcdef"),
     },
   );
   return { cache, records, service, store };

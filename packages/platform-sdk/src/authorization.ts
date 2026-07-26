@@ -26,7 +26,7 @@ export const createPlatformAuthorizationClient = (
   service: Pick<AuthorizationService, "assertAllowed" | "batchCheck" | "check" | "resolveDataScope">,
 ): PlatformAuthorizationClient => {
   const client: PlatformAuthorizationClient = {
-    assertAllowed: (decision) => service.assertAllowed(decision),
+    assertAllowed: (decision) => { service.assertAllowed(decision); },
     batchCheck: (subject, requests) => service.batchCheck(subject, requests),
     check: (subject, request) => service.check(subject, request),
     resolveDataScope: (subject, request) => service.resolveDataScope(subject, request),
