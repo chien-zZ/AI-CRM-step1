@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTaroH5Adapters, type TaroAdapterApi } from "./adapters";
-import { internalMobileOperations, operationById } from "./contract-surface";
+import { internalMobileOperations, operationById, type InternalMobileOperation } from "./contract-surface";
 
 vi.mock("@tarojs/taro", () => ({ default: {} }));
 
@@ -9,6 +9,7 @@ function createApi(overrides: Partial<TaroAdapterApi> = {}): TaroAdapterApi {
     getCurrentInstance: () => ({ router: { params: { page: "2" } } }),
     navigateTo: vi.fn().mockResolvedValue(undefined),
     redirectTo: vi.fn().mockResolvedValue(undefined),
+    getNetworkType: vi.fn().mockResolvedValue({ networkType: "wifi" }),
     onNetworkStatusChange: vi.fn(),
     offNetworkStatusChange: vi.fn(),
     chooseImage: vi.fn().mockResolvedValue({ tempFilePaths: ["temporary://picked-image"] }),
@@ -21,7 +22,7 @@ describe("Taro H5 adapters", () => {
   it("allowlists only reviewed generated Task read operations", () => {
     expect(internalMobileOperations.map((operation) => operation.id)).toEqual(["listTasks", "getTask"]);
     expect(() => operationById("listTasks")).not.toThrow();
-    expect(internalMobileOperations.some((operation) => operation.id === "completeTask")).toBe(false);
+    expect(internalMobileOperations.map((operation) => String(operation.id))).not.toContain("completeTask");
   });
 
   it("uses Taro navigation and preserves current URL parameters", async () => {
@@ -46,6 +47,13 @@ describe("Taro H5 adapters", () => {
     expect(api.offNetworkStatusChange).toHaveBeenCalledWith(receive);
   });
 
+  it("reads the initial network state before relying on change events", async () => {
+    const online = createTaroH5Adapters(createApi()).connectivity;
+    await expect(online.current()).resolves.toBe(true);
+    const offline = createTaroH5Adapters(createApi({ getNetworkType: vi.fn().mockResolvedValue({ networkType: "none" }) })).connectivity;
+    await expect(offline.current()).resolves.toBe(false);
+  });
+
   it("treats file selection as a temporary reference and cancellation as non-success", async () => {
     const selected = createTaroH5Adapters(createApi()).filePicker;
     await expect(selected.pickImage()).resolves.toEqual({ kind: "selected", temporaryPath: "temporary://picked-image" });
@@ -65,6 +73,16 @@ describe("Taro H5 adapters", () => {
       header: { Accept: "application/json" },
     });
     expect(JSON.stringify(vi.mocked(api.request).mock.calls)).not.toContain("Authorization");
+  });
+
+  it("rejects non-allowlisted or forged generated operations before transport", async () => {
+    const api = createApi();
+    const transport = createTaroH5Adapters(api).transport;
+    const unapproved = { id: "completeTask", method: "POST", path: "/tasks/x/y/complete" } as unknown as InternalMobileOperation;
+    const forged = { ...operationById("listTasks"), path: "/auth/pc/session" } as unknown as InternalMobileOperation;
+    await expect(transport.request(unapproved)).rejects.toThrow("not allowlisted");
+    await expect(transport.request(forged)).rejects.toThrow("not allowlisted");
+    expect(api.request).not.toHaveBeenCalled();
   });
 
   it("fails closed while the reviewed internal login contract is pending", () => {

@@ -41,7 +41,7 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - Explicit loading, maintenance, forbidden, session-expired, unavailable, offline, retry, logout, and pending-login-contract behavior.
 - Development runtime dynamically imports a labelled synthetic Fixture. Production uses a separately aliased fail-closed runtime so Fixture code is absent from artifacts.
 - Responsive layout covers the 320px floor and 390px-class viewports, safe-area padding, keyboard focus, landmarks, live status, and assertive connectivity alerts.
-- Production bundle gate rejects source maps, Fixture markers, sensitive patterns, and entrypoints over 600 KiB. Current entrypoint is 540,520 bytes.
+- Production bundle gate rejects source maps, Fixture markers, sensitive patterns, and entrypoints over 600 KiB. Current entrypoint is 540,927 bytes.
 
 ## Contract, Migration, And Shared Resource Requests
 
@@ -62,10 +62,10 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 
 ## Verification Evidence
 
-- `pnpm --filter @ai-crm/internal-mobile build`: passed; Taro production H5 compiled and the bundle gate reported `540520/614400` bytes.
+- `pnpm --filter @ai-crm/internal-mobile build`: passed; Taro production H5 compiled and the bundle gate reported `540927/614400` bytes.
 - `pnpm --filter @ai-crm/internal-mobile lint`: passed.
 - `pnpm --filter @ai-crm/internal-mobile typecheck`: passed.
-- `pnpm --filter @ai-crm/internal-mobile test`: 5 files, 21 tests passed.
+- `pnpm --filter @ai-crm/internal-mobile test`: 6 files, 26 tests passed.
 - `pnpm repo:check`: passed.
 - `pnpm check`: passed; 140/140 tasks successful. Turbo emitted only the existing informational note that `@ai-crm/internal-mobile#test` has no configured output files.
 - `git diff --check`: passed.
@@ -75,5 +75,7 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 ## Review Status
 
 - Owner self-review: complete with zero open Owner findings. Authorization, idempotency, transactions, migrations, observability, backward compatibility, secrets, failure modes, business neutrality, Fixture isolation, route recovery, accessibility, and Cookie transport were checked.
-- Independent Reviewer: Agent A pending.
+- Independent Review Round 1 on candidate `981cb0e`: Agent A reported three P2 and one P3 finding covering transport allowlist bypass, non-keyboard-accessible collection entries, missing initial connectivity read, and silent pending-login behavior on the direct status route.
+- Round 1 fixes: transport types are narrowed and canonical generated operation ID/method/path are verified before I/O; collection entries use native focusable buttons; connectivity reads initial Taro network state before leaving loading; the direct status route exposes the same fail-closed pending-login notice. Regression tests cover all four findings, including negative transport calls that assert no request occurs.
+- Independent Reviewer re-review: pending on the post-fix candidate.
 - G2 acceptance: not declared by the Owner.

@@ -1,5 +1,5 @@
 import Taro from "@tarojs/taro";
-import type { InternalOperation } from "./contract-surface";
+import { approvedOperation, type InternalMobileOperation } from "./contract-surface";
 
 export interface NavigationAdapter {
   currentParameters(): Readonly<Record<string, string>>;
@@ -8,6 +8,7 @@ export interface NavigationAdapter {
 }
 
 export interface ConnectivityAdapter {
+  current(): Promise<boolean>;
   subscribe(listener: (online: boolean) => void): () => void;
 }
 
@@ -20,13 +21,14 @@ export interface SessionAdapter {
 }
 
 export interface TransportAdapter {
-  request(operation: InternalOperation, query?: Readonly<Record<string, string>>): Promise<unknown>;
+  request(operation: InternalMobileOperation, query?: Readonly<Record<string, string>>): Promise<unknown>;
 }
 
 export interface TaroAdapterApi {
   getCurrentInstance(): { router?: { params?: Record<string, string> } };
   navigateTo(input: { url: string }): Promise<unknown>;
   redirectTo(input: { url: string }): Promise<unknown>;
+  getNetworkType(): Promise<{ networkType: string }>;
   onNetworkStatusChange(listener: (result: { isConnected: boolean }) => void): void;
   offNetworkStatusChange(listener: (result: { isConnected: boolean }) => void): void;
   chooseImage(input: { count: number }): Promise<{ tempFilePaths: string[] }>;
@@ -47,6 +49,7 @@ export function createTaroH5Adapters(api: TaroAdapterApi = Taro as unknown as Ta
       replace: async (url) => { await api.redirectTo({ url }); },
     },
     connectivity: {
+      current: async () => (await api.getNetworkType()).networkType !== "none",
       subscribe: (listener) => {
         const receive = (result: { isConnected: boolean }): void => { listener(result.isConnected); };
         api.onNetworkStatusChange(receive);
@@ -67,10 +70,11 @@ export function createTaroH5Adapters(api: TaroAdapterApi = Taro as unknown as Ta
     session: { login: () => ({ kind: "contract-pending" }) },
     transport: {
       request: async (operation, query = {}) => {
+        const reviewedOperation = approvedOperation(operation);
         const suffix = new URLSearchParams(query).toString();
         const response = await api.request({
-          url: `${operation.path}${suffix.length === 0 ? "" : `?${suffix}`}`,
-          method: operation.method,
+          url: `${reviewedOperation.path}${suffix.length === 0 ? "" : `?${suffix}`}`,
+          method: reviewedOperation.method,
           credentials: "include",
           header: { Accept: "application/json" },
         });

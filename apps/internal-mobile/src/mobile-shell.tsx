@@ -1,4 +1,4 @@
-import { Button, Cell, CellGroup, NavBar, NoticeBar, Tag } from "@nutui/nutui-react-taro";
+import { Button, CellGroup, NavBar, NoticeBar, Tag } from "@nutui/nutui-react-taro";
 import { Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useState } from "react";
 import type { ReturnTypeOfAdapters } from "./types-internal";
@@ -27,14 +27,16 @@ function CollectionView({ adapters, data, parameters, section }: { adapters: Ret
       </View>
       <CellGroup>
         {visible.map((item) => (
-          <Cell
+          <button
+            aria-pressed={route.selected === item.id}
+            className="collection-action"
             key={item.id}
-            title={item.title}
-            description={item.summary}
-            extra={<Tag type={route.selected === item.id ? "primary" : "default"}>{item.status}</Tag>}
-            clickable
+            type="button"
             onClick={() => { void adapters.navigation.replace(sectionPath(section, { page: route.page, selected: item.id })); }}
-          />
+          >
+            <span className="collection-copy"><strong>{item.title}</strong><span>{item.summary}</span></span>
+            <Tag type={route.selected === item.id ? "primary" : "default"}>{item.status}</Tag>
+          </button>
         ))}
       </CellGroup>
       {visible.length === 0 && <View role="status"><Text>当前没有可显示的合成数据。</Text></View>}
@@ -66,15 +68,23 @@ function HomeView({ adapters, data }: { adapters: ReturnTypeOfAdapters; data: Re
 
 export function MobileShell({ adapters, initialParameters, port, section }: { adapters: ReturnTypeOfAdapters; initialParameters?: Readonly<Record<string, string>>; port: InternalMobilePort; section: MobileSection }): React.JSX.Element {
   const [result, setResult] = useState<MobileBootstrapResult | { kind: "loading" }>({ kind: "loading" });
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState<boolean>();
   const [loginPending, setLoginPending] = useState(false);
   const parameters = initialParameters ?? adapters.navigation.currentParameters();
   const load = (): void => { setResult({ kind: "loading" }); port.bootstrap().then(setResult, () => { setResult({ kind: "unavailable" }); }); };
 
   useEffect(load, [port]);
-  useEffect(() => adapters.connectivity.subscribe((nextOnline) => { setOnline(nextOnline); }), [adapters.connectivity]);
+  useEffect(() => {
+    let active = true;
+    void adapters.connectivity.current().then(
+      (currentOnline) => { if (active) setOnline(currentOnline); },
+      () => { if (active) setOnline(false); },
+    );
+    const unsubscribe = adapters.connectivity.subscribe((nextOnline) => { setOnline(nextOnline); });
+    return () => { active = false; unsubscribe(); };
+  }, [adapters.connectivity]);
 
-  if (result.kind === "loading") return <View className="full-state" role="status" aria-live="polite"><Text>正在恢复内部移动会话</Text></View>;
+  if (result.kind === "loading" || online === undefined) return <View className="full-state" role="status" aria-live="polite"><Text>正在恢复内部移动会话</Text></View>;
   if (result.kind !== "ready") {
     const status: MobileStatus = online ? result.kind : "offline";
     return (

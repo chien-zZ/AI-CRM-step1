@@ -13,7 +13,6 @@ vi.mock("@tarojs/components", () => ({
 
 vi.mock("@nutui/nutui-react-taro", () => ({
   Button: ({ children, onClick, ...props }: PropsWithChildren<{ onClick?: () => void }>) => <button onClick={onClick} {...props}>{children}</button>,
-  Cell: ({ description, extra, onClick, title }: { description: ReactNode; extra: ReactNode; onClick?: () => void; title: ReactNode }) => <button onClick={onClick}><span>{title}</span><span>{description}</span>{extra}</button>,
   CellGroup: ({ children }: PropsWithChildren) => <div>{children}</div>,
   Empty: ({ description, title }: { description: ReactNode; title: ReactNode }) => <div><div>{title}</div><div>{description}</div></div>,
   NavBar: ({ title }: { title: ReactNode }) => <header>{title}</header>,
@@ -37,7 +36,7 @@ const ready: ReadyMobileBootstrap = {
   },
 };
 
-function setup(result: MobileBootstrapResult = ready, parameters: Readonly<Record<string, string>> = {}): {
+function setup(result: MobileBootstrapResult = ready, parameters: Readonly<Record<string, string>> = {}, initiallyOnline = true): {
   adapters: ReturnTypeOfAdapters;
   emitNetwork: (online: boolean) => void;
   port: InternalMobilePort;
@@ -50,6 +49,7 @@ function setup(result: MobileBootstrapResult = ready, parameters: Readonly<Recor
       replace: vi.fn().mockResolvedValue(undefined),
     },
     connectivity: {
+      current: vi.fn().mockResolvedValue(initiallyOnline),
       subscribe: vi.fn((listener: (online: boolean) => void) => {
         networkListener = listener;
         return vi.fn();
@@ -101,6 +101,23 @@ describe("internal mobile shell", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("网络已断开");
     context.emitNetwork(true);
     await waitFor(() => { expect(screen.queryByRole("alert")).not.toBeInTheDocument(); });
+  });
+
+  it("fails closed as offline when the application starts without a change event", async () => {
+    const context = setup(ready, {}, false);
+    render(<MobileShell adapters={context.adapters} port={context.port} section="home" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("网络已断开");
+  });
+
+  it("renders collection choices as native keyboard-focusable buttons", async () => {
+    const context = setup();
+    render(<MobileShell adapters={context.adapters} port={context.port} section="tasks" />);
+    const choice = await screen.findByRole("button", { name: /合成任务 1.*仅供测试.*待处理/ });
+    expect(choice.tagName).toBe("BUTTON");
+    expect(choice).toHaveAttribute("type", "button");
+    expect(choice.tabIndex).toBe(0);
+    fireEvent.click(choice);
+    expect(context.adapters.navigation.replace).toHaveBeenCalledWith("/pages/tasks/index?page=1&selected=task-1");
   });
 
   it.each([
