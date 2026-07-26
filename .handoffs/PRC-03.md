@@ -7,7 +7,7 @@
 - Allowed paths: `packages/platform-modules/notifications/**`, `contracts/notifications/**`, `contracts/http/modules/notifications.openapi.yaml`, `.handoffs/PRC-03.md`
 - Migration lease: `0000000009`
 - Dependencies: PRC-01, PRC-02, ASY-01 and the accepted notification ADR/baseline documents
-- Current status: `INDEPENDENT_REVIEW`
+- Current status: `G2_ACCEPTED`
 
 ## Known Facts
 
@@ -114,6 +114,15 @@ The Reviewer confirmed all four Round 1 findings closed, then reported one new P
 - Regression coverage proves an actor authorized for the claimed producer can submit, an untrusted actor is denied before Store/Resolver access, and a separately authorized retry actor still receives the original idempotent result without repeated recipient resolution.
 - The composing application remains responsible for binding authenticated calling subjects to approved producer references; a generic submit permission is insufficient.
 - This is an additive TypeScript port clarification only. The versioned intent JSON payload, source HTTP surface, generated artifacts, and Lockfile do not change.
+
+## Independent review round 3 and G2 acceptance
+
+- The same independent Reviewer re-reviewed exact implementation candidate `9c7a1e91f51c7658ca5151dc8e2a842d6e686683` and closed the Round 2 P1 producer-authorization finding.
+- Reviewer result: zero actionable findings and zero unresolved architecture or contract issues.
+- Authorization, idempotency, transactions, migrations, observability, backward compatibility, secrets, and failure modes were explicitly rechecked. The Reviewer confirmed producer-bound denial occurs before module data access and that prior Round 1 findings remain closed.
+- Reviewer independently ran module lint, typecheck, 18 ordinary unit/contract tests, build, and `git diff --check`; all passed. The ordinary run intentionally skipped the 3 isolated PostgreSQL tests.
+- The Reviewer checked the Owner evidence for 3/3 real PostgreSQL integration tests and full `pnpm check` with 140/140 tasks passing.
+- PRC-03 is accepted at G2. Merge sequencing and the final merge commit remain owned by the Integration Owner.
 
 ## Verification evidence
 
