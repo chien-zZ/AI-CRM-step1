@@ -66,6 +66,7 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - `pnpm --filter @ai-crm/internal-mobile lint`: passed.
 - `pnpm --filter @ai-crm/internal-mobile typecheck`: passed.
 - `pnpm --filter @ai-crm/internal-mobile test`: 6 files, 27 tests passed.
+- Bundle-gate regression tests: 3 Node tests passed, covering hashed entrypoint discovery, external/traversal rejection, missing assets, and budget overflow.
 - `pnpm repo:check`: passed.
 - `pnpm check`: passed; 140/140 tasks successful. Turbo emitted only the existing informational note that `@ai-crm/internal-mobile#test` has no configured output files.
 - `git diff --check`: passed.
@@ -82,3 +83,10 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - Independent Review Round 3 on candidate `7fd281c`: the ordering-race finding was closed. The original Reviewer reported zero actionable findings, zero unresolved architecture/contract issues, and no new findings after rechecking initialization rejection, effect cleanup, and subscription ordering.
 - Review result: all executable findings are closed; scoped tests, production build, bundle gate, and `pnpm check` pass.
 - G2 acceptance: accepted by the Integration Owner after Agent A reported zero actionable findings and zero unresolved architecture/contract issues on candidate `7fd281c`; final branch-tip changes after that candidate are handoff evidence only.
+
+## Post-G2 Integration Regression
+
+- Integration verification reopened CLI-02 after a clean Lockfile/full `node_modules` rebuild produced `js/395.js` instead of the previously observed `js/512.js`; the hard-coded bundle gate failed with `ENOENT` even though the Taro build itself was valid.
+- Fix: the bundle gate now derives initial JavaScript and stylesheet assets from production `dist/h5/index.html`, deduplicates references, resolves them within the real output root, and rejects external origins, traversal/backslashes, invalid URL encoding, symlink escape, missing assets, absent JS/CSS entrypoints, source maps, forbidden content, and totals above the unchanged 600 KiB budget.
+- Verification: 3 bundle-gate tests, 27 Vitest tests, lint, typecheck, production build, package contract check, repository check, `git diff --check`, and `pnpm check` (140/140) pass. Lockfile remains unchanged.
+- Review status: Integration P1 fix is pending independent re-review by the original Agent A. Previous G2 acceptance is reopened until that review reports zero actionable findings and Integration verification passes on the serialized Lockfile environment.
