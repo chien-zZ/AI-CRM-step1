@@ -49,4 +49,15 @@ suite("PostgreSQL application registry", () => {
     const { mutationFingerprint } = await import("./validation.js");
     await expect(Promise.all([store.commit({ fingerprint: mutationFingerprint(mutation), mutation }), store.commit({ fingerprint: mutationFingerprint(mutation), mutation })])).resolves.toEqual([{ replayed: false }, { replayed: true }]);
   });
+
+  it("enforces the navigation self-parent invariant in PostgreSQL", async () => {
+    if (!runtime) throw new Error("Application Registry runtime is unavailable.");
+    const suffix = randomUUID().slice(0, 8);
+    const applicationId = `platform.self.${suffix}`;
+    const routeId = `platform.self.route.${suffix}`;
+    const navigationId = `platform.self.nav.${suffix}`;
+    await runtime.execute("insert into app_registry.applications (application_id,audience,enabled,permission_code) values ($1,'internal',true,$2)", [applicationId, "platform.self:view"]);
+    await runtime.execute("insert into app_registry.routes (route_id,application_id,path,enabled,permission_code,deep_link_sources) values ($1,$2,'/platform/self',true,$3,array['task']::text[])", [routeId, applicationId, "platform.self:open"]);
+    await expect(runtime.execute("insert into app_registry.navigation (navigation_id,application_id,route_id,parent_navigation_id,enabled,display_order) values ($1,$2,$3,$1,true,1)", [navigationId, applicationId, routeId])).rejects.toMatchObject({ code: "23514" });
+  });
 });

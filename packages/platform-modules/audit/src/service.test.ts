@@ -21,6 +21,32 @@ describe("audit service", () => {
     const service = createAuditService(createMemoryAuditStore(), allowed, options);
     await expect(service.record({ ...command, changes: [{ after: "secret", classification: "non_sensitive", field: "protected_value" }] })).rejects.toMatchObject({ code: "audit_invalid_input" });
     await expect(service.record({ ...command, changes: [{ after: true, classification: "non_sensitive", field: "unknown" }] })).rejects.toMatchObject({ code: "audit_invalid_input" });
+    await expect(service.record({ ...command, changes: [{ before: "secret", changed: true, classification: "sensitive", field: "protected_value", token: "secret" }] } as never)).rejects.toMatchObject({ code: "audit_invalid_input" });
+  });
+
+  it("rejects extra keys and runtime-invalid actors, results, scalars, and decisions", async () => {
+    const service = createAuditService(createMemoryAuditStore(), allowed, options);
+    await expect(service.record({ ...command, actor: { ...actor, actorType: "admin" } } as never)).rejects.toMatchObject({ code: "audit_invalid_input" });
+    await expect(service.record({ ...command, result: "complete" } as never)).rejects.toMatchObject({ code: "audit_invalid_input" });
+    await expect(service.record({ ...command, token: "secret" } as never)).rejects.toMatchObject({ code: "audit_invalid_input" });
+    await expect(service.record({ ...command, changes: [{ after: { nested: true }, classification: "non_sensitive", field: "enabled" }] } as never)).rejects.toMatchObject({ code: "audit_invalid_input" });
+    const invalidDecision = createAuditService(createMemoryAuditStore(), { authorize: () => Promise.resolve({ allowed: "yes", decisionId: randomUUID() } as never) }, { ...options, id: randomUUID });
+    await expect(invalidDecision.readSensitive({ actor, operationId: randomUUID(), reason: "synthetic investigation", recordId: randomUUID(), traceId })).rejects.toMatchObject({ code: "audit_authorization_unavailable", retryable: true });
+  });
+
+  it("replays semantically identical records with reordered object keys and changes", async () => {
+    const service = createAuditService(createMemoryAuditStore(), allowed, options);
+    const reordered = {
+      trace: { traceId, operationId },
+      result: command.result,
+      resource: { resourceType: command.resource.resourceType, resourceId: command.resource.resourceId },
+      reason: { code: command.reason.code },
+      changes: [{ field: "protected_value", classification: "sensitive" as const, changed: true as const }, { field: "enabled", classification: "non_sensitive" as const, before: false, after: true }],
+      actor: { workforcePersonId: actor.workforcePersonId, assignmentId: actor.assignmentId, actorType: actor.actorType, actorId: actor.actorId },
+      action: command.action,
+    } satisfies RecordAuditCommand;
+    await expect(service.record(command)).resolves.toMatchObject({ replayed: false });
+    await expect(service.record(reordered)).resolves.toEqual({ auditId: "55555555-5555-4555-8555-555555555555", replayed: true });
   });
 
   it("fails closed and records denied sensitive access", async () => {

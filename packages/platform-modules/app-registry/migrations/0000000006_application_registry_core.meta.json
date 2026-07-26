@@ -7,5 +7,5 @@
   "backfill": "Not required. Registrations are accepted only through explicit authorized commands.",
   "destructive": false,
   "recovery": "Roll back the application while retaining registered stable identifiers. Restore the pre-migration point only before registrations are accepted.",
-  "forwardFix": "Append a reviewed app-registry-owned migration for constraints or schema repairs; do not rewrite this migration."
+  "forwardFix": "This unmerged migration may be corrected during its pre-G2 review. After first application, append a reviewed app-registry-owned migration for constraints or schema repairs and never rewrite the applied migration."
 }

@@ -1,6 +1,6 @@
 # PLT-01 Audit And Application Registry
 
-- Status: Owner implementation and self-review complete; awaiting independent review
+- Status: Independent Review Round 1 fixes and Owner self-review complete; awaiting same Reviewer re-review
 - Branch: `task/PLT-01-audit-app-registry`
 - Owner: Agent B
 - Independent Reviewer: Agent D
@@ -52,7 +52,7 @@
 
 - `0000000005_audit_append_only_core` creates the empty `audit` schema. Database triggers reject UPDATE/DELETE for records and receipts; application rollback retains evidence.
 - `0000000006_application_registry_core` creates the empty `app_registry` schema with application/route/navigation referential constraints and operation receipts.
-- Both migrations are additive, module-owned, use no backfill, and are tested from an empty PostgreSQL baseline. Repairs use new forward migrations; applied SQL is never edited.
+- Both migrations are additive, module-owned, use no backfill, and are tested from an empty PostgreSQL baseline. Review Round 1 added the self-parent check directly to reserved migration `0000000006` before G2, merge, or first application; after application, repairs require a new reserved forward migration and applied SQL is never edited.
 - Module migration commands require `DATABASE_MIGRATION_URL_FILE`; runtime accounts do not receive DDL behavior from these packages.
 
 ## Failure And Recovery
@@ -70,10 +70,10 @@
 
 ## Verification Evidence
 
-- Audit unit/package tests: 6 passed; default run skips 3 environment-gated PostgreSQL cases.
-- Application Registry unit/package tests: 8 passed; default run skips 3 environment-gated PostgreSQL cases.
+- Audit unit/package tests: 8 passed; default run skips 3 environment-gated PostgreSQL cases.
+- Application Registry unit/package tests: 13 passed; default run skips 4 environment-gated PostgreSQL cases.
 - Real PostgreSQL 17.5: Audit 3/3 passed for empty migration, replay/readback, database-enforced immutability, and concurrent duplicate serialization.
-- Real PostgreSQL 17.5: Registry 3/3 passed for registration/disablement, internal-to-external isolation, and concurrent duplicate serialization.
+- Real PostgreSQL 17.5: Registry 4/4 passed for registration/disablement, internal-to-external isolation, concurrent duplicate serialization, and database rejection of self-parent navigation.
 - `pnpm contracts:check`: 28/28 packages passed; source schemas compile under strict Ajv and generated artifacts are deterministic.
 - `pnpm check`: 140/140 Turbo tasks passed after final fixes; repository boundaries and Compose static checks passed.
 - `git diff --check`: passed. `pnpm-lock.yaml`, `contracts/generated`, `apps/api`, and `apps/worker` remain unchanged.
@@ -99,7 +99,31 @@
 - Authorization-port exceptions and audit-port exceptions now map to stable retryable unavailable errors; explicit deny remains a stable non-retryable denial.
 - Documented the recoverable final-audit failure window: retry replays the committed Registry operation and retries phase-idempotent audit; no distributed transaction is claimed.
 - Contracts are additive V1 schemas; former package entries exported only `packageId`, so there is no removed public runtime or persisted data to migrate.
-- Final re-review found no remaining actionable issues in Authorization, Idempotency, Transactions, Migrations, Observability, Backward Compatibility, Secrets, or Failure Modes.
+- Owner final self-review found no additional actionable issues in Authorization, Idempotency, Transactions, Migrations, Observability, Backward Compatibility, Secrets, or Failure Modes; this does not replace independent re-review.
+
+## Independent Review Round 1 Repair Loop
+
+The independent Reviewer reported six actionable findings: four P1 and two P2. The Owner repaired all six and added regression coverage; the work package remains outside G2 until the same Reviewer confirms zero actionable findings.
+
+1. P1 Deep-link authorization: resolution now authorizes the current application permission before the route/resource permission. Either denial fails closed, and application denial stops before route authorization or target disclosure.
+2. P1 Runtime validation: Audit and Registry public inputs now require exact object keys and validate nested objects, discriminated unions, enums, booleans, finite scalars, arrays, versions, actors, and authorization decisions at runtime. Services persist and forward reconstructed allowlisted values rather than spreads of untrusted commands.
+3. P1 Canonical idempotency: both modules use recursive key-sorted canonical serialization. Audit change arrays are normalized by unique field, and Registry route source sets are normalized, while true semantic changes still conflict.
+4. P1 Navigation self-parent: runtime validation and Memory Store invariants reject self-parent navigation; migration `0000000006` and its private Drizzle schema now enforce the same check in PostgreSQL.
+5. P2 Ancestor-closed snapshots: Registry navigation includes a child only when every ancestor is present, enabled, and backed by a currently authorized route; missing parents and cycles also fail closed.
+6. P2 Memory Store encapsulation: every Registry `find*` and `list*` read returns a deep snapshot, including nested route source arrays, so caller mutation cannot change persisted enablement or authorization inputs.
+
+Owner regression evidence includes application-denied/route-allowed deep links, invalid runtime objects and sensitive extra fields, reordered object/change/source retries, disabled and denied navigation parents, caller mutation of every Memory Store read shape, runtime self-parent rejection, and PostgreSQL constraint rejection. During the PostgreSQL rerun, the pre-existing Audit concurrency assertion was corrected to avoid assuming which concurrent Promise acquires the advisory lock; it now verifies one original result, one replay, and one shared winning Audit ID.
+
+### Round 1 Eight-Area Recheck
+
+- Authorization: application and route permissions are both current and mandatory; invalid authorization decisions fail closed as dependency unavailability.
+- Idempotency: canonical semantic fingerprints accept property/change/source reordering and continue rejecting meaning changes.
+- Transactions: Store state and receipt boundaries are unchanged; PostgreSQL advisory serialization is covered without assuming contender order.
+- Migrations: the reserved, unmerged, unapplied `0000000006` was corrected before G2 and tested from an empty PostgreSQL 17.5 database; no applied migration was edited.
+- Observability: stable bounded errors and safe correlation identifiers remain unchanged; no bodies, personal data, provider payloads, or unbounded strings were added.
+- Backward Compatibility: wire contracts remain additive V1; stricter runtime rejection aligns implementations with existing `additionalProperties: false`, enums, and scalar schemas.
+- Secrets: no Secret value or production configuration was added; PostgreSQL test Secrets remained temporary files removed with their containers.
+- Failure Modes: authorization denial, invalid dependency decisions, broken ancestor chains, mutation attempts on read snapshots, semantic conflicts, and database self-parent writes all fail closed with regression coverage.
 
 ## Eight-Area Review Summary
 

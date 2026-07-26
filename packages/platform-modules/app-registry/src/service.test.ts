@@ -49,6 +49,18 @@ describe("application registry", () => {
     authorization.authorize.mockResolvedValueOnce({ allowed: false, decisionId: randomUUID() });
     const link = { applicationId: app.applicationId, resourceReference: "synthetic:denied", routeId: route.routeId, source: "task" as const, version: 1 as const };
     await expect(service.resolveDeepLink({ actor, audience: "internal", link })).rejects.toMatchObject({ code: "app_registry_denied" });
+    expect(authorization.authorize).toHaveBeenCalledTimes(4);
+  });
+
+  it("requires both current application and route authorization for deep links", async () => {
+    const authorization = authorizer();
+    const { service } = await setup(authorization);
+    authorization.authorize.mockClear();
+    authorization.authorize.mockResolvedValueOnce({ allowed: false, decisionId: randomUUID() }).mockResolvedValueOnce({ allowed: true, decisionId: randomUUID() });
+    const link = { applicationId: app.applicationId, resourceReference: "synthetic:app-denied", routeId: route.routeId, source: "task" as const, version: 1 as const };
+    await expect(service.resolveDeepLink({ actor, audience: "internal", link })).rejects.toMatchObject({ code: "app_registry_denied" });
+    expect(authorization.authorize).toHaveBeenCalledOnce();
+    expect(authorization.authorize).toHaveBeenCalledWith(expect.objectContaining({ permissionCode: app.permissionCode, resourceId: app.applicationId, resourceType: "application" }));
   });
 
   it("fails closed on denied management and records the denial before mutation", async () => {
@@ -68,6 +80,74 @@ describe("application registry", () => {
     await expect(service.mutate(command)).resolves.toEqual({ replayed: true });
     await expect(service.mutate({ ...command, application: { ...app, enabled: false } })).rejects.toMatchObject({ code: "app_registry_operation_conflict" });
     expect(recorder.record).toHaveBeenCalledWith(expect.objectContaining({ result: "failed" }));
+  });
+
+  it("uses canonical fingerprints for reordered object keys and deep-link source sets", async () => {
+    const service = createApplicationRegistryService(createMemoryApplicationRegistryStore(), authorizer(), audit());
+    await service.mutate({ ...metadata(), application: app, kind: "register_application" });
+    const operationId = randomUUID();
+    const first: RegistryMutationCommand = { actor, kind: "register_route", operationId, reason: "canonical retry", route, traceId };
+    const reordered = {
+      traceId,
+      route: { routeId: route.routeId, permissionCode: route.permissionCode, path: route.path, enabled: route.enabled, deepLinkSources: ["notification", "task"], applicationId: route.applicationId },
+      reason: "canonical retry",
+      operationId,
+      kind: "register_route",
+      actor: { actorType: actor.actorType, actorId: actor.actorId },
+    } as RegistryMutationCommand;
+    await expect(service.mutate(first)).resolves.toEqual({ replayed: false });
+    await expect(service.mutate(reordered)).resolves.toEqual({ replayed: true });
+  });
+
+  it("rejects extra keys, invalid runtime enums and scalar types, and self-parent navigation", async () => {
+    const service = createApplicationRegistryService(createMemoryApplicationRegistryStore(), authorizer(), audit());
+    await expect(service.mutate({ ...metadata(), application: { ...app, audience: "partner" }, kind: "register_application" } as never)).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    await expect(service.mutate({ ...metadata(), application: { ...app, token: "secret" }, kind: "register_application" } as never)).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    await expect(service.mutate({ ...metadata(), application: { ...app, enabled: "yes" }, kind: "register_application" } as never)).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    await expect(service.mutate({ ...metadata(), kind: "register_route", route: { ...route, deepLinkSources: ["email"] } } as never)).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    await expect(service.mutate({ ...metadata(), application: app, kind: "register_application", token: "secret" } as never)).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    await expect(service.mutate({ ...metadata(), kind: "register_navigation", navigation: { applicationId: app.applicationId, enabled: true, navigationId: "platform.self", order: 1, parentNavigationId: "platform.self", routeId: route.routeId } })).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    await expect(service.loadRegistry({ actor: { ...actor, actorType: "admin" }, audience: "internal" } as never)).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+  });
+
+  it("returns an ancestor-closed navigation snapshot", async () => {
+    const authorization = authorizer();
+    const store = createMemoryApplicationRegistryStore();
+    const service = createApplicationRegistryService(store, authorization, audit());
+    await service.mutate({ ...metadata(), application: app, kind: "register_application" });
+    await service.mutate({ ...metadata(), kind: "register_route", route });
+    const childRoute = { ...route, deepLinkSources: ["task"] as const, permissionCode: "platform.child:open", routeId: "platform.synthetic.child" };
+    await service.mutate({ ...metadata(), kind: "register_route", route: childRoute });
+    await service.mutate({ ...metadata(), kind: "register_navigation", navigation: { applicationId: app.applicationId, enabled: false, navigationId: "platform.disabled.parent", order: 1, routeId: route.routeId } });
+    await service.mutate({ ...metadata(), kind: "register_navigation", navigation: { applicationId: app.applicationId, enabled: true, navigationId: "platform.disabled.child", order: 2, parentNavigationId: "platform.disabled.parent", routeId: childRoute.routeId } });
+    await service.mutate({ ...metadata(), kind: "register_navigation", navigation: { applicationId: app.applicationId, enabled: true, navigationId: "platform.denied.parent", order: 3, routeId: route.routeId } });
+    await service.mutate({ ...metadata(), kind: "register_navigation", navigation: { applicationId: app.applicationId, enabled: true, navigationId: "platform.denied.child", order: 4, parentNavigationId: "platform.denied.parent", routeId: childRoute.routeId } });
+    authorization.authorize.mockImplementation((request) => Promise.resolve({ allowed: request.action !== "app_registry:view" || request.permissionCode !== route.permissionCode, decisionId: randomUUID() }));
+    const snapshot = await service.loadRegistry({ actor, audience: "internal" });
+    expect(snapshot.navigation).toEqual([]);
+    expect(snapshot.routes).toEqual([childRoute]);
+  });
+
+  it("does not expose mutable references from the memory store", async () => {
+    const store = createMemoryApplicationRegistryStore();
+    const service = createApplicationRegistryService(store, authorizer(), audit());
+    await service.mutate({ ...metadata(), application: app, kind: "register_application" });
+    await service.mutate({ ...metadata(), kind: "register_route", route });
+    const navigation = { applicationId: app.applicationId, enabled: true, navigationId: "platform.synthetic.mutable", order: 1, routeId: route.routeId };
+    await service.mutate({ ...metadata(), kind: "register_navigation", navigation });
+    const foundApplication = await store.findApplication(app.applicationId);
+    const foundRoute = await store.findRoute(route.routeId);
+    const listedApplications = await store.listApplications("internal");
+    const listedNavigation = await store.listNavigation([app.applicationId]);
+    const listedRoutes = await store.listRoutes([app.applicationId]);
+    (foundApplication as { enabled: boolean }).enabled = false;
+    (foundRoute?.deepLinkSources as string[]).splice(0);
+    (listedApplications[0] as { permissionCode: string }).permissionCode = "changed:value";
+    (listedNavigation[0] as { enabled: boolean }).enabled = false;
+    (listedRoutes[0] as { enabled: boolean }).enabled = false;
+    await expect(store.findApplication(app.applicationId)).resolves.toEqual(app);
+    await expect(store.findRoute(route.routeId)).resolves.toEqual(route);
+    await expect(store.listNavigation([app.applicationId])).resolves.toEqual([navigation]);
   });
 
   it("maps authorization and audit dependency failures to stable retryable errors", async () => {

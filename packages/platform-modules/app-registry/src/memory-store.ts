@@ -26,7 +26,7 @@ export function createMemoryApplicationRegistryStore(): ApplicationRegistryStore
       if (mutation.kind === "register_navigation") {
         const route = routes.get(mutation.navigation.routeId);
         const parent = mutation.navigation.parentNavigationId === undefined ? undefined : navigation.get(mutation.navigation.parentNavigationId);
-        if (route?.applicationId !== mutation.navigation.applicationId || navigation.has(mutation.navigation.navigationId) || (mutation.navigation.parentNavigationId !== undefined && parent?.applicationId !== mutation.navigation.applicationId)) throw new AppRegistryError("app_registry_operation_conflict");
+        if (route?.applicationId !== mutation.navigation.applicationId || navigation.has(mutation.navigation.navigationId) || mutation.navigation.parentNavigationId === mutation.navigation.navigationId || (mutation.navigation.parentNavigationId !== undefined && parent?.applicationId !== mutation.navigation.applicationId)) throw new AppRegistryError("app_registry_operation_conflict");
         navigation.set(mutation.navigation.navigationId, structuredClone(mutation.navigation));
       }
       if (mutation.kind === "set_application_enabled") {
@@ -42,10 +42,10 @@ export function createMemoryApplicationRegistryStore(): ApplicationRegistryStore
       receipts.set(mutation.operationId, fingerprint);
       return Promise.resolve({ replayed: false });
     },
-    findApplication: (id) => Promise.resolve(applications.get(id)),
-    findRoute: (id) => Promise.resolve(routes.get(id)),
-    listApplications: (audience) => Promise.resolve([...applications.values()].filter((item) => item.audience === audience).sort((a, b) => a.applicationId.localeCompare(b.applicationId))),
-    listNavigation: (ids) => Promise.resolve([...navigation.values()].filter((item) => ids.includes(item.applicationId)).sort((a, b) => a.order - b.order || a.navigationId.localeCompare(b.navigationId))),
-    listRoutes: (ids) => Promise.resolve([...routes.values()].filter((item) => ids.includes(item.applicationId)).sort((a, b) => a.routeId.localeCompare(b.routeId))),
+    findApplication: (id) => Promise.resolve(applications.has(id) ? structuredClone(applications.get(id)) : undefined),
+    findRoute: (id) => Promise.resolve(routes.has(id) ? structuredClone(routes.get(id)) : undefined),
+    listApplications: (audience) => Promise.resolve(structuredClone([...applications.values()].filter((item) => item.audience === audience).sort((a, b) => a.applicationId.localeCompare(b.applicationId)))),
+    listNavigation: (ids) => Promise.resolve(structuredClone([...navigation.values()].filter((item) => ids.includes(item.applicationId)).sort((a, b) => a.order - b.order || a.navigationId.localeCompare(b.navigationId)))),
+    listRoutes: (ids) => Promise.resolve(structuredClone([...routes.values()].filter((item) => ids.includes(item.applicationId)).sort((a, b) => a.routeId.localeCompare(b.routeId)))),
   };
 }

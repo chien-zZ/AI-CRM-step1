@@ -24,6 +24,7 @@ CREATE TABLE app_registry.navigation (
   parent_navigation_id varchar(128) REFERENCES app_registry.navigation(navigation_id),
   enabled boolean NOT NULL,
   display_order integer NOT NULL CHECK (display_order BETWEEN 0 AND 100000),
+  CONSTRAINT navigation_not_self_parent_check CHECK (parent_navigation_id IS NULL OR parent_navigation_id <> navigation_id),
   CONSTRAINT navigation_application_id_unique UNIQUE (application_id, navigation_id),
   CONSTRAINT navigation_route_fk FOREIGN KEY (application_id, route_id) REFERENCES app_registry.routes(application_id, route_id),
   CONSTRAINT navigation_parent_fk FOREIGN KEY (application_id, parent_navigation_id) REFERENCES app_registry.navigation(application_id, navigation_id)

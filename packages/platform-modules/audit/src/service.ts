@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AuditError } from "./errors.js";
 import type { AuditStore } from "./store.js";
 import type { AuditAuthorizer, AuditRecord, AuditService, AuditServiceOptions, RecordAuditCommand, SensitiveAuditAccessCommand } from "./types.js";
-import { fingerprint, validateOptions, validateRecord, validateSensitiveAccess } from "./validation.js";
+import { fingerprint, validateAuthorizationDecision, validateOptions, validateRecord, validateSensitiveAccess } from "./validation.js";
 
 export function createAuditService(store: AuditStore, authorizer: AuditAuthorizer, options: AuditServiceOptions): AuditService {
   validateOptions(options);
@@ -27,12 +27,12 @@ export function createAuditService(store: AuditStore, authorizer: AuditAuthorize
 
   return {
     record,
-    readSensitive: async (command: SensitiveAuditAccessCommand) => {
-      validateSensitiveAccess(command);
+    readSensitive: async (input: SensitiveAuditAccessCommand) => {
+      const command = validateSensitiveAccess(input);
       const resource = { resourceId: command.recordId, resourceType: "audit_record" };
       let decision;
       try {
-        decision = await authorizer.authorize({ action: "audit:read_sensitive", actor: command.actor, resource });
+        decision = validateAuthorizationDecision(await authorizer.authorize({ action: "audit:read_sensitive", actor: command.actor, resource }));
       } catch (error) {
         throw new AuditError("audit_authorization_unavailable", { cause: error, retryable: true });
       }

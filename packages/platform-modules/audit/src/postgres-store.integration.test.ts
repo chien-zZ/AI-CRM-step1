@@ -40,8 +40,12 @@ suite("PostgreSQL audit store", () => {
   it("serializes concurrent duplicate operations", async () => {
     if (!runtime) throw new Error("Audit runtime is unavailable.");
     const record = auditRecord();
+    const competingRecord = { ...record, auditId: randomUUID() };
     const store = createPostgresAuditStore(runtime);
-    await expect(Promise.all([store.append({ fingerprint: fingerprint(record), record }), store.append({ fingerprint: fingerprint(record), record: { ...record, auditId: randomUUID() } })])).resolves.toEqual([{ auditId: record.auditId, replayed: false }, { auditId: record.auditId, replayed: true }]);
+    const results = await Promise.all([store.append({ fingerprint: fingerprint(record), record }), store.append({ fingerprint: fingerprint(record), record: competingRecord })]);
+    expect(results.map(({ replayed }) => replayed).sort()).toEqual([false, true]);
+    expect(new Set(results.map(({ auditId }) => auditId)).size).toBe(1);
+    expect([record.auditId, competingRecord.auditId]).toContain(results[0].auditId);
   });
 });
 
