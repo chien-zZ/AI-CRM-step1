@@ -31,7 +31,9 @@ Redis stores short-lived login transactions and encrypted Token sets; session lo
 
 The OAuth Client ID and API resource Audience are separate values. The development/test Realm maps `ai-crm-api` only into Access Tokens; the verifier also binds `azp` to the PC BFF Client ID. This rejects ID Token substitution without adding business claims.
 
-The current source exposes framework-neutral authentication factories and ports. HTTP controller composition remains blocked until the API composition root enters its reviewed stage.
+The CMP-01 application root now starts a NestJS HTTP application and exposes the reviewed `/health/live` and `/health/ready` contract. Required dependencies are supplied explicitly by the composition caller; an unavailable required dependency returns `503` without exposing dependency names or topology. Authentication and platform facades remain injected through their public entry points as their controllers are registered; the composition root does not create repositories or domain rules.
+
+Process configuration is parsed through `@ai-crm/config`. The reviewed defaults bind container traffic on `0.0.0.0:3000`; `AI_CRM_API_HOST` is restricted to reviewed local/container bind addresses, `AI_CRM_API_PORT` must be a valid TCP port, and `AI_CRM_RELEASE` is a bounded immutable release identifier. These settings do not make the API ready until its required module dependencies are composed and healthy.
 
 ### Authentication integration test
 

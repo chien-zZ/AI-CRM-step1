@@ -11,3 +11,9 @@ Worker logs, errors, health signals, and traces use the project observability bo
 Future approved asynchronous AI adapters are composed here behind `ai-gateway` and owning-module use cases. Workers recheck use-case enablement, authoritative resource state, data policy, budget, cancellation, and expiry before a model call; late or duplicate outputs cannot directly change domain state. The first stage uses only Fake Adapter conventions and synthetic fixtures. See [ADR-0024](../../docs/08-架构决策/ADR-0024-AI网关与AI治理边界.md).
 
 See [ADR-0003](../../docs/08-架构决策/ADR-0003-Monorepo应用与模块边界.md), [ADR-0010](../../docs/08-架构决策/ADR-0010-RabbitMQ与Redis异步执行及Outbox-Inbox.md), [ADR-0012](../../docs/08-架构决策/ADR-0012-自研文件中心与腾讯云COS对象存储.md), and [ADR-0020](../../docs/08-架构决策/ADR-0020-第三方集成运行时与供应商适配器.md).
+
+## CMP-01 lifecycle
+
+The Worker composition root is a NestJS application context with explicit handler registration. Startup fails closed when a required dependency is unavailable. Shutdown first marks the process as draining, aborts handler acquisition signals, invokes each handler's stop hook, and waits for in-flight executions up to the configured deadline. A deadline breach rejects shutdown with the stable `worker_drain_timeout` category; unfinished durable work must remain retryable through the owning module's Outbox/Inbox or job semantics.
+
+`AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS` is strictly bounded and converted to milliseconds once at the process boundary. Worker readiness is an atomic, mode `0600` marker in the container `/tmp` tmpfs. The marker contains only `status` and a millisecond timestamp, is refreshed while the Worker can accept work, and is removed before drain or after a handler/dependency failure. The build copies `worker-healthcheck.mjs` to the production Compose path `dist/worker-healthcheck.mjs`; the check rejects missing, oversized, malformed, stale, or future-dated markers without exposing dependency details.
