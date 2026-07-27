@@ -7,6 +7,7 @@ paths:
     get:
       operationId: listTasks
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.task-center, code: platform.task-center.task-projection:list, resource: platform.task-center.task-projection, action: list }
       parameters:
         - { name: status, in: query, required: false, schema: { $ref: "#/components/schemas/TaskStatus" } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
@@ -20,6 +21,7 @@ paths:
     get:
       operationId: getTask
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.task-center, code: platform.task-center.task-projection:read, resource: platform.task-center.task-projection, action: read }
       parameters: [ { $ref: "#/components/parameters/SourceType" }, { $ref: "#/components/parameters/SourceTaskId" } ]
       responses:
         "200": { description: Projection after current object-level authorization., content: { application/json: { schema: { $ref: "#/components/schemas/TaskProjection" } } } }
@@ -31,6 +33,7 @@ paths:
     post:
       operationId: completeTask
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.task-center, code: platform.task-center.task-projection:complete, resource: platform.task-center.task-projection, action: complete }
       description: Routes an idempotent completion command to the authoritative source. It does not close the projection.
       parameters: [ { $ref: "#/components/parameters/SourceType" }, { $ref: "#/components/parameters/SourceTaskId" }, { $ref: "#/components/parameters/IdempotencyKey" } ]
       responses:
@@ -44,6 +47,7 @@ paths:
     post:
       operationId: reconcileTask
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.task-center, code: platform.task-center.task-projection:reconcile, resource: platform.task-center.task-projection, action: reconcile }
       description: Re-authorizes an operator repair and compares the projection with the authoritative source.
       parameters: [ { $ref: "#/components/parameters/SourceType" }, { $ref: "#/components/parameters/SourceTaskId" } ]
       responses:

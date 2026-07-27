@@ -139,6 +139,16 @@ for (const [host, definition] of [["host-a", productionA], ["host-b", production
       errors.push(`${host}/${name} application container must be read-only and non-root.`);
     }
   }
+  const api = definition.services?.api;
+  if (!api?.secrets?.includes("api_postgres_url") ||
+    api.environment?.AI_CRM_POSTGRES_URL_FILE !== "/run/secrets/api_postgres_url" ||
+    api.environment?.AI_CRM_MIGRATIONS_ROOT !== "/app" ||
+    typeof api.environment?.AI_CRM_API_SCHEMA_VERSION !== "string" ||
+    typeof api.environment?.AI_CRM_KEYCLOAK_JWKS_URI !== "string" ||
+    typeof api.environment?.AI_CRM_API_STARTUP_TIMEOUT_MS !== "string" ||
+    typeof api.environment?.AI_CRM_API_SHUTDOWN_TIMEOUT_MS !== "string") {
+    errors.push(`${host}/api must receive the reviewed production database, migration, identity and lifecycle configuration.`);
+  }
   const edgeTmpfs = definition.services?.edge?.tmpfs?.map(String) ?? [];
   for (const directory of ["/etc/nginx/conf.d", "/var/cache/nginx", "/var/run", "/tmp"]) {
     const mount = edgeTmpfs.find((value) => value.startsWith(`${directory}:`));

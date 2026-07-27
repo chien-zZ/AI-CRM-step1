@@ -150,7 +150,8 @@ export async function renderArtifacts(root) {
   const asyncApiPaths = await walk(resolve(root, "contracts/asyncapi"), (path) => path.endsWith(".yaml"));
   const asyncApiParser = new AsyncApiParser();
   for (const path of asyncApiPaths) {
-    const result = await asyncApiParser.parse(await readFile(path, "utf8"));
+    const source = await readFile(path, "utf8");
+    const result = await asyncApiParser.parse(source, { source: path });
     if (result.diagnostics.some((item) => item.severity === 0)) {
       throw new Error(`${relative(root, path)} is not valid AsyncAPI: ${result.diagnostics.map((item) => item.message).join("; ")}`);
     }

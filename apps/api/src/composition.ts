@@ -47,6 +47,7 @@ export interface ApiPlatformBindings {
   readonly authentication: PcAuthenticationHttpAdapter;
   readonly authenticationCallbackUrl: (requestPathAndQuery: string) => string;
   readonly authorization: AuthorizationService;
+  readonly close?: () => void | Promise<void>;
   readonly databaseCompatibility: DatabaseMigrationCompatibility;
   readonly organization: OrganizationServiceApi;
   readonly queries: ApiQueryBindings;
@@ -56,7 +57,7 @@ export interface ApiPlatformBindings {
 
 export interface ApiPlatformComposition {
   readonly bindings: ApiPlatformBindings;
-  readonly lifecycle: Pick<ApiComposition, "authentication" | "authenticationCallbackUrl" | "dependencies" | "onStart">;
+  readonly lifecycle: Pick<ApiComposition, "authentication" | "authenticationCallbackUrl" | "dependencies" | "onStart" | "onStop">;
   readonly authorize: (input: ProtectedOperationInput) => Promise<Readonly<AuthorizedOperationContext>>;
 }
 
@@ -85,6 +86,7 @@ export function createApiPlatformComposition(bindings: ApiPlatformBindings): Rea
   requireBinding(bindings.audit, "audit");
   requireBinding(bindings.authentication, "authentication");
   requireBinding(bindings.authorization, "authorization");
+  if (bindings.close !== undefined) requireFunction(bindings.close, "close");
   requireBinding(bindings.databaseCompatibility, "database_compatibility");
   requireBinding(bindings.organization, "organization");
   requireBinding(bindings.queries, "queries");
@@ -145,6 +147,7 @@ export function createApiPlatformComposition(bindings: ApiPlatformBindings): Rea
         await bindings.databaseCompatibility.assertCompatible(signal);
         assertStartupActive(signal);
       },
+      ...(bindings.close === undefined ? {} : { onStop: bindings.close }),
     }),
   });
 }

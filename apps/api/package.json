@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@ai-crm/config": "workspace:*",
+    "@ai-crm/database": "workspace:*",
     "@ai-crm/observability": "workspace:*",
     "@ai-crm/platform-app-registry": "workspace:*",
     "@ai-crm/platform-audit": "workspace:*",

@@ -59,7 +59,72 @@ describe("API process bootstrap", () => {
       AI_CRM_INSTANCE_ID: "api-prod-1",
       AI_CRM_RELEASE: "2026.07.27.1",
       NODE_ENV: "production",
-    } } })).rejects.toThrow("api_production_composition_unavailable");
+    } } })).rejects.toMatchObject({ code: "missing_value", variable: "AI_CRM_API_SCHEMA_VERSION" });
+  });
+
+  it("installs cancellation before binding acquisition and aborts it on SIGTERM", async () => {
+    const processPort = new SyntheticProcess();
+    let acquisitionStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { acquisitionStarted = resolve; });
+    const creating = runApiMain({
+      bindingFactory: {
+        create: (_configuration, signal) => new Promise<ApiPlatformBindings>((_resolve, reject) => {
+          acquisitionStarted?.();
+          signal?.addEventListener("abort", () => { reject(new Error("api_start_cancelled")); }, { once: true });
+        }),
+      },
+      configuration: { env: {
+        AI_CRM_API_HOST: "127.0.0.1", AI_CRM_API_PORT: "0", AI_CRM_API_STARTUP_TIMEOUT_MS: "1000", NODE_ENV: "test",
+      } },
+      processPort,
+    });
+    await started;
+    expect(processPort.listeners.size).toBe(2);
+    processPort.emit("SIGTERM");
+    await expect(creating).rejects.toThrow("api_start_cancelled");
+    expect(processPort.exitCode).toBe(0);
+    expect(processPort.listeners.size).toBe(0);
+  });
+
+  it("reports acquisition cleanup failure after SIGTERM as non-zero", async () => {
+    const processPort = new SyntheticProcess();
+    let acquisitionStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { acquisitionStarted = resolve; });
+    const creating = runApiMain({
+      bindingFactory: {
+        create: (_configuration, signal) => new Promise<ApiPlatformBindings>((_resolve, reject) => {
+          acquisitionStarted?.();
+          signal?.addEventListener("abort", () => {
+            reject(new AggregateError([], "api_production_initialization_cleanup_failed"));
+          }, { once: true });
+        }),
+      },
+      configuration: { env: {
+        AI_CRM_API_HOST: "127.0.0.1", AI_CRM_API_PORT: "0", AI_CRM_API_STARTUP_TIMEOUT_MS: "1000", NODE_ENV: "test",
+      } },
+      processPort,
+    });
+    await started;
+    processPort.emit("SIGINT");
+    await expect(creating).rejects.toThrow("api_production_initialization_cleanup_failed");
+    expect(processPort.exitCode).toBe(1);
+  });
+
+  it("classifies a binding acquisition deadline as startup timeout", async () => {
+    const processPort = new SyntheticProcess();
+    const creating = runApiMain({
+      bindingFactory: {
+        create: (_configuration, signal) => new Promise<ApiPlatformBindings>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => { reject(new Error("api_start_cancelled")); }, { once: true });
+        }),
+      },
+      configuration: { env: {
+        AI_CRM_API_HOST: "127.0.0.1", AI_CRM_API_PORT: "0", AI_CRM_API_STARTUP_TIMEOUT_MS: "1", NODE_ENV: "test",
+      } },
+      processPort,
+    });
+    await expect(creating).rejects.toThrow("api_start_timeout");
+    expect(processPort.listeners.size).toBe(0);
   });
 
   it("checks compatibility and performs bounded signal shutdown", async () => {

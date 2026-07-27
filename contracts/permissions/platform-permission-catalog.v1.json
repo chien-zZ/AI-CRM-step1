@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "permissions": [
+    {
+      "owner": "platform.notifications",
+      "code": "platform.notifications.in-app-notification:archive",
+      "resource": "platform.notifications.in-app-notification",
+      "action": "archive",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.notifications",
+      "code": "platform.notifications.in-app-notification:list",
+      "resource": "platform.notifications.in-app-notification",
+      "action": "list",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.notifications",
+      "code": "platform.notifications.in-app-notification:mark-read",
+      "resource": "platform.notifications.in-app-notification",
+      "action": "mark-read",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.notifications",
+      "code": "platform.notifications.in-app-notification:read",
+      "resource": "platform.notifications.in-app-notification",
+      "action": "read",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.task-center",
+      "code": "platform.task-center.task-projection:complete",
+      "resource": "platform.task-center.task-projection",
+      "action": "complete",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.task-center",
+      "code": "platform.task-center.task-projection:list",
+      "resource": "platform.task-center.task-projection",
+      "action": "list",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.task-center",
+      "code": "platform.task-center.task-projection:read",
+      "resource": "platform.task-center.task-projection",
+      "action": "read",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.task-center",
+      "code": "platform.task-center.task-projection:reconcile",
+      "resource": "platform.task-center.task-projection",
+      "action": "reconcile",
+      "scopeDimensions": []
+    }
+  ]
+}
