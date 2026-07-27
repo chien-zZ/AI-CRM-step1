@@ -137,6 +137,42 @@ function assertProductionStartActive(signal: AbortSignal, state: { readonly clos
   if (state.closed || signal.aborted) throw new Error("api_start_cancelled");
 }
 
+function boundedDatabaseHealthCheck(
+  database: DatabaseRuntime,
+  timeoutMs: number,
+  signals: readonly AbortSignal[],
+): Promise<Readonly<{ readonly completion: Promise<void>; readonly healthy: boolean }>> {
+  if (signals.some((signal) => signal.aborted)) {
+    return Promise.resolve(Object.freeze({ completion: Promise.resolve(), healthy: false }));
+  }
+  const healthCheck = database.healthCheck();
+  const completion = healthCheck.then(() => undefined, () => undefined);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (healthy: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const signal of signals) signal.removeEventListener("abort", aborted);
+      resolve(Object.freeze({ completion, healthy }));
+    };
+    const aborted = (): void => { finish(false); };
+    const timer = setTimeout(() => { finish(false); }, timeoutMs);
+    timer.unref();
+    for (const signal of signals) {
+      if (signal.aborted) {
+        finish(false);
+        return;
+      }
+      signal.addEventListener("abort", aborted, { once: true });
+    }
+    void healthCheck.then(
+      (health) => { finish(health.status === "ready"); },
+      () => { finish(false); },
+    );
+  });
+}
+
 function startupAborted(signal: AbortSignal): boolean {
   return signal.aborted;
 }
@@ -197,7 +233,48 @@ export async function createProductionApiPlatformBindings(
   const activeDatabase = database;
   const activeSessions = sessions;
   const activeOidc = oidc;
-  const state = { closed: false, databaseCompatible: false };
+  const state = { closed: false, databaseCompatible: false, databaseHealthy: false };
+  let probeController = new AbortController();
+  let probeGeneration = 0;
+  let probeTimer: NodeJS.Timeout | undefined;
+  const stopDatabaseProbes = (): void => {
+    probeGeneration += 1;
+    if (probeTimer !== undefined) clearTimeout(probeTimer);
+    probeTimer = undefined;
+    probeController.abort();
+    state.databaseHealthy = false;
+  };
+  const scheduleDatabaseProbe = (generation: number, controller: AbortController): void => {
+    if (state.closed || controller.signal.aborted || generation !== probeGeneration) return;
+    probeTimer = setTimeout(() => {
+      probeTimer = undefined;
+      void boundedDatabaseHealthCheck(
+        activeDatabase,
+        configuration.databaseHealthProbe.timeoutMs,
+        [controller.signal],
+      ).then((result) => {
+        if (state.closed || controller.signal.aborted || generation !== probeGeneration) return;
+        state.databaseHealthy = result.healthy;
+        void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
+      });
+    }, configuration.databaseHealthProbe.intervalMs);
+    probeTimer.unref();
+  };
+  const startDatabaseProbes = async (signal: AbortSignal): Promise<void> => {
+    stopDatabaseProbes();
+    probeController = new AbortController();
+    const controller = probeController;
+    const generation = probeGeneration;
+    const result = await boundedDatabaseHealthCheck(
+      activeDatabase,
+      configuration.databaseHealthProbe.timeoutMs,
+      [signal, controller.signal],
+    );
+    assertProductionStartActive(signal, state);
+    if (generation !== probeGeneration || controller.signal.aborted) throw new Error("api_start_cancelled");
+    state.databaseHealthy = result.healthy;
+    void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
+  };
   const sessionService = createPcBffSessionService({
     audit: { record: () => rejected() },
     decryptionKeys: configuration.pcBff.sessionDecryptionKeys,
@@ -226,6 +303,7 @@ export async function createProductionApiPlatformBindings(
       if (state.closed) return;
       state.closed = true;
       state.databaseCompatible = false;
+      stopDatabaseProbes();
       await closeResources(activeSessions, activeDatabase, cleanupTimeoutMs);
     },
     databaseCompatibility: {
@@ -240,10 +318,11 @@ export async function createProductionApiPlatformBindings(
         assertProductionStartActive(signal, state);
         if (!report.compatible) throw new Error("api_database_migration_incompatible");
         state.databaseCompatible = true;
+        await startDatabaseProbes(signal);
       },
     },
     readiness: () => [
-      { healthy: !state.closed && state.databaseCompatible, name: "application-database", required: true },
+      { healthy: !state.closed && state.databaseCompatible && state.databaseHealthy, name: "application-database", required: true },
       { healthy: !state.closed && activeSessions.isReady(), name: "session-store", required: true },
       // No reviewed durable policy store or authentication-audit adapter exists yet.
       { healthy: false, name: "authorization-policy", required: true },

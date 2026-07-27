@@ -5,6 +5,30 @@
 - Reviewer: 独立 Review 多轮完成，本轮生命周期与健康检查范围无开放 P1/P2
 - Allowed paths: `apps/api`、`apps/worker` 的 Composition Root、Module Wiring、启动与健康入口，以及本任务 handoff
 
+## CMP-API-DB-READY 子包边界
+
+### 已知事实
+
+- API 已通过公共 `DatabaseRuntime` 组合有界 PostgreSQL Pool，且启动迁移兼容检查只读、不执行迁移。
+- 当前同步 Readiness 仅缓存启动兼容结果，无法识别启动后的 PostgreSQL 失联。
+
+### 允许的假设
+
+- API 可在兼容检查成功后启动单一、非重叠的运行期数据库探测循环，并以有界技术配置控制间隔和超时。
+- 当前绑定代际内，探测失败将缓存状态置为不可用，后续成功可恢复。
+
+### 禁止的假设
+
+- 不把 Pool 存在、启动检查成功或过期缓存视为当前健康。
+- 探测不执行迁移、DDL、模块查询或跨模块表访问。
+- Stop、Abort、超时或旧代探测不得更新状态或继续调度。
+- 健康响应不得暴露 SQL、错误详情、依赖名称、拓扑或 Secret。
+
+### 非目标
+
+- 不处理授权策略、认证审计、Organization、受保护 Controller、Worker/RabbitMQ、Compose、迁移、合同或 Lockfile。
+- 不声明生产高可用、自动故障转移、SLA、RPO 或 RTO。
+
 ## 已知事实
 
 - 多线执行总表已记录全部模块通过 G2，CMP-01 为 READY，旧的 G2 阻塞结论已经失效。
@@ -45,18 +69,19 @@
 - API 的 principal → Workforce Context → Authorization 链只通过模块公共入口组合；开发/测试默认工厂可执行且 Readiness 失败关闭，生产真实工厂缺失时明确拒绝启动。
 - Worker 已提供密封 Handler Registry、全体 Ready 后统一取活、运行期依赖失效 Fatal Drain、实际 Rabbit Binding ID/并发/Prefetch/在途 Drain Port，以及 Outbox、Inbox、文件维护、任务对账和通知 Intent Handler。
 - `@ai-crm/database` 已增加只读 Pool-based 迁移兼容检查；全局迁移 `0000000011` 将 Schema 兼容范围持久化到迁移注册表，应用启动仍不运行迁移。
+- API 已在兼容检查后通过公共 `DatabaseRuntime.healthCheck()` 启动有界、非重叠的 PostgreSQL 运行期探测缓存；失败摘除、后续成功恢复，Stop/Abort 会清除定时器、失效代际并拒绝迟到更新。
 
 ## 尚未完成
 
 - 生产 API Binding Factory 已闭合 PostgreSQL、Redis Session、OIDC、迁移检查和资源生命周期；Organization、持久化 Authorization Policy/Decision、认证 Audit 及查询 Facade 仍无已审核生产适配器。
 - Task/Notification 的 9 个 HTTP operation 已映射到 8 个业务中立平台权限；未创建角色或 Grant。Registry/Form/File 仍无 HTTP 模块合同，受保护 Controller 仍不得越过合同先行要求。
 - AsyncAPI 已声明 Task projection 主路由与 DLQ，明确 Confirm/ACK/Attempt/VHost 规则；因事件运行策略值和无队头阻塞的延迟机制尚未审定，生产消费显式禁用。Worker 生产组合继续失败关闭。
-- API 已组合文件式 PostgreSQL/Redis/OIDC/会话配置、只读迁移兼容检查和有界资源生命周期；持久化授权策略与认证审计未确认，因此生产 Readiness 保持失败关闭。
+- API 已组合文件式 PostgreSQL/Redis/OIDC/会话配置、只读迁移兼容检查、运行期数据库 Readiness 探测和有界资源生命周期；持久化授权策略与认证审计未确认，因此生产 Readiness 保持失败关闭。
 - 接入真实 Error Reporter/Trace、Worker RabbitMQ/数据库 Secret、Worker Drain 与 `stop_grace_period` 静态关系，并补 Worker 真实消息联合测试。
 
 ## 验证
 
-- API：普通门 85 tests passed、5 integration tests skipped；真实 PostgreSQL/Redis/Keycloak 认证集成 88/88 通过；专项 lint/typecheck/build/contracts 通过。
+- API：普通门 90 tests passed、5 integration tests skipped；真实 PostgreSQL/Redis/Keycloak 认证集成最近证据 88/88 通过；专项 lint/typecheck/build/contracts 通过。
 - Worker：45/45 tests passed；专项 lint/typecheck/build/contracts 通过；7 个真实 Node 子进程场景覆盖 Handler Fatal Exit、SIGINT/SIGTERM、启动取消、Drain Timeout、生产空组合失败和 Readiness 清理。
 - Database：普通门 23 tests passed、1 integration test skipped；隔离 PostgreSQL 运行全仓 11 条迁移及兼容检查 24/24 通过。
 - Lockfile 由单一 Owner 离线更新；完整 `pnpm check` 140/140、`pnpm compose:test:integration`、`pnpm db:test:integration`、`pnpm auth:test:integration` 全部通过，临时容器、网络和 Volume 已清理。

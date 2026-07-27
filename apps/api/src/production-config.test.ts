@@ -51,6 +51,7 @@ describe("production API configuration", () => {
   it("loads bounded database, IAM, Redis and migration settings from typed references", async () => {
     const result = await loadProductionApiConfiguration({ env, secretFilePolicy });
     expect(result.database).toMatchObject({ applicationName: "ai_crm_api", maxConnections: 10 });
+    expect(result.databaseHealthProbe).toEqual({ intervalMs: 10_000, timeoutMs: 2_000 });
     expect(result.database.connectionString).toBe(secrets["/run/secrets/database"]);
     expect(result.migrations).toHaveLength(10);
     expect(result.oidcVerifier.jwksTimeoutMs).toBe(5_000);
@@ -61,5 +62,16 @@ describe("production API configuration", () => {
       env: { ...env, AI_CRM_API_SCHEMA_VERSION: "2026.07.27.1" },
       secretFilePolicy,
     })).rejects.toMatchObject({ code: "invalid_value", variable: "AI_CRM_API_SCHEMA_VERSION" });
+  });
+
+  it("requires a health timeout shorter than the non-overlapping probe interval", async () => {
+    await expect(loadProductionApiConfiguration({
+      env: {
+        ...env,
+        AI_CRM_API_POSTGRES_HEALTH_INTERVAL_MS: "1000",
+        AI_CRM_API_POSTGRES_HEALTH_TIMEOUT_MS: "1000",
+      },
+      secretFilePolicy,
+    })).rejects.toThrow("api_database_health_window_invalid");
   });
 });
