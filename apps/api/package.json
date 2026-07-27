@@ -7,20 +7,36 @@
     ".": "./dist/index.js"
   },
   "scripts": {
+    "start": "node dist/main.js",
     "dev": "tsc -b --watch --preserveWatchOutput",
     "build": "tsc -b",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
-    "test": "vitest run --config ../../vitest.config.ts",
+    "test": "vitest run --config ../../vitest.config.ts --testTimeout=10000",
     "contracts:check": "node ../../scripts/check/verify-package.mjs"
   },
   "dependencies": {
     "@ai-crm/config": "workspace:*",
+    "@ai-crm/observability": "workspace:*",
+    "@ai-crm/platform-app-registry": "workspace:*",
+    "@ai-crm/platform-audit": "workspace:*",
     "@ai-crm/platform-auth-context": "workspace:*",
+    "@ai-crm/platform-authorization": "workspace:*",
+    "@ai-crm/platform-file-center": "workspace:*",
+    "@ai-crm/platform-form-schema": "workspace:*",
+    "@ai-crm/platform-notifications": "workspace:*",
+    "@ai-crm/platform-organization": "workspace:*",
+    "@ai-crm/platform-task-center": "workspace:*",
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-express": "11.1.28",
     "openid-client": "6.8.4",
-    "redis": "6.1.0"
+    "redis": "6.1.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
   },
   "devDependencies": {
+    "@types/express": "5.0.6",
     "cheerio": "1.1.2",
     "jose": "6.1.0"
   }

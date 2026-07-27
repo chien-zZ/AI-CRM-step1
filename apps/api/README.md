@@ -31,7 +31,19 @@ Redis stores short-lived login transactions and encrypted Token sets; session lo
 
 The OAuth Client ID and API resource Audience are separate values. The development/test Realm maps `ai-crm-api` only into Access Tokens; the verifier also binds `azp` to the PC BFF Client ID. This rejects ID Token substitution without adding business claims.
 
-The current source exposes framework-neutral authentication factories and ports. HTTP controller composition remains blocked until the API composition root enters its reviewed stage.
+The CMP-01 application root now starts a NestJS HTTP application and exposes the reviewed `/health/live` and `/health/ready` contract. Required dependencies are supplied explicitly by the composition caller; an unavailable required dependency returns `503` without exposing dependency names or topology. Authentication and platform facades remain injected through their public entry points as their controllers are registered; the composition root does not create repositories or domain rules.
+
+The reviewed PC BFF routes (`/auth/pc/login`, `/auth/pc/callback`, `/auth/pc/session`, `/auth/pc/refresh`, and `/auth/pc/logout`) delegate to the IAM-01 HTTP adapter. Cookie, Origin, Referer, and CSRF values are bounded and rejected when repeated before being passed to that adapter; their values are never logged.
+
+Database startup requires an injected, deadline-aware `databaseCompatibility.assertCompatible` binding. The earlier connection-string convenience adapter was removed because the database public check does not yet accept AbortSignal or expose cancellation of an in-flight query. The eventual production binding must use an application-owned, bounded Pool and an explicit semantic `applicationSchemaVersion`; the schema version is not `AI_CRM_RELEASE`. Startup never runs migrations or schema synchronization.
+
+Process configuration is parsed through `@ai-crm/config`. The reviewed defaults bind container traffic on `0.0.0.0:3000`; `AI_CRM_API_HOST` is restricted to reviewed local/container bind addresses, `AI_CRM_API_PORT` must be a valid TCP port, and `AI_CRM_RELEASE` is a bounded immutable release identifier. These settings do not make the API ready until its required module dependencies are composed and healthy.
+
+`pnpm --filter @ai-crm/api start` executes `dist/main.js`. Development and tests load an application-owned, business-neutral synthetic composition whose capability probes and operations remain unavailable; it cannot be selected in production. Production fails closed in the application-owned factory with `api_production_composition_unavailable` until reviewed PostgreSQL/Redis Secret-file configuration and concrete persistence factories exist. SIGINT/SIGTERM listeners are installed before startup begins; shutdown and failed-start cleanup are deadline-bounded, and a cleanup or stop failure makes that process instance terminal.
+
+The current internal OpenAPI contains Task Center and Notification routes, but it does not bind those operations to IAM-03 `PermissionRequest` resource/action values. App Registry, Form Schema, and File Center have no HTTP module contracts in the current bundle. Therefore no protected capability Controller is registered yet: doing so would invent permission declarations or paths. The explicit principal → workforce context → authorization and audit/query bindings remain fail-closed composition prerequisites, not evidence that protected HTTP operations are complete.
+
+Known facts: all bindings use package public entry points; only reviewed authentication and health routes are registered. Allowed assumptions: tests may inject synthetic fakes and listen on a random port. Forbidden assumptions: a release version is a schema version, startup may apply migrations, or authentication implies workforce/authorization. Non-goals: CRM routes, generic external access, provider adapters, policy declarations, and business authorization rules.
 
 ### Authentication integration test
 

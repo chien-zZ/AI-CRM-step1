@@ -1,1 +1,4 @@
-{ "extends": "../../packages/tsconfig/base.json" }
+{
+  "extends": "../../packages/tsconfig/base.json",
+  "compilerOptions": { "emitDecoratorMetadata": true, "experimentalDecorators": true }
+}
