@@ -348,6 +348,7 @@ export {
   type ProtectedOperationInput,
 } from "./composition.js";
 export { loadApiRuntimeConfiguration, type ApiRuntimeConfiguration } from "./runtime-config.js";
+export { loadProductionApiConfiguration, type ProductionApiConfiguration } from "./production-config.js";
 export {
   bootstrapApiProcess,
   runApiMain,
@@ -357,6 +358,8 @@ export {
   type RunningApiProcess,
 } from "./main.js";
 export {
+  createProductionApiPlatformBindings,
   defaultApiPlatformBindingFactory,
   type ApiPlatformBindingFactory,
+  type ProductionApiBindingDependencies,
 } from "./composition-factory.js";

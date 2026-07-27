@@ -1,7 +1,311 @@
 asyncapi: 3.0.0
 info:
   title: AI-CRM RabbitMQ Topology
-  version: 0.1.0
-  description: Business-neutral topology root. Channels are added only with reviewed event or job contracts.
-channels: {}
-operations: {}
+  version: 0.2.0
+  description: >-
+    Business-neutral, at-least-once RabbitMQ topology. Message payloads reference
+    transport-neutral event or private Job contracts. Only reviewed consumers
+    receive queues; a schema existing here does not by itself authorize a route.
+defaultContentType: application/json
+channels:
+  taskProjectionLifecycleExchange:
+    address: task-center.projection-lifecycle.v1
+    title: Task Center projection lifecycle delivery
+    description: >-
+      Delivers versioned source task projections to the Task Center consumer.
+      Duplicate, delayed and out-of-order delivery is expected.
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: ai-crm.platform.events.v1
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.3.0
+  taskProjectionLifecycleQueue:
+    address: ai-crm.platform.task-center.projection.v1
+    title: Task Center projection consumer queue
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: ai-crm.platform.task-center.projection.v1
+          durable: true
+          exclusive: false
+          autoDelete: false
+        bindingVersion: 0.3.0
+    x-ai-crm-consumer: platform.task-center.projection.v1
+    x-ai-crm-prefetch-source: application-runtime-config
+    x-ai-crm-bindings:
+      - exchange: ai-crm.platform.events.v1
+        routingKey: task-center.projection-lifecycle.v1
+    x-ai-crm-queue-arguments:
+      x-dead-letter-exchange: ai-crm.platform.dead-letter.v1
+      x-dead-letter-routing-key: task-center.projection-lifecycle.v1.dead
+  taskProjectionLifecycleDeadLetterExchange:
+    address: task-center.projection-lifecycle.v1.dead
+    title: Task Center projection terminal failure isolation
+    description: >-
+      Isolates terminal failures and deliveries that exhausted their reviewed
+      retry budget. It is not consumed automatically; replay remains disabled
+      until a distinct authorization and audit contract is reviewed.
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: ai-crm.platform.dead-letter.v1
+          type: direct
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.3.0
+  taskProjectionLifecycleDeadLetterQueue:
+    address: ai-crm.platform.task-center.projection.dead.v1
+    title: Task Center projection dead-letter queue
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: ai-crm.platform.task-center.projection.dead.v1
+          durable: true
+          exclusive: false
+          autoDelete: false
+        bindingVersion: 0.3.0
+    x-ai-crm-bindings:
+      - exchange: ai-crm.platform.dead-letter.v1
+        routingKey: task-center.projection-lifecycle.v1.dead
+    x-ai-crm-replay:
+      automatic: false
+      enabled: false
+      blockedBy: reviewed-dlq-replay-authorization-contract
+      auditRequired: true
+      authoritativeStateRecheckRequired: true
+operations:
+  publishTaskProjectionLifecycle:
+    action: send
+    channel:
+      $ref: '#/channels/taskProjectionLifecycleExchange'
+    messages:
+      - $ref: '#/channels/taskProjectionLifecycleExchange/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        mandatory: true
+        deliveryMode: 2
+        bindingVersion: 0.3.0
+    x-ai-crm-publisher-confirm: required
+  consumeTaskProjectionLifecycle:
+    action: receive
+    channel:
+      $ref: '#/channels/taskProjectionLifecycleQueue'
+    messages:
+      - $ref: '#/channels/taskProjectionLifecycleQueue/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        ack: true
+        bindingVersion: 0.3.0
+    x-ai-crm-ack-mode: manual-after-inbox-transaction
+    x-ai-crm-delivery-semantics: at-least-once
+    x-ai-crm-activation:
+      enabled: false
+      blockedBy:
+        - reviewed-event-runtime-policy-values
+        - reviewed-rabbitmq-delay-mechanism
+    x-ai-crm-failure-handling:
+      immediateRequeue: false
+      retryPublishConfirmBeforeAck: true
+      retryBudgetSource: reviewed-event-runtime-policy
+      retryRoute: unresolved
+      terminalRoute: task-center.projection-lifecycle.v1.dead
+      exhaustedRoute: task-center.projection-lifecycle.v1.dead
+components:
+  messages:
+    organizationChangeV1:
+      name: organizationChangeV1
+      title: Organization change event v1
+      summary: Reviewed organization change event; no consumer queue is inferred.
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/rabbitMessageHeadersV1'
+      payload:
+        allOf:
+          - $ref: ../events/event-envelope.v1.schema.json
+          - type: object
+            required: [type, dataschema, data]
+            properties:
+              type:
+                const: organization.change.v1
+              dataschema:
+                const: urn:ai-crm:events:organization-change:v1
+              data:
+                $ref: ../events/organization-change.v1.schema.json
+    workflowProcessLifecycleV1:
+      name: workflowProcessLifecycleV1
+      title: Workflow process lifecycle event v1
+      summary: Reviewed Workflow process event; no consumer queue is inferred.
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/rabbitMessageHeadersV1'
+      payload:
+        allOf:
+          - $ref: ../events/event-envelope.v1.schema.json
+          - type: object
+            required: [type, dataschema, data]
+            properties:
+              type:
+                const: workflow.process-lifecycle.v1
+              dataschema:
+                const: urn:ai-crm:events:workflow-process-lifecycle:v1
+              data:
+                $ref: ../events/workflow-process-lifecycle.v1.schema.json
+    workflowTaskLifecycleV1:
+      name: workflowTaskLifecycleV1
+      title: Workflow task lifecycle event v1
+      summary: Reviewed Workflow task event; no consumer queue is inferred.
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/rabbitMessageHeadersV1'
+      payload:
+        allOf:
+          - $ref: ../events/event-envelope.v1.schema.json
+          - type: object
+            required: [type, dataschema, data]
+            properties:
+              type:
+                const: workflow.task-lifecycle.v1
+              dataschema:
+                const: urn:ai-crm:events:workflow-task-lifecycle:v1
+              data:
+                $ref: ../events/workflow-task-lifecycle.v1.schema.json
+    taskProjectionLifecycleV1:
+      name: taskProjectionLifecycleV1
+      title: Task projection lifecycle event v1
+      summary: Versioned, replayable input owned by the Task Center projection.
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/rabbitMessageHeadersV1'
+      payload:
+        allOf:
+          - $ref: ../events/event-envelope.v1.schema.json
+          - type: object
+            required: [type, dataschema, data]
+            properties:
+              type:
+                const: task-center.projection-lifecycle.v1
+              dataschema:
+                const: urn:ai-crm:events:task-projection-lifecycle:v1
+              data:
+                $ref: ../events/task-projection-lifecycle.v1.schema.json
+      x-ai-crm-compatibility: backward-compatible-v1
+      x-ai-crm-ordering:
+        global: false
+        staleGuard: data.sourceType+data.sourceTaskId+data.sourceVersion
+    privateWorkerJobV1:
+      name: privateWorkerJobV1
+      title: Private Worker job envelope v1
+      summary: >-
+        Reusable Job message component. No channel is declared until a concrete,
+        reviewed jobType and owning handler exist.
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/rabbitMessageHeadersV1'
+      payload:
+        $ref: ../jobs/job-envelope.v1.schema.json
+      x-ai-crm-policy-source: payload.policy
+  schemas:
+    rabbitMessageHeadersV1:
+      type: object
+      additionalProperties: true
+      required:
+        - x-ai-crm-kind
+        - x-ai-crm-version
+        - x-ai-crm-publish-attempt
+        - x-ai-crm-delivery-attempt
+      properties:
+        x-ai-crm-kind:
+          type: string
+          enum: [event, job]
+        x-ai-crm-version:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        x-ai-crm-publish-attempt:
+          type: integer
+          minimum: 1
+        x-ai-crm-delivery-attempt:
+          type: integer
+          minimum: 1
+          maximum: 16
+        x-ai-crm-causation-id:
+          type: string
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        traceparent:
+          type: string
+          pattern: '^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
+        tracestate:
+          type: string
+          maxLength: 512
+x-ai-crm-topology-policy:
+  vhost:
+    valueSource: application-runtime-config
+    environmentIsolated: true
+    emptyOrImplicitDefaultForbidden: true
+  durableEntities: true
+  publisherConfirms: required
+  mandatoryPublish: true
+  consumerAcknowledgement: manual-after-local-transaction
+  immediateRequeue: forbidden
+  credentials: separate-least-privilege-file-references
+  transportEncryption: required
+  maximumMessageBytes: 262144
+  payloadLogging: forbidden
+  retryPolicy:
+    bounded: true
+    eventPolicySource: reviewed-event-runtime-policy
+    jobPolicySource: payload.policy
+    retryPublishConfirmBeforeAck: true
+    delayMechanism: unresolved
+    consumerActivationBeforeResolution: forbidden
+  deliveryAttempt:
+    header: x-ai-crm-delivery-attempt
+    initialPublicationValue: 1
+    consumedDeliveryHeaderRequired: true
+    retryAllowedWhen: N < maxAttempts
+    retryPublicationValue: N + 1
+    retryDelaySeconds: backoffSeconds[N - 1]
+    retryPublicationConfirmRequiredBeforeAck: true
+    deadLetterExchangePreservesValue: true
+    outboxPublishAttemptIsIndependent: true
+  deadLetterPolicy:
+    automaticReplay: false
+    replayEnabled: false
+    replayAuthorizationContract: unresolved
+    authorizationAndAuditRequiredBeforeEnablement: true
+    authoritativeStateRecheckRequired: true
+  observability:
+    identifiers:
+      - message_id
+      - message_type
+      - message_version
+      - producer
+      - consumer
+      - correlation_id
+      - causation_id
+      - trace_id
+    excludes:
+      - message_payload
+      - credentials
+      - tokens
+      - personal_data
+      - provider_payloads

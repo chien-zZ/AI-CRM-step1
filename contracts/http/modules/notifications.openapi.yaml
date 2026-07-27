@@ -5,6 +5,7 @@ paths:
     get:
       operationId: listNotifications
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.notifications, code: platform.notifications.in-app-notification:list, resource: platform.notifications.in-app-notification, action: list }
       parameters:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: cursor, in: query, schema: { type: string, maxLength: 128 } }
@@ -18,6 +19,7 @@ paths:
     get:
       operationId: getNotificationUnreadCount
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.notifications, code: platform.notifications.in-app-notification:list, resource: platform.notifications.in-app-notification, action: list }
       responses:
         "200": { description: Current principal's unread count., content: { application/json: { schema: { type: object, additionalProperties: false, required: [count], properties: { count: { type: integer, minimum: 0 } } } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -27,6 +29,7 @@ paths:
     get:
       operationId: getNotification
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.notifications, code: platform.notifications.in-app-notification:read, resource: platform.notifications.in-app-notification, action: read }
       parameters: [ { $ref: "#/components/parameters/NotificationId" } ]
       responses:
         "200": { description: Current principal's notification after object authorization., content: { application/json: { schema: { $ref: "#/components/schemas/InAppNotification" } } } }
@@ -38,6 +41,7 @@ paths:
     post:
       operationId: markNotificationRead
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.notifications, code: platform.notifications.in-app-notification:mark-read, resource: platform.notifications.in-app-notification, action: mark-read }
       description: Idempotently changes only the current principal's in-app read state; it never completes a task or business action.
       parameters: [ { $ref: "#/components/parameters/NotificationId" } ]
       responses:
@@ -50,6 +54,7 @@ paths:
     post:
       operationId: archiveNotification
       x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.notifications, code: platform.notifications.in-app-notification:archive, resource: platform.notifications.in-app-notification, action: archive }
       parameters: [ { $ref: "#/components/parameters/NotificationId" } ]
       responses:
         "200": { description: Idempotently archived in-app notification., content: { application/json: { schema: { $ref: "#/components/schemas/InAppNotification" } } } }

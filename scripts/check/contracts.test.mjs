@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { checkArtifacts, renderArtifacts, selectReferencedSchemas } from "../contracts/generate.mjs";
+import "../../contracts/asyncapi/topology.contract.test.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -24,6 +25,18 @@ test("generated contract artifacts are deterministic and tamper evident", async 
     assert((await checkArtifacts(artifactRoot, first)).includes(`${path} differs from its generated source.`));
   } finally {
     await rm(artifactRoot, { force: true, recursive: true });
+  }
+});
+
+test("AsyncAPI references resolve independently of the process working directory", async () => {
+  const previous = process.cwd();
+  const unrelated = await mkdtemp(resolve(tmpdir(), "ai-crm-contract-cwd-"));
+  try {
+    process.chdir(unrelated);
+    await renderArtifacts(root);
+  } finally {
+    process.chdir(previous);
+    await rm(unrelated, { force: true, recursive: true });
   }
 });
 

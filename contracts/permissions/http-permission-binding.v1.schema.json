@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ai-crm.local/permissions/v1/http-permission-binding.schema.json",
+  "title": "HTTP Permission Binding",
+  "description": "Maps one protected HTTP operation to the exact business-neutral PermissionRequest resource and action owned by a platform or domain module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "owner", "code", "resource", "action"],
+  "properties": {
+    "version": { "const": 1 },
+    "owner": { "$ref": "#/$defs/identifier" },
+    "code": { "$ref": "#/$defs/permissionCode" },
+    "resource": { "$ref": "#/$defs/identifier" },
+    "action": { "$ref": "#/$defs/action" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "permissionCode": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 193,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[a-z][a-z0-9-]*$"
+    }
+  }
+}

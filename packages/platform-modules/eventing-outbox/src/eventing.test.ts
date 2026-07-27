@@ -105,7 +105,7 @@ describe("RabbitMQ boundary", () => {
     const channel: RabbitConfirmChannel = { assertDurableExchange: () => { calls.push("assert"); return Promise.resolve(); }, publishMandatory: (_e, _r, _p, value) => { calls.push("publish"); properties=value; return true; }, waitForDrain: () => Promise.resolve(), waitForConfirms: () => { calls.push("confirm"); return Promise.resolve(); }, takeReturned:()=>false };
     const transport=await createRabbitConfirmTransport(channel,{exchange:"ai-crm.synthetic",exchangeType:"topic",routes:[{messageKind:"event",messageType:"platform.synthetic.changed.v1",messageVersion:1,routingKey:"platform.synthetic.changed.v1"}]});
     await transport.publish({attempt:1,messageId:randomUUID(),messageKind:"event",messageType:"platform.synthetic.changed.v1",messageVersion:1,producer:"urn:ai-crm:walking-skeleton",correlationId:randomUUID(),payload:"{}"});
-    expect(calls).toEqual(["assert","publish","confirm"]); expect(properties).toMatchObject({persistent:true,contentType:"application/json"});
+    expect(calls).toEqual(["assert","publish","confirm"]); expect(properties).toMatchObject({persistent:true,contentType:"application/json",headers:{"x-ai-crm-delivery-attempt":1,"x-ai-crm-publish-attempt":1}});
   });
   it("rejects a confirmed mandatory publication returned as unroutable", async()=>{
     const channel:RabbitConfirmChannel={assertDurableExchange:()=>Promise.resolve(),publishMandatory:()=>true,waitForDrain:()=>Promise.resolve(),waitForConfirms:()=>Promise.resolve(),takeReturned:()=>true};

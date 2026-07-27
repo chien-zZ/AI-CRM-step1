@@ -971,7 +971,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "list",
+          "code": "platform.notifications.in-app-notification:list",
+          "owner": "platform.notifications",
+          "resource": "platform.notifications.in-app-notification",
+          "version": 1
+        }
       }
     },
     "/notifications/{notificationId}": {
@@ -1152,7 +1159,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "read",
+          "code": "platform.notifications.in-app-notification:read",
+          "owner": "platform.notifications",
+          "resource": "platform.notifications.in-app-notification",
+          "version": 1
+        }
       }
     },
     "/notifications/{notificationId}/archive": {
@@ -1333,7 +1347,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "archive",
+          "code": "platform.notifications.in-app-notification:archive",
+          "owner": "platform.notifications",
+          "resource": "platform.notifications.in-app-notification",
+          "version": 1
+        }
       }
     },
     "/notifications/{notificationId}/read": {
@@ -1515,7 +1536,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "mark-read",
+          "code": "platform.notifications.in-app-notification:mark-read",
+          "owner": "platform.notifications",
+          "resource": "platform.notifications.in-app-notification",
+          "version": 1
+        }
       }
     },
     "/notifications/unread-count": {
@@ -1554,7 +1582,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "list",
+          "code": "platform.notifications.in-app-notification:list",
+          "owner": "platform.notifications",
+          "resource": "platform.notifications.in-app-notification",
+          "version": 1
+        }
       }
     },
     "/tasks": {
@@ -1709,7 +1744,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "list",
+          "code": "platform.task-center.task-projection:list",
+          "owner": "platform.task-center",
+          "resource": "platform.task-center.task-projection",
+          "version": 1
+        }
       }
     },
     "/tasks/{sourceType}/{sourceTaskId}": {
@@ -1836,7 +1878,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "read",
+          "code": "platform.task-center.task-projection:read",
+          "owner": "platform.task-center",
+          "resource": "platform.task-center.task-projection",
+          "version": 1
+        }
       }
     },
     "/tasks/{sourceType}/{sourceTaskId}/complete": {
@@ -1915,7 +1964,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "complete",
+          "code": "platform.task-center.task-projection:complete",
+          "owner": "platform.task-center",
+          "resource": "platform.task-center.task-projection",
+          "version": 1
+        }
       }
     },
     "/tasks/{sourceType}/{sourceTaskId}/reconcile": {
@@ -2058,7 +2114,14 @@
         },
         "x-ai-crm-audiences": [
           "internal"
-        ]
+        ],
+        "x-ai-crm-permission": {
+          "action": "reconcile",
+          "code": "platform.task-center.task-projection:reconcile",
+          "owner": "platform.task-center",
+          "resource": "platform.task-center.task-projection",
+          "version": 1
+        }
       }
     }
   },

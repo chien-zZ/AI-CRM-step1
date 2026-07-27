@@ -23,6 +23,7 @@ export interface OidcClientConfiguration {
   readonly clientSecret: string;
   readonly issuer: string;
   readonly redirectUri: string;
+  readonly signal?: AbortSignal;
   readonly timeoutSeconds: number;
 }
 
@@ -150,12 +151,17 @@ export async function createOidcClient(
   const issuer = new URL(input.issuer);
   const redirectUri = new URL(input.redirectUri);
   const guardedFetch: CustomFetch = async (url, options): Promise<Response> => {
+    const signal = input.signal === undefined
+      ? options.signal
+      : options.signal === undefined
+        ? input.signal
+        : AbortSignal.any([options.signal, input.signal]);
     const requestOptions = {
       headers: options.headers,
       method: options.method,
       redirect: options.redirect,
       ...(options.body === undefined ? {} : { body: options.body }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(signal === undefined ? {} : { signal }),
     } satisfies RequestInit;
     const response = await fetch(url, requestOptions);
     if (response.status === 429 || response.status >= 500) {
@@ -165,6 +171,7 @@ export async function createOidcClient(
   };
   let configuration: Configuration;
   try {
+    if (input.signal?.aborted) throw new BrowserSessionFailure("authentication_dependency_unavailable");
     const insecureExecution = allowInsecureLoopback(issuer);
     configuration = await discovery(
       issuer,

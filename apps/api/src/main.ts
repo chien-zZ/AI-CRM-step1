@@ -34,7 +34,7 @@ export async function bootstrapApiProcess(options: BootstrapApiProcessOptions): 
     shutdownTimeoutMs: options.configuration.shutdownTimeoutMs,
     startupTimeoutMs: options.configuration.startupTimeoutMs,
   });
-  const processPort = options.processPort ?? process;
+  const processPort = (options.processPort ?? process) as ApiProcessPort;
   let shutdownPromise: Promise<void> | undefined;
   const removeListeners = (): void => {
     processPort.off("SIGTERM", stopFromSignal);
@@ -88,12 +88,46 @@ export async function runApiMain(options: RunApiMainOptions = {}): Promise<Reado
     service: "api",
     version: configuration.release,
   });
-  const bindings = await (options.bindingFactory ?? defaultApiPlatformBindingFactory).create(configuration);
+  const processPort = (options.processPort ?? process) as ApiProcessPort;
+  const controller = new AbortController();
+  let interrupted = false;
+  const stopAcquisition = (): void => {
+    interrupted = true;
+    controller.abort();
+  };
+  const wasInterrupted = (): boolean => interrupted;
+  processPort.once("SIGTERM", stopAcquisition);
+  processPort.once("SIGINT", stopAcquisition);
+  const timer = setTimeout(() => { controller.abort(); }, configuration.startupTimeoutMs);
+  let bindings: ApiPlatformBindings;
+  try {
+    bindings = await (options.bindingFactory ?? defaultApiPlatformBindingFactory).create(configuration, controller.signal);
+    if (controller.signal.aborted) {
+      await bindings.close?.();
+      throw new Error(wasInterrupted() ? "api_start_cancelled" : "api_start_timeout");
+    }
+  } catch (error) {
+    const cancelled = wasInterrupted() && error instanceof Error && error.message === "api_start_cancelled";
+    const timedOut = !wasInterrupted() && controller.signal.aborted &&
+      error instanceof Error && error.message === "api_start_cancelled";
+    if (wasInterrupted()) processPort.exitCode = cancelled ? 0 : 1;
+    logger.log("error", {
+      errorCode: cancelled ? "api_start_cancelled" : timedOut ? "api_start_timeout" : "api_binding_factory_failed",
+      operation: "api.process.bindings",
+      outcome: "failed",
+    });
+    if (timedOut) throw new Error("api_start_timeout", { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    processPort.off("SIGTERM", stopAcquisition);
+    processPort.off("SIGINT", stopAcquisition);
+  }
   return bootstrapApiProcess({
     bindings,
     configuration,
     logger,
-    ...(options.processPort === undefined ? {} : { processPort: options.processPort }),
+    processPort,
   });
 }
 

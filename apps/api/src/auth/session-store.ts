@@ -45,6 +45,7 @@ export interface RedisSessionConnection {
 export interface RedisSessionConnectionConfig {
   readonly connectTimeoutMs: number;
   readonly password: string;
+  readonly signal?: AbortSignal;
   readonly url: string;
 }
 
@@ -319,15 +320,23 @@ export async function connectRedisSessionStore(
 ): Promise<Readonly<RedisSessionConnection>> {
   const client = createClient({
     password: config.password,
-    socket: { connectTimeout: config.connectTimeoutMs },
+    socket: { connectTimeout: config.connectTimeoutMs, reconnectStrategy: false },
     url: config.url,
   });
   client.on("error", () => undefined);
+  const abort = (): void => { client.destroy(); };
+  if (config.signal?.aborted) {
+    client.destroy();
+    throw new BrowserSessionFailure("authentication_dependency_unavailable");
+  }
+  config.signal?.addEventListener("abort", abort, { once: true });
   try {
     await client.connect();
   } catch {
     client.destroy();
     throw new BrowserSessionFailure("authentication_dependency_unavailable");
+  } finally {
+    config.signal?.removeEventListener("abort", abort);
   }
   const executor: RedisCommandExecutor = {
     async sendCommand(arguments_: readonly string[]): Promise<unknown> {

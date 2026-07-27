@@ -156,7 +156,14 @@ services:
     environment:
       NODE_ENV: production
       AI_CRM_RELEASE: ${AI_CRM_RELEASE_ID:?release id is required}
+      AI_CRM_INSTANCE_ID: api-a
+      AI_CRM_API_SCHEMA_VERSION: ${AI_CRM_API_SCHEMA_VERSION:?application schema version is required}
+      AI_CRM_API_STARTUP_TIMEOUT_MS: ${AI_CRM_API_STARTUP_TIMEOUT_MS:?API startup timeout is required}
+      AI_CRM_API_SHUTDOWN_TIMEOUT_MS: ${AI_CRM_API_SHUTDOWN_TIMEOUT_MS:?API shutdown timeout is required}
+      AI_CRM_POSTGRES_URL_FILE: /run/secrets/api_postgres_url
+      AI_CRM_MIGRATIONS_ROOT: /app
       AI_CRM_KEYCLOAK_ISSUER: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}
+      AI_CRM_KEYCLOAK_JWKS_URI: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}/protocol/openid-connect/certs
       AI_CRM_PC_OIDC_CLIENT_ID: ${AI_CRM_PC_OIDC_CLIENT_ID:?required}
       AI_CRM_OIDC_API_AUDIENCE: ${AI_CRM_OIDC_API_AUDIENCE:?required}
       AI_CRM_PC_OIDC_REDIRECT_URI: https://${AI_CRM_PUBLIC_HOST:?public host is required}/bff/auth/callback
@@ -173,7 +180,7 @@ services:
       AI_CRM_PC_OIDC_TIMEOUT_SECONDS: ${AI_CRM_PC_OIDC_TIMEOUT_SECONDS:?required}
       AI_CRM_PC_REFRESH_LEASE_TTL_MS: ${AI_CRM_PC_REFRESH_LEASE_TTL_MS:?required}
       AI_CRM_REDIS_CONNECT_TIMEOUT_MS: ${AI_CRM_REDIS_CONNECT_TIMEOUT_MS:?required}
-    secrets: [pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
+    secrets: [api_postgres_url, pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
     ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:${AI_CRM_API_PORT_A:?host A API port is required}:3000"]
     networks: [app]
     healthcheck:
@@ -234,6 +241,7 @@ secrets:
   postgres_migration_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_migration_password" }
   postgres_keycloak_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_keycloak_password" }
   postgres_flowable_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_flowable_password" }
+  api_postgres_url: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_postgres_url" }
   redis_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/redis_password" }
   rabbitmq_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_password" }
   flowable_admin_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/flowable_admin_password" }
