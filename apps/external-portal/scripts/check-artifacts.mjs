@@ -2,6 +2,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL, URL } from "node:url";
+import ts from "typescript";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultAppRoot = resolve(dirname(scriptPath), "..");
@@ -28,6 +29,23 @@ async function walk(directory) {
     return entry.isDirectory() ? walk(path) : [path];
   }));
   return nested.flat();
+}
+
+function moduleSpecifiers(content, file) {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, false, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const specifiers = [];
+  function visit(node) {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined && ts.isStringLiteralLike(node.moduleSpecifier)) {
+      specifiers.push(node.moduleSpecifier.text);
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression !== undefined && ts.isStringLiteralLike(node.moduleReference.expression)) {
+      specifiers.push(node.moduleReference.expression.text);
+    } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isStringLiteralLike(node.arguments[0])) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require")) specifiers.push(node.arguments[0].text);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return specifiers;
 }
 
 function attribute(tag, name) {
@@ -82,7 +100,7 @@ export async function checkArtifacts({ appRoot = defaultAppRoot, h5BudgetBytes =
   const sourceFiles = await walk(join(appRoot, "src"));
   for (const file of sourceFiles.filter((candidate) => /\.[cm]?[jt]sx?$/u.test(candidate))) {
     const content = await readFile(file, "utf8");
-    const clientImports = [...content.matchAll(/from\s+["'](@ai-crm\/api-client(?:\/[^"']*)?)["']/gu)].map((match) => match[1]);
+    const clientImports = moduleSpecifiers(content, file).filter((specifier) => specifier === "@ai-crm/api-client" || specifier.startsWith("@ai-crm/api-client/"));
     if (clientImports.some((specifier) => specifier !== "@ai-crm/api-client/external")) throw new Error(`External source imports a non-allowlisted API client: ${relative(appRoot, file)}`);
   }
   const configSource = await readFile(join(appRoot, "config", "index.ts"), "utf8");

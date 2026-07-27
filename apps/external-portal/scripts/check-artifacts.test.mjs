@@ -33,13 +33,18 @@ test("accepts safe dual-target artifacts within budgets", async (context) => {
   assert.equal(result.weappBytes, 6);
 });
 
-test("rejects any non-allowlisted API client import before artifact acceptance", async (context) => {
+test("rejects non-allowlisted API client imports across supported module syntax", async (context) => {
   const forbiddenSpecifier = ["@ai-crm/api-client", "internal"].join("/");
-  const root = await fixture({ source: `import { internalOperations } from "${forbiddenSpecifier}";` });
-  await mkdir(join(root, "config"), { recursive: true });
-  await writeFile(join(root, "config", "index.ts"), "packages/api-client/src/external.ts");
-  context.after(() => rm(root, { force: true, recursive: true }));
-  await assert.rejects(checkArtifacts({ appRoot: root }), /imports a non-allowlisted API client/u);
+  const sources = [
+    `import { internalOperations } from "${forbiddenSpecifier}";`,
+    'import "@ai-crm/api-client";',
+    'export * from "@ai-crm/api-client";',
+    'const internalClient = import("@ai-crm/api-client");',
+    'const internalClient = require("@ai-crm/api-client");',
+  ];
+  const roots = await Promise.all(sources.map((source) => fixture({ source })));
+  context.after(() => Promise.all(roots.map((root) => rm(root, { force: true, recursive: true }))));
+  for (const root of roots) await assert.rejects(checkArtifacts({ appRoot: root }), /imports a non-allowlisted API client/u);
 });
 
 test("rejects source maps, production fixture content, and budget overflow", async (context) => {

@@ -116,3 +116,30 @@ Deliver the independently buildable External Portal Taro shell for H5 and WeChat
 - Final full repository gate passed `140/140`. Node tests passed `4/4`, Vitest passed `17/17`, and package lint, typecheck, contract guard, repository boundaries, generated-contract determinism, and Compose checks passed.
 - Integration finding status is zero. No contract, schema, migration, backend, domain, identity-provider, anonymous-operation, invitation, or external-user model was added.
 - Status: MERGED. G2 remains pending only the governance-required independent Reviewer evidence; `open-code-review` could not supply it because no LLM endpoint was configured, and no credential was inferred or added. This process gap is not presented as a code finding or waived acceptance.
+
+## Independent Review Loop
+
+### Round 1
+
+- Finding P2 (`apps/external-portal/scripts/check-artifacts.mjs`): the external-client source guard matched only `from "..."` imports. Side-effect imports, re-exports, dynamic imports, and CommonJS-style loads could bypass this source check; the repository boundary guard cannot close the gap because the public package root `@ai-crm/api-client` is a valid workspace export that contains internal operations.
+- Fix: module references are now extracted with the TypeScript AST from static imports, re-exports, import-equals declarations, dynamic imports, and `require()` calls. Every `@ai-crm/api-client` reference except the explicit `/external` export fails before artifact acceptance.
+- Regression: the Node artifact suite rejects named internal imports, package-root side-effect imports, package-root re-exports, dynamic imports, and `require()` loads.
+
+### Round 2
+
+- Authorization: the empty generated external allowlist remains the only callable surface; unknown and internal operations still reject before I/O. The fix narrows build acceptance and grants no runtime access.
+- Idempotency: no business write exists; repeated rejected transport and artifact checks remain deterministic.
+- Transactions and migrations: not applicable; no durable state, schema, contract, or migration changed.
+- Observability and secrets: the guard emits only the owning source path and a stable category; it does not log source content, credentials, request bodies, external identifiers, or provider data.
+- Backward compatibility: approved `@ai-crm/api-client/external` imports remain valid. The change affects only previously forbidden import forms.
+- Failure modes: unsupported module forms now fail closed at the artifact gate. H5/weapp session isolation, offline recovery, stale completion, and production fixture exclusion remain unchanged and covered.
+- Re-review result: zero High or Medium findings remain. No unresolved architecture or contract assumption was encoded.
+- Tooling note: `ocr llm test` still reports no configured LLM endpoint. No credential was inferred or added; the independent review used direct diff inspection, repository rules, and executable regression evidence.
+
+### Final Evidence
+
+- Node tests `4/4` and Vitest tests `17/17` passed.
+- Scoped typecheck, lint, contracts check, and `git diff --check` passed.
+- Production H5 and `weapp` builds passed; artifact budgets remained H5 `543010/665600` and weapp `596220/2097152` bytes.
+- Full repository `pnpm check` passed `140/140`.
+- Independent Review status: PASSED. CLI-03 has zero actionable findings and satisfies G2 review evidence.
