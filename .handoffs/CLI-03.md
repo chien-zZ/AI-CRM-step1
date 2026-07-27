@@ -64,7 +64,7 @@ Deliver the independently buildable External Portal Taro shell for H5 and WeChat
 
 ## Open Items
 
-- Integration Owner must update `pnpm-lock.yaml` after the task-owned `package.json` is reviewed, then run clean offline frozen validation.
+- Resolved: Integration Owner merged the task, reconciled `pnpm-lock.yaml`, and completed clean offline frozen validation.
 - Real WeChat Developer Tools automation, app account, domain allowlist, privacy declaration, signing/upload, and device smoke require external environment ownership and remain acceptance evidence outside this source-only task.
 - The shared Taro framework-react peer warning (`vite@^4` expected while the workspace also contains Vite 7) is owned by the Integration dependency window. Both external targets use the approved Webpack runner; CLI-03 does not add or alter Vite speculatively.
 
@@ -72,10 +72,10 @@ Deliver the independently buildable External Portal Taro shell for H5 and WeChat
 
 - Scoped typecheck: `pnpm --filter @ai-crm/external-portal typecheck` passed.
 - Scoped lint: `pnpm --filter @ai-crm/external-portal lint` passed with zero warnings.
-- Tests: Node artifact tests passed `3/3`; Vitest component/unit tests passed `17/17`.
+- Tests: Node artifact/declaration tests passed `4/4`; Vitest component/unit tests passed `17/17`.
 - Contract guard: `pnpm --filter @ai-crm/external-portal contracts:check` passed.
 - Target builds: production H5 and `weapp` builds passed using the approved Webpack runner.
-- Artifact gate: H5 initial assets `541802/665600` bytes; `weapp` total `595806/2097152` bytes.
+- Artifact gate: final shared-run H5 initial assets `543010/665600` bytes; `weapp` total `596220/2097152` bytes.
 - Repository boundary guard passed after the reviewed shared GOV-01 fix that permits only manifest-exported workspace subpaths; CLI-03 consumes only `@ai-crm/api-client/external`.
 - Patch hygiene: `git diff --check` passed; `.swc/`, `dist/`, coverage, source maps, fixtures, secrets, internal API references, and unsupported WeChat private capabilities are rejected or excluded by artifact tests.
 - Full repository gate: the latest `pnpm check` reached `133/140` successful tasks, then failed in the cross-owner `@ai-crm/internal-mobile#typecheck` task with TS2742 in Taro config default exports. CLI-03 tasks in that run passed; Turbo stopped remaining parallel work after the unrelated failure. Integration Owner/CLI-02 Owner has been notified. A clean full `pnpm check` remains required before G2 acceptance.
@@ -107,3 +107,12 @@ Deliver the independently buildable External Portal Taro shell for H5 and WeChat
 - Review matrix result after fixes: authorization remains server-authoritative and fail-closed; rejected operations perform no I/O; there are no writes, transactions, migrations, telemetry payloads, secrets, or persistent domain facts; H5/weapp session types remain disjoint; stale async completion and recovery are covered.
 - Tooling note: the configured `open-code-review` CLI was present but had no LLM endpoint configured. No credential was inferred or added. The Integration review therefore used local diff inspection and executable regression evidence and is not represented as an external independent-review result.
 - Post-fix scoped evidence: Node tests `4/4`, Vitest tests `17/17`, typecheck, lint, and `git diff --check` passed. Dual-target production builds and final full-repository evidence remain Integration Owner merge-gate work.
+
+## Integration Acceptance
+
+- Task implementation commit: `7f8c4a7`; dependency candidate: `cdaccfd`; main merge: `87666f6`.
+- Clean offline frozen install passed with all 29 workspace projects and no Lockfile drift.
+- Production H5 and `weapp` builds passed in both the scoped build and the final Turbo run. The artifact gate reported H5 `543010/665600` bytes and `weapp` `596220/2097152` bytes; source maps, production Fixture markers, internal API client imports, credential patterns, and unapproved WeChat private capabilities were absent.
+- Final full repository gate passed `140/140`. Node tests passed `4/4`, Vitest passed `17/17`, and package lint, typecheck, contract guard, repository boundaries, generated-contract determinism, and Compose checks passed.
+- Integration finding status is zero. No contract, schema, migration, backend, domain, identity-provider, anonymous-operation, invitation, or external-user model was added.
+- Status: MERGED. G2 remains pending only the governance-required independent Reviewer evidence; `open-code-review` could not supply it because no LLM endpoint was configured, and no credential was inferred or added. This process gap is not presented as a code finding or waived acceptance.

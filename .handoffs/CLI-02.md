@@ -119,3 +119,10 @@ Deliver the business-neutral Taro H5 shell for internal mobile use without fabri
 - Independent Review on exact candidate `a2ef48eeae6959f5062aa26aa775c72397906ff5`: Agent A reported zero actionable findings and zero unresolved architecture/contract issues. The Reviewer confirmed all six config declarations use the public Taro type boundary, runtime imports are erased, runtime values/build behavior are unchanged, and the regression fails closed when declaration emission or portability checks fail.
 - Reviewer verification: typecheck, lint, 6/6 Node tests, 27/27 Vitest tests, production H5 build/bundle gate (`540927/614400`), package contract check, and diff-check all passed. Authorization, idempotency, transactions, migrations, and observability are not applicable because runtime behavior is unchanged; backward compatibility, Secrets, failure modes, and portability passed.
 - Current status: independent Review is closed with finding zero. G2 restoration remains pending only the Integration Owner's CLI-03 shared dependency graph and full repository validation; it is not self-declared by CLI-02.
+
+## Declaration Fix Integration Acceptance
+
+- Integration Owner merged the reviewed declaration fix as `3a853c0` and rebuilt the shared dependency graph with CLI-03 present.
+- Clean offline frozen install passed. CLI-02 Node tests passed `6/6`, Vitest passed `27/27`, production H5 build passed, and the bundle gate reported `540932/614400` bytes in the final full-repository run.
+- Final `pnpm check` passed `140/140`. The reviewed fix adds no runtime behavior or authority and has zero remaining actionable finding or unresolved architecture/contract issue.
+- G2 restoration is accepted. The existing Taro/Vite peer warning remains a separately recorded shared dependency follow-up and is not waived by this acceptance.
