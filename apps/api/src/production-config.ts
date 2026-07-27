@@ -16,6 +16,12 @@ const schema = {
   databaseIdleTimeoutMs: configuration.integer("AI_CRM_POSTGRES_IDLE_TIMEOUT_MS", {
     default: 30_000, maximum: 300_000, minimum: 1_000,
   }),
+  databaseHealthProbeIntervalMs: configuration.integer("AI_CRM_API_POSTGRES_HEALTH_INTERVAL_MS", {
+    default: 10_000, maximum: 60_000, minimum: 1_000,
+  }),
+  databaseHealthProbeTimeoutMs: configuration.integer("AI_CRM_API_POSTGRES_HEALTH_TIMEOUT_MS", {
+    default: 2_000, maximum: 30_000, minimum: 100,
+  }),
   databaseMaxConnections: configuration.integer("AI_CRM_API_POSTGRES_MAX_CONNECTIONS", {
     default: 10, maximum: 100, minimum: 1,
   }),
@@ -44,6 +50,10 @@ export interface ProductionApiConfiguration {
     readonly idleTimeoutMs: number;
     readonly maxConnections: number;
     readonly statementTimeoutMs: number;
+  }>;
+  readonly databaseHealthProbe: Readonly<{
+    readonly intervalMs: number;
+    readonly timeoutMs: number;
   }>;
   readonly migrations: readonly string[];
   readonly oidcVerifier: Readonly<{
@@ -80,6 +90,9 @@ export async function loadProductionApiConfiguration(
     loadPcBffConfiguration(options),
   ]);
   if (!isAbsolute(raw.migrationsRoot)) throw new Error("api_migrations_root_invalid");
+  if (raw.databaseHealthProbeTimeoutMs >= raw.databaseHealthProbeIntervalMs) {
+    throw new Error("api_database_health_window_invalid");
+  }
   return Object.freeze({
     applicationSchemaVersion: raw.applicationSchemaVersion,
     database: Object.freeze({
@@ -89,6 +102,10 @@ export async function loadProductionApiConfiguration(
       idleTimeoutMs: raw.databaseIdleTimeoutMs,
       maxConnections: raw.databaseMaxConnections,
       statementTimeoutMs: raw.databaseStatementTimeoutMs,
+    }),
+    databaseHealthProbe: Object.freeze({
+      intervalMs: raw.databaseHealthProbeIntervalMs,
+      timeoutMs: raw.databaseHealthProbeTimeoutMs,
     }),
     migrations: Object.freeze(migrationDirectories.map((directory) => resolve(raw.migrationsRoot, directory))),
     oidcVerifier: Object.freeze({

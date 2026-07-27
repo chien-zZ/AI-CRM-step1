@@ -18,6 +18,7 @@ const configuration: ProductionApiConfiguration = {
     maxConnections: 10,
     statementTimeoutMs: 15_000,
   },
+  databaseHealthProbe: { intervalMs: 1_000, timeoutMs: 100 },
   migrations: ["/app/packages/database/migrations"],
   oidcVerifier: {
     audience: "ai-crm-api",
@@ -53,13 +54,16 @@ const configuration: ProductionApiConfiguration = {
 function dependencies(compatible = true): {
   readonly closeDatabase: ReturnType<typeof vi.fn>;
   readonly closeSessions: ReturnType<typeof vi.fn>;
+  readonly healthCheck: ReturnType<typeof vi.fn>;
   readonly value: ProductionApiBindingDependencies;
 } {
   const closeDatabase = vi.fn(() => Promise.resolve());
   const closeSessions = vi.fn(() => Promise.resolve());
+  const healthCheck = vi.fn(() => Promise.resolve({ latencyMs: 1, status: "ready" as const }));
   return {
     closeDatabase,
     closeSessions,
+    healthCheck,
     value: {
       checkCompatibility: vi.fn(() => Promise.resolve({
         applicationSchemaVersion: "0.0.0",
@@ -75,7 +79,7 @@ function dependencies(compatible = true): {
       createDatabase: vi.fn(() => ({
         close: closeDatabase,
         execute: vi.fn(() => Promise.resolve({ rowCount: 0, rows: [] })),
-        healthCheck: vi.fn(() => Promise.resolve({ latencyMs: 1, status: "ready" as const })),
+        healthCheck,
         withTransaction: <T>(work: () => Promise<T>) => work(),
       })),
       createOidc: vi.fn(() => Promise.resolve({
@@ -127,6 +131,90 @@ describe("production API platform binding factory", () => {
       .rejects.toThrow("api_database_migration_incompatible");
     expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
     await bindings.close?.();
+  });
+
+  it("marks runtime database loss unavailable and restores only after a later successful probe", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = dependencies();
+      const bindings = await createProductionApiPlatformBindings(fixture.value);
+      await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+      expect(bindings.readiness()[0]).toMatchObject({ healthy: true });
+
+      fixture.healthCheck.mockResolvedValueOnce({ latencyMs: 1, status: "unavailable" });
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs);
+      expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
+
+      fixture.healthCheck.mockResolvedValueOnce({ latencyMs: 1, status: "ready" });
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs);
+      expect(bindings.readiness()[0]).toMatchObject({ healthy: true });
+
+      await bindings.close?.();
+      const callsAtClose = fixture.healthCheck.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs * 2);
+      expect(fixture.healthCheck).toHaveBeenCalledTimes(callsAtClose);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a health result that arrives after the application-side timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = dependencies();
+      let resolveHealth: ((value: { latencyMs: number; status: "ready" }) => void) | undefined;
+      fixture.healthCheck.mockImplementationOnce(() => new Promise((resolve) => { resolveHealth = resolve; }));
+      const bindings = await createProductionApiPlatformBindings(fixture.value);
+      const checking = bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.timeoutMs);
+      await checking;
+      expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs * 2);
+      expect(fixture.healthCheck).toHaveBeenCalledOnce();
+
+      resolveHealth?.({ latencyMs: 1, status: "ready" });
+      await Promise.resolve();
+      expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs);
+      expect(fixture.healthCheck).toHaveBeenCalledTimes(2);
+      await bindings.close?.();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not start or schedule a database probe after startup is aborted", async () => {
+    const fixture = dependencies();
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    const controller = new AbortController();
+    const checking = bindings.databaseCompatibility.assertCompatible(controller.signal);
+    controller.abort();
+    await expect(checking).rejects.toThrow("api_start_cancelled");
+    expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
+    expect(fixture.healthCheck).not.toHaveBeenCalled();
+    await bindings.close?.();
+  });
+
+  it("invalidates a running background probe before closing database resources", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = dependencies();
+      const bindings = await createProductionApiPlatformBindings(fixture.value);
+      await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+      let resolveHealth: ((value: { latencyMs: number; status: "ready" }) => void) | undefined;
+      fixture.healthCheck.mockImplementationOnce(() => new Promise((resolve) => { resolveHealth = resolve; }));
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs);
+      expect(fixture.healthCheck).toHaveBeenCalledTimes(2);
+
+      await bindings.close?.();
+      resolveHealth?.({ latencyMs: 1, status: "ready" });
+      await Promise.resolve();
+      expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs * 2);
+      expect(fixture.healthCheck).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("closes resources already acquired when later production initialization fails", async () => {

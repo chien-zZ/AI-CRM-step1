@@ -23,6 +23,7 @@ The IAM-01 adapter requires explicit configuration; it does not provide session-
 - `AI_CRM_PC_OIDC_TIMEOUT_SECONDS`, `AI_CRM_PC_REFRESH_LEASE_TTL_MS`, `AI_CRM_REDIS_CONNECT_TIMEOUT_MS`, `AI_CRM_REDIS_URL`
 - `AI_CRM_PC_OIDC_CLIENT_SECRET_FILE`, `AI_CRM_REDIS_PASSWORD_FILE`
 - `AI_CRM_PC_SESSION_ENCRYPTION_KEY_FILE`, `AI_CRM_PC_SESSION_ENCRYPTION_KEY_ID`, `AI_CRM_PC_SESSION_INDEX_KEY_FILE`
+- `AI_CRM_API_POSTGRES_HEALTH_INTERVAL_MS`, `AI_CRM_API_POSTGRES_HEALTH_TIMEOUT_MS`
 - Optional bounded rotation pair: `AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_FILE`, `AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_ID`
 
 The current session-encryption and indexing keys are distinct 256-bit base64url values. Secret values are read only from the referenced files. During encryption-key rotation, configure exactly one previous ID/file pair: the current key writes every new or refreshed envelope, while the previous key is read-only. Keep the previous file mounted for no longer than the configured absolute session TTL after all consumers switch to the current key, then remove both previous-key settings and revoke the old file. Duplicate IDs, duplicate values, incomplete pairs, and reuse of the indexing key fail closed. Rotating the indexing key intentionally invalidates all existing browser credentials and is not an online session-preserving operation.
@@ -36,6 +37,8 @@ The CMP-01 application root now starts a NestJS HTTP application and exposes the
 The reviewed PC BFF routes (`/auth/pc/login`, `/auth/pc/callback`, `/auth/pc/session`, `/auth/pc/refresh`, and `/auth/pc/logout`) delegate to the IAM-01 HTTP adapter. Cookie, Origin, Referer, and CSRF values are bounded and rejected when repeated before being passed to that adapter; their values are never logged.
 
 Database startup uses an application-owned bounded runtime and an explicit semantic `applicationSchemaVersion`; the schema version is not `AI_CRM_RELEASE`. The compatibility query is read-only and bounded by the PostgreSQL statement timeout. Startup never runs migrations or schema synchronization.
+
+After compatibility succeeds, production starts one non-overlapping `DatabaseRuntime.healthCheck()` loop. The synchronous readiness endpoint consumes only its cached state. The application-side timeout must be shorter than the probe interval; timeout, rejection, or an unavailable result removes database readiness, and a later successful probe restores it. Because the public health call is not cancellable, the next interval starts only after the underlying call settles; a stuck call therefore cannot accumulate more Pool queries. Shutdown and startup cancellation invalidate the probe generation before resources close, so a pending or late result cannot restore readiness or schedule another timer. Health responses keep the existing `{status}` shape and expose no database or error detail.
 
 Process configuration is parsed through `@ai-crm/config`. The reviewed defaults bind container traffic on `0.0.0.0:3000`; `AI_CRM_API_HOST` is restricted to reviewed local/container bind addresses, `AI_CRM_API_PORT` must be a valid TCP port, and `AI_CRM_RELEASE` is a bounded immutable release identifier. These settings do not make the API ready until its required module dependencies are composed and healthy.
 
