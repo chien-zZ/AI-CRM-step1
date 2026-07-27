@@ -29,6 +29,31 @@ async function migrationDirectory(sql: string, metadataOverrides: Record<string,
 afterEach(async () => Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { force: true, recursive: true }))));
 
 describe("migration governance", () => {
+  it("normalizes canonical application compatibility metadata", async () => {
+    const directory = await migrationDirectory("select 1;", {
+      applicationCompatibility: { maximumExclusive: "2.0.0", minimumInclusive: "1.2.3" },
+    });
+    const migrations = await loadMigrations(directory);
+    expect(migrations[0]?.metadata.applicationCompatibility).toEqual({ maximumExclusive: "2.0.0", minimumInclusive: "1.2.3" });
+  });
+
+  it("adapts the historical machine-readable compatibility range", async () => {
+    const directory = await migrationDirectory("select 1;");
+    const migrations = await loadMigrations(directory);
+    expect(migrations[0]?.metadata.applicationCompatibility).toEqual({ minimumInclusive: "0.0.0" });
+  });
+
+  it("rejects new free-text and empty compatibility ranges", async () => {
+    const prose = await migrationDirectory("select 1;", { applicationCompatibility: "Works with the current release." });
+    const empty = await migrationDirectory(
+      "select 1;",
+      { applicationCompatibility: { maximumExclusive: "1.0.0", minimumInclusive: "1.0.0" } },
+      "0000000002",
+    );
+    await expect(loadMigrations(prose)).rejects.toThrow("invalid applicationCompatibility");
+    await expect(loadMigrations(empty)).rejects.toThrow("range is empty");
+  });
+
   it("rejects unapproved destructive SQL", async () => {
     const directory = await migrationDirectory("drop table unsafe;");
     await expect(loadMigrations(directory)).rejects.toThrow("destructive SQL");
