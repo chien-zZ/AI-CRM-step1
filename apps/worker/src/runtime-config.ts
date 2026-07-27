@@ -9,7 +9,10 @@ const schema = {
   healthFile: configuration.string("AI_CRM_WORKER_HEALTH_FILE", { default: defaultWorkerHealthFile, maxLength: 512 }),
   healthMaxAgeSeconds: configuration.integer("AI_CRM_WORKER_HEALTH_MAX_AGE_SECONDS", { default: 45, maximum: 300, minimum: 5 }),
   healthRefreshSeconds: configuration.integer("AI_CRM_WORKER_HEALTH_REFRESH_SECONDS", { default: 10, maximum: 60, minimum: 1 }),
+  instanceId: configuration.string("AI_CRM_INSTANCE_ID", { default: `worker-${String(process.pid)}`, maxLength: 128, pattern: /^[a-z][a-z0-9_.-]*$/u }),
+  logLevel: configuration.enumeration("AI_CRM_LOG_LEVEL", ["debug", "info", "warn", "error"], { default: "info" }),
   release: configuration.string("AI_CRM_RELEASE", { default: "development", maxLength: 128, pattern: /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u }),
+  startupTimeoutSeconds: configuration.integer("AI_CRM_WORKER_STARTUP_TIMEOUT_SECONDS", { default: 30, maximum: 300, minimum: 1 }),
 } as const;
 
 export interface WorkerRuntimeConfiguration {
@@ -18,7 +21,10 @@ export interface WorkerRuntimeConfiguration {
   readonly healthFile: string;
   readonly healthMaxAgeMs: number;
   readonly healthRefreshMs: number;
+  readonly instanceId: string;
+  readonly logLevel: "debug" | "info" | "warn" | "error";
   readonly release: string;
+  readonly startupTimeoutMs: number;
 }
 
 export async function loadWorkerRuntimeConfiguration(options: LoadConfigurationOptions = {}): Promise<Readonly<WorkerRuntimeConfiguration>> {
@@ -34,6 +40,9 @@ export async function loadWorkerRuntimeConfiguration(options: LoadConfigurationO
     healthFile: value.healthFile,
     healthMaxAgeMs: value.healthMaxAgeSeconds * 1_000,
     healthRefreshMs: value.healthRefreshSeconds * 1_000,
+    instanceId: value.instanceId,
+    logLevel: value.logLevel,
     release: value.release,
+    startupTimeoutMs: value.startupTimeoutSeconds * 1_000,
   });
 }

@@ -160,7 +160,7 @@ describe("Worker composition root", () => {
     await new Promise<void>((resolve) => { setImmediate(resolve); });
     const stopping = app.stop();
     const results = await Promise.allSettled([starting, stopping]);
-    expect(results.every((result) => result.status === "rejected")).toBe(true);
+    expect(results.map((result) => result.status)).toEqual(["rejected", "fulfilled"]);
     expect(app.health()).toEqual({ status: "unavailable" });
   });
 
@@ -179,18 +179,19 @@ describe("Worker composition root", () => {
     expect(logger.log).not.toHaveBeenCalledWith("error", expect.objectContaining({ errorCode: "worker_handler_failed" }));
   });
 
-  it("enters terminal state when a failed startup handler cannot drain", async () => {
+  it("never starts a handler whose readiness fails", async () => {
+    const run = vi.fn(() => new Promise<void>(() => undefined));
     const app = createWorkerApplication({
       drainTimeoutMs: 5,
       handlers: [{
         name: "generation-bound",
         ready: () => { throw new Error("synthetic_readiness_failure"); },
-        run: () => new Promise(() => undefined),
+        run,
       }],
       logger,
     });
     await expect(app.start()).rejects.toThrow("synthetic_readiness_failure");
-    await expect(app.start()).rejects.toThrow("worker_terminal");
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("can restart after a failed startup handler rejects on abort", async () => {
@@ -224,13 +225,126 @@ describe("Worker composition root", () => {
       await vi.waitFor(() => { expect(create).toHaveBeenCalledOnce(); });
       const stoppingOutcome = app.stop().then(() => undefined, (error: unknown) => error);
       const outcomes = await Promise.all([startingOutcome, stoppingOutcome]);
-      expect(outcomes.every((outcome) => outcome instanceof Error)).toBe(true);
+      expect(outcomes[0]).toBeInstanceOf(Error);
+      expect(outcomes[1]).toBeUndefined();
       release?.(candidate);
       await new Promise<void>((resolve) => { setImmediate(resolve); });
       expect(close).toHaveBeenCalledOnce();
       expect(app.health()).toEqual({ status: "unavailable" });
     } finally {
       create.mockRestore();
+    }
+  });
+
+  it.each(["resolved", "rejected"] as const)("performs one fatal drain when a ready handler %s", async (outcome) => {
+    logger.log.mockClear();
+    let finish: (() => void) | undefined;
+    const gate = new Promise<void>((resolve, reject) => {
+      finish = outcome === "resolved" ? resolve : () => { reject(new Error("synthetic_handler_failure")); };
+    });
+    const stop = vi.fn();
+    const app = createWorkerApplication({
+      handlers: [
+        { name: "handler.one", ready: () => undefined, run: () => gate, stop },
+        { name: "handler.two", ready: () => undefined, run: runUntilAbort, stop },
+      ],
+      logger,
+    });
+    await app.start();
+    finish?.();
+    await expect(app.waitForExit()).resolves.toBe(1);
+    expect(stop).toHaveBeenCalledTimes(2);
+    const fatalEvents = logger.log.mock.calls.filter((rawCall) => {
+      const call = rawCall as [string, { readonly errorCode?: string }];
+      return call[0] === "error" && ["worker_handler_failed", "worker_handler_stopped"].includes(call[1].errorCode ?? "");
+    });
+    expect(fatalEvents).toHaveLength(1);
+    expect(app.health()).toEqual({ status: "unavailable" });
+    await expect(app.start()).rejects.toThrow("worker_terminal");
+  });
+
+  it("rejects unsafe or duplicate handler telemetry identifiers before logging", () => {
+    logger.log.mockClear();
+    expect(() => createWorkerApplication({ handlers: [{ name: "unsafe value", ready: () => undefined, run: () => Promise.resolve() }], logger })).toThrow("worker_handler_id_invalid");
+    expect(() => createWorkerApplication({ handlers: [
+      { name: "same", ready: () => undefined, run: () => Promise.resolve() },
+      { name: "same", ready: () => undefined, run: () => Promise.resolve() },
+    ], logger })).toThrow("worker_handler_id_invalid");
+    expect(logger.log).not.toHaveBeenCalled();
+  });
+
+  it("fails a required composition without a registered handler", () => {
+    expect(() => createWorkerApplication({
+      logger,
+      requireHandlers: true,
+    })).toThrow("worker_handlers_required");
+  });
+
+  it("does not let any handler acquire work until every handler is ready", async () => {
+    let release: (() => void) | undefined;
+    const readiness = new Promise<void>((resolve) => { release = resolve; });
+    const firstRun = vi.fn(runUntilAbort);
+    const secondRun = vi.fn(runUntilAbort);
+    const app = createWorkerApplication({ handlers: [
+      { name: "first", ready: () => undefined, run: firstRun },
+      { name: "second", ready: () => readiness, run: secondRun },
+    ], logger });
+    const starting = app.start();
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(firstRun).not.toHaveBeenCalled();
+    expect(secondRun).not.toHaveBeenCalled();
+    release?.();
+    await starting;
+    expect(firstRun).toHaveBeenCalledOnce();
+    expect(secondRun).toHaveBeenCalledOnce();
+    await app.stop();
+  });
+
+  it("rechecks required dependencies after all readiness checks and before acquisition", async () => {
+    let healthy = true;
+    const run = vi.fn(runUntilAbort);
+    const app = createWorkerApplication({
+      dependencies: () => [{ healthy, name: "rabbitmq", required: true }],
+      handlers: [{ name: "dependent-ready", ready: () => { healthy = false; }, run }],
+      logger,
+    });
+    await expect(app.start()).rejects.toThrow("worker_not_ready");
+    expect(run).not.toHaveBeenCalled();
+    expect(app.health()).toEqual({ status: "unavailable" });
+  });
+
+  it("fails startup when the final health evaluation is not ok", async () => {
+    let checks = 0;
+    const stop = vi.fn();
+    const app = createWorkerApplication({
+      dependencies: () => [{ healthy: ++checks < 3, name: "database", required: true }],
+      handlers: [{ name: "final-health", ready: () => undefined, run: runUntilAbort, stop }],
+      logger,
+    });
+    await expect(app.start()).rejects.toThrow("worker_not_ready");
+    expect(stop).toHaveBeenCalledOnce();
+    expect(app.health()).toEqual({ status: "unavailable" });
+  });
+
+  it("fatally drains when a required runtime dependency is lost", async () => {
+    let healthy = true;
+    const stop = vi.fn();
+    const app = createWorkerApplication({
+      dependencies: () => [{ healthy, name: "database", required: true }],
+      handlers: [{ name: "dependent", ready: () => undefined, run: runUntilAbort, stop }],
+      healthRefreshIntervalMs: 1_000,
+      logger,
+    });
+    await app.start();
+    vi.useFakeTimers();
+    try {
+      healthy = false;
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(app.waitForExit()).resolves.toBe(1);
+      expect(stop).toHaveBeenCalledOnce();
+      expect(app.health()).toEqual({ status: "unavailable" });
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

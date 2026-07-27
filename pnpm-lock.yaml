@@ -59,9 +59,33 @@ importers:
       '@ai-crm/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@ai-crm/platform-app-registry':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/app-registry
+      '@ai-crm/platform-audit':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/audit
       '@ai-crm/platform-auth-context':
         specifier: workspace:*
         version: link:../../packages/platform-modules/auth-context
+      '@ai-crm/platform-authorization':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/authorization
+      '@ai-crm/platform-file-center':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/file-center
+      '@ai-crm/platform-form-schema':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/form-schema
+      '@ai-crm/platform-notifications':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/notifications
+      '@ai-crm/platform-organization':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/organization
+      '@ai-crm/platform-task-center':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/task-center
       '@nestjs/common':
         specifier: 11.1.28
         version: 11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -339,6 +363,18 @@ importers:
       '@ai-crm/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@ai-crm/platform-eventing-outbox':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/eventing-outbox
+      '@ai-crm/platform-file-center':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/file-center
+      '@ai-crm/platform-notifications':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/notifications
+      '@ai-crm/platform-task-center':
+        specifier: workspace:*
+        version: link:../../packages/platform-modules/task-center
       '@nestjs/common':
         specifier: 11.1.28
         version: 11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)

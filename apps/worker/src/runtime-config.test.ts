@@ -10,7 +10,10 @@ describe("Worker runtime configuration", () => {
       healthFile: defaultWorkerHealthFile,
       healthMaxAgeMs: 45_000,
       healthRefreshMs: 10_000,
+      instanceId: `worker-${String(process.pid)}`,
+      logLevel: "info",
       release: "development",
+      startupTimeoutMs: 30_000,
     });
   });
 

@@ -5,8 +5,22 @@ import type { ApplicationLogger } from "@ai-crm/observability";
 import type { WorkerHealthReporter, WorkerHealthStatus } from "./health-file.js";
 
 export const applicationId = "@ai-crm/worker" as const;
+export { bootstrapWorker, type WorkerBootstrapOptions } from "./bootstrap.js";
 export { defaultWorkerHealthFile, loadWorkerRuntimeConfiguration, type WorkerRuntimeConfiguration } from "./runtime-config.js";
 export { createFileWorkerHealthReporter, type WorkerHealthReporter, type WorkerHealthStatus } from "./health-file.js";
+export { createWorkerHandlerRegistry, type WorkerHandlerRegistry } from "./handler-registry.js";
+export {
+  createFileMaintenanceHandler,
+  createNotificationIntentHandler,
+  createOutboxPublisherLoopHandler,
+  createRabbitInboxHandler,
+  createTaskReconciliationHandler,
+  type FileMaintenanceSource,
+  type NotificationIntentSource,
+  type RabbitConsumerAdapter,
+  type RabbitInboxBinding,
+  type TaskReconciliationSource,
+} from "./handlers.js";
 
 @Module({})
 // Nest requires a class as the application-context module token.
@@ -36,6 +50,7 @@ export interface WorkerComposition {
   readonly onStart?: (signal: AbortSignal) => void | Promise<void>;
   readonly onStop?: () => void | Promise<void>;
   readonly startupTimeoutMs?: number;
+  readonly requireHandlers?: boolean;
 }
 
 export interface WorkerApplication {
@@ -43,6 +58,19 @@ export interface WorkerApplication {
   readonly stop: () => Promise<void>;
   readonly isDraining: () => boolean;
   readonly health: () => { readonly status: "ok" | "unavailable" };
+  readonly waitForExit: () => Promise<0 | 1>;
+}
+
+const STABLE_HANDLER_ID = /^[a-z][a-z0-9._-]{0,127}$/u;
+
+function validateHandlers(handlers: readonly WorkerHandler[], required: boolean): readonly WorkerHandler[] {
+  if (required && handlers.length === 0) throw new Error("worker_handlers_required");
+  const names = new Set<string>();
+  for (const handler of handlers) {
+    if (!STABLE_HANDLER_ID.test(handler.name) || names.has(handler.name)) throw new Error("worker_handler_id_invalid");
+    names.add(handler.name);
+  }
+  return handlers;
 }
 
 type TimedResult<T> = { readonly kind: "completed"; readonly value: T } | { readonly kind: "timeout" };
@@ -63,6 +91,8 @@ function startupCancelled(signal: AbortSignal): boolean {
 }
 
 export const createWorkerApplication = (composition: WorkerComposition): WorkerApplication => {
+  // Validate telemetry dimensions before any health or lifecycle event can be written.
+  const handlers = validateHandlers(composition.handlers ?? [], composition.requireHandlers === true);
   const refreshIntervalMs = composition.healthRefreshIntervalMs ?? 10_000;
   const drainTimeoutMs = composition.drainTimeoutMs ?? 30_000;
   const startupTimeoutMs = composition.startupTimeoutMs ?? 30_000;
@@ -82,15 +112,37 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
   let healthTimer: NodeJS.Timeout | undefined;
   let controller = new AbortController();
   let activeInFlight = new Set<Promise<void>>();
+  let fatalShutdown: Promise<void> | undefined;
+  let resolveExit: ((code: 0 | 1) => void) | undefined;
+  const exit = new Promise<0 | 1>((resolve) => { resolveExit = resolve; });
+  let exitSettled = false;
+  const log = (...input: Parameters<ApplicationLogger["log"]>): void => {
+    try { composition.logger.log(...input); } catch { /* Technical telemetry cannot change Worker correctness. */ }
+  };
+  const settleExit = (code: 0 | 1): void => {
+    if (exitSettled) return;
+    exitSettled = true;
+    resolveExit?.(code);
+  };
+  const triggerFatal = (errorCode: "worker_dependency_lost" | "worker_handler_failed" | "worker_handler_stopped", handler?: string): void => {
+    if (!running || draining || fatalShutdown) return;
+    failed = true;
+    terminal = true;
+    reportHealth("unavailable");
+    log("error", { errorCode, ...(handler === undefined ? {} : { fields: { handler } }), operation: handler === undefined ? "worker.health.dependencies" : "worker.handler.run", outcome: "failed" });
+    fatalShutdown = stop().then(() => { settleExit(1); }, () => { settleExit(1); });
+  };
   const dependenciesReady = (): boolean => {
     try {
       return composition.dependencies?.().every((item) => !item.required || item.healthy) !== false;
     } catch {
-      composition.logger.log("error", { errorCode: "worker_dependency_check_failed", operation: "worker.health.dependencies", outcome: "failed" });
+      log("error", { errorCode: "worker_dependency_check_failed", operation: "worker.health.dependencies", outcome: "failed" });
       return false;
     }
   };
-  const stopFromSignal = (): void => { void stop().catch(() => { process.exitCode = 1; }); };
+  const stopFromSignal = (): void => {
+    void stop().then(() => { settleExit(0); }, () => { settleExit(1); });
+  };
   const removeSignalListeners = (): void => {
     process.off("SIGTERM", stopFromSignal);
     process.off("SIGINT", stopFromSignal);
@@ -103,7 +155,7 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
     } catch {
       failed = true;
       try { composition.healthReporter?.report("unavailable"); } catch { /* The failed reporter cannot prove readiness. */ }
-      composition.logger.log("error", { errorCode: "worker_health_report_failed", operation: "worker.health.report", outcome: "failed" });
+      log("error", { errorCode: "worker_health_report_failed", operation: "worker.health.report", outcome: "failed" });
       return false;
     }
   };
@@ -140,7 +192,6 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
       const attemptController = new AbortController();
       controller = attemptController;
       failed = false;
-      const handlers = composition.handlers ?? [];
       const attemptInFlight = new Set<Promise<void>>();
       activeInFlight = attemptInFlight;
       const startupTerminations: Promise<"handler_stopped">[] = [];
@@ -154,33 +205,26 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
             throw new Error("worker_start_cancelled");
           }
           application = candidate;
-          composition.logger.log("info", { operation: "worker.lifecycle.start", outcome: "started" });
+          log("info", { operation: "worker.lifecycle.start", outcome: "started" });
           await composition.onStart?.(attemptController.signal);
           if (startupCancelled(attemptController.signal) || startId !== activeStart) throw new Error("worker_start_cancelled");
+          await Promise.all(handlers.map(async (handler) => { await handler.ready(attemptController.signal); }));
+          if (startupCancelled(attemptController.signal) || startId !== activeStart) throw new Error("worker_start_cancelled");
+          if (!dependenciesReady()) throw new Error("worker_not_ready");
           for (const handler of handlers) {
             const execution = Promise.resolve().then(async () => { await handler.run(attemptController.signal); }).finally(() => { attemptInFlight.delete(execution); });
             attemptInFlight.add(execution);
             startupTerminations.push(execution.then(() => "handler_stopped" as const, () => "handler_stopped" as const));
             void execution.then(
               () => {
-                if (startId === activeStart && !draining) {
-                  failed = true;
-                  reportHealth("unavailable");
-                  composition.logger.log("error", { errorCode: "worker_handler_stopped", fields: { handler: handler.name }, operation: "worker.handler.run", outcome: "failed" });
-                }
+                if (startId === activeStart) triggerFatal("worker_handler_stopped", handler.name);
               },
               () => {
-                if (startId === activeStart && !draining) {
-                  failed = true;
-                  reportHealth("unavailable");
-                  composition.logger.log("error", { errorCode: "worker_handler_failed", fields: { handler: handler.name }, operation: "worker.handler.run", outcome: "failed" });
-                }
+                if (startId === activeStart) triggerFatal("worker_handler_failed", handler.name);
               },
             );
           }
-          const ready = Promise.all(handlers.map(async (handler) => { await handler.ready(attemptController.signal); })).then(
-            () => new Promise<"ready">((resolve) => { setImmediate(() => { resolve("ready"); }); }),
-          );
+          const ready = new Promise<"ready">((resolve) => { setImmediate(() => { resolve("ready"); }); });
           const startupOutcome = startupTerminations.length === 0 ? await ready : await Promise.race([...startupTerminations, ready]);
           if (startupOutcome !== "ready" || startupCancelled(attemptController.signal) || startId !== activeStart) throw new Error("worker_handler_start_failed");
         })();
@@ -191,14 +235,18 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
           throw new Error("worker_start_timeout");
         }
         running = true;
-        if (!reportHealth(health().status)) throw new Error("worker_health_report_failed");
-        healthTimer = setInterval(() => { reportHealth(health().status); }, refreshIntervalMs);
+        if (health().status !== "ok") throw new Error("worker_not_ready");
+        if (!reportHealth("ok")) throw new Error("worker_health_report_failed");
+        healthTimer = setInterval(() => {
+          if (!dependenciesReady()) triggerFatal("worker_dependency_lost");
+          else reportHealth(health().status);
+        }, refreshIntervalMs);
         healthTimer.unref();
-        composition.logger.log("info", { operation: "worker.lifecycle.start", outcome: "succeeded" });
+        log("info", { operation: "worker.lifecycle.start", outcome: "succeeded" });
       } catch (error) {
         if (startId === activeStart) activeStart += 1;
         await cleanupFailedStart(handlers, attemptInFlight);
-        composition.logger.log("error", { errorCode: "worker_start_failed", operation: "worker.lifecycle.start", outcome: "failed" });
+        log("error", { errorCode: "worker_start_failed", operation: "worker.lifecycle.start", outcome: "failed" });
         throw error;
       }
     })().finally(() => { startPromise = undefined; });
@@ -210,7 +258,7 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
       activeStart += 1;
       if (startPromise) {
         controller.abort();
-        const startupResult = await settleWithin(startPromise, startupTimeoutMs);
+        const startupResult = await settleWithin(startPromise.then(() => undefined, () => undefined), startupTimeoutMs);
         if (startupResult.kind === "timeout") throw new Error("worker_start_stop_timeout");
       }
       if (!running && !draining) return;
@@ -225,7 +273,7 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
       const stoppingInFlight = activeInFlight;
       activeInFlight = new Set<Promise<void>>();
       const workload = (async (): Promise<readonly PromiseSettledResult<unknown>[]> => {
-        const handlerStops = await Promise.allSettled((composition.handlers ?? []).map(async (handler) => { await handler.stop?.(); }));
+        const handlerStops = await Promise.allSettled(handlers.map(async (handler) => { await handler.stop?.(); }));
         await Promise.allSettled([...stoppingInFlight]);
         return handlerStops;
       })();
@@ -234,10 +282,10 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
         const lifecycleResult = await settleWithin(Promise.allSettled([composition.onStop?.(), stoppingApplication?.close()]), cleanupBudgetMs);
         if (workloadResult.kind === "timeout" || lifecycleResult.kind === "timeout") throw new Error("worker_drain_timeout");
         if ([...workloadResult.value, ...lifecycleResult.value].some((result) => result.status === "rejected")) throw new Error("worker_stop_failed");
-        composition.logger.log("info", { operation: "worker.lifecycle.stop", outcome: "succeeded" });
+        log("info", { operation: "worker.lifecycle.stop", outcome: "succeeded" });
       } catch (error) {
         terminal = true;
-        composition.logger.log("error", { errorCode: error instanceof Error && error.message === "worker_drain_timeout" ? "worker_drain_timeout" : "worker_stop_failed", operation: "worker.lifecycle.stop", outcome: "failed" });
+        log("error", { errorCode: error instanceof Error && error.message === "worker_drain_timeout" ? "worker_drain_timeout" : "worker_stop_failed", operation: "worker.lifecycle.stop", outcome: "failed" });
         throw error;
       } finally {
         removeSignalListeners();
@@ -246,5 +294,5 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
     })().finally(() => { stopPromise = undefined; });
     return stopPromise;
   };
-  return { start, stop, isDraining: () => draining, health };
+  return { start, stop, isDraining: () => draining, health, waitForExit: () => exit };
 };

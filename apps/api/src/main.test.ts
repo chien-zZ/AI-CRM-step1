@@ -1,0 +1,143 @@
+import { describe, expect, it, vi } from "vitest";
+
+import type { ApiPlatformBindings } from "./composition.js";
+import { bootstrapApiProcess, type ApiProcessPort } from "./main.js";
+import { runApiMain } from "./main.js";
+
+class SyntheticProcess implements ApiProcessPort {
+  exitCode: number | undefined;
+  readonly listeners = new Map<"SIGINT" | "SIGTERM", () => void>();
+
+  off(event: "SIGINT" | "SIGTERM", listener: () => void): void {
+    if (this.listeners.get(event) === listener) this.listeners.delete(event);
+  }
+
+  once(event: "SIGINT" | "SIGTERM", listener: () => void): void {
+    this.listeners.set(event, listener);
+  }
+
+  emit(event: "SIGINT" | "SIGTERM"): void {
+    const listener = this.listeners.get(event);
+    this.listeners.delete(event);
+    listener?.();
+  }
+}
+
+function bindings(): ApiPlatformBindings {
+  return {
+    audit: { readSensitive: vi.fn(), record: vi.fn() },
+    authentication: { beginLogin: vi.fn(), completeLogin: vi.fn(), currentSession: vi.fn(), logout: vi.fn(), refresh: vi.fn() },
+    authenticationCallbackUrl: (requestPathAndQuery) => `https://api.invalid${requestPathAndQuery}`,
+    authorization: { requireAllowed: vi.fn() } as unknown as ApiPlatformBindings["authorization"],
+    databaseCompatibility: { assertCompatible: vi.fn() },
+    organization: { resolveWorkforceContext: vi.fn() } as unknown as ApiPlatformBindings["organization"],
+    queries: {
+      applicationRegistry: { loadRegistry: vi.fn(), resolveDeepLink: vi.fn() },
+      fileCenter: { authorizeDownload: vi.fn() },
+      forms: { getRelease: vi.fn(), validateSubmission: vi.fn() },
+      notifications: { get: vi.fn(), list: vi.fn(), unreadCount: vi.fn() },
+      tasks: { get: vi.fn(), list: vi.fn() },
+    },
+    readiness: () => [],
+    sessions: { resolvePrincipal: vi.fn() },
+  };
+}
+
+describe("API process bootstrap", () => {
+  it("has a no-argument-style executable path for the business-neutral test composition", async () => {
+    const processPort = new SyntheticProcess();
+    const running = await runApiMain({
+      configuration: { env: { AI_CRM_API_HOST: "127.0.0.1", AI_CRM_API_PORT: "0", NODE_ENV: "test" } },
+      processPort,
+    });
+    expect(running.application.health("readiness")).toEqual({ status: "unavailable" });
+    await running.shutdown();
+  });
+
+  it("fails production closed at the application-owned composition factory", async () => {
+    await expect(runApiMain({ configuration: { env: {
+      AI_CRM_INSTANCE_ID: "api-prod-1",
+      AI_CRM_RELEASE: "2026.07.27.1",
+      NODE_ENV: "production",
+    } } })).rejects.toThrow("api_production_composition_unavailable");
+  });
+
+  it("checks compatibility and performs bounded signal shutdown", async () => {
+    const configuredBindings = bindings();
+    const processPort = new SyntheticProcess();
+    const logger = { log: vi.fn() };
+    const running = await bootstrapApiProcess({
+      bindings: configuredBindings,
+      configuration: {
+        environment: "test",
+        host: "127.0.0.1",
+        instanceId: "api-test",
+        port: 0,
+        release: "synthetic",
+        shutdownTimeoutMs: 100,
+        startupTimeoutMs: 100,
+      },
+      logger,
+      processPort,
+    });
+    expect(configuredBindings.databaseCompatibility.assertCompatible).toHaveBeenCalledOnce();
+    expect(processPort.listeners.size).toBe(2);
+    processPort.emit("SIGTERM");
+    await vi.waitFor(() => { expect(processPort.exitCode).toBe(0); });
+    expect(processPort.listeners.size).toBe(0);
+    expect(running.application.health("readiness")).toEqual({ status: "unavailable" });
+  });
+
+  it("fails before listening when migration compatibility is not proven", async () => {
+    const configuredBindings = {
+      ...bindings(),
+      databaseCompatibility: { assertCompatible: vi.fn(() => { throw new Error("migration_incompatible"); }) },
+    };
+    const processPort = new SyntheticProcess();
+    await expect(bootstrapApiProcess({
+      bindings: configuredBindings,
+      configuration: {
+        environment: "test",
+        host: "127.0.0.1",
+        instanceId: "api-test",
+        port: 0,
+        release: "synthetic",
+        shutdownTimeoutMs: 100,
+        startupTimeoutMs: 100,
+      },
+      logger: { log: vi.fn() },
+      processPort,
+    })).rejects.toThrow("migration_incompatible");
+    expect(processPort.listeners.size).toBe(0);
+  });
+
+  it("handles SIGTERM while startup is still waiting", async () => {
+    const processPort = new SyntheticProcess();
+    let started: (() => void) | undefined;
+    const compatibilityStarted = new Promise<void>((resolve) => { started = resolve; });
+    const configuredBindings = {
+      ...bindings(),
+      databaseCompatibility: {
+        assertCompatible: (signal: AbortSignal) => new Promise<void>((resolve) => {
+          started?.();
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => { resolve(); }, { once: true });
+        }),
+      },
+    };
+    const bootstrapping = bootstrapApiProcess({
+      bindings: configuredBindings,
+      configuration: {
+        environment: "test", host: "127.0.0.1", instanceId: "api-test", port: 0, release: "synthetic",
+        shutdownTimeoutMs: 100, startupTimeoutMs: 100,
+      },
+      logger: { log: vi.fn() },
+      processPort,
+    });
+    await compatibilityStarted;
+    processPort.emit("SIGTERM");
+    await expect(bootstrapping).rejects.toThrow("api_start_cancelled");
+    await vi.waitFor(() => { expect(processPort.exitCode).toBe(0); });
+    expect(processPort.listeners.size).toBe(0);
+  });
+});
