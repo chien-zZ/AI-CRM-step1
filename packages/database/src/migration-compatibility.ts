@@ -1,14 +1,10 @@
-import { Pool } from "pg";
-import {
-  loadMigrations,
-  type ApplicationCompatibility,
-  type MigrationDefinition,
-  type MigrationPool,
-} from "./migrations.js";
+import { loadMigrations, type ApplicationCompatibility, type MigrationDefinition, type MigrationPool } from "./migrations.js";
 
 export type MigrationCompatibilityIssue =
   | { readonly kind: "application-schema-version-unsupported"; readonly migrationVersion: string }
   | { readonly kind: "checksum-mismatch"; readonly migrationVersion: string }
+  | { readonly kind: "compatibility-evidence-mismatch"; readonly migrationVersion: string }
+  | { readonly kind: "compatibility-evidence-unavailable"; readonly migrationVersion: string }
   | { readonly kind: "missing-migration"; readonly migrationVersion: string }
   | { readonly kind: "record-mismatch"; readonly migrationVersion: string }
   | { readonly kind: "unknown-applied-migration"; readonly migrationVersion: string };
@@ -21,6 +17,8 @@ export interface MigrationCompatibilityReport {
 }
 
 interface AppliedMigrationRow {
+  readonly application_compatibility_maximum_exclusive: string | null;
+  readonly application_compatibility_minimum_inclusive: string | null;
   readonly checksum: string;
   readonly module_owner: string;
   readonly name: string;
@@ -28,9 +26,9 @@ interface AppliedMigrationRow {
 }
 
 interface SemanticVersion {
-  readonly major: number;
-  readonly minor: number;
-  readonly patch: number;
+  readonly major: bigint;
+  readonly minor: bigint;
+  readonly patch: bigint;
 }
 
 function parseSemanticVersion(value: string): SemanticVersion {
@@ -38,11 +36,14 @@ function parseSemanticVersion(value: string): SemanticVersion {
   if (!match?.[1] || !match[2] || !match[3]) {
     throw new Error("Application schema version must use the x.y.z format without prerelease or build metadata.");
   }
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+  return { major: BigInt(match[1]), minor: BigInt(match[2]), patch: BigInt(match[3]) };
 }
 
 function compareSemanticVersions(left: SemanticVersion, right: SemanticVersion): number {
-  return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
+  if (left.major !== right.major) return left.major < right.major ? -1 : 1;
+  if (left.minor !== right.minor) return left.minor < right.minor ? -1 : 1;
+  if (left.patch !== right.patch) return left.patch < right.patch ? -1 : 1;
+  return 0;
 }
 
 function supportsApplicationSchemaVersion(compatibility: ApplicationCompatibility, applicationSchemaVersion: SemanticVersion): boolean {
@@ -62,7 +63,7 @@ async function loadMigrationCatalog(directories: string | readonly string[]): Pr
   return migrations;
 }
 
-export async function checkMigrationCompatibilityWithPool(
+export async function checkMigrationCompatibility(
   pool: MigrationPool,
   directories: string | readonly string[],
   applicationSchemaVersion: string,
@@ -73,7 +74,7 @@ export async function checkMigrationCompatibilityWithPool(
   const client = await pool.connect();
   try {
     const result = await client.query<AppliedMigrationRow>(
-      "select version, name, module_owner, checksum from ai_crm_migrations.applied_migrations order by version",
+      "select version, name, module_owner, checksum, application_compatibility_minimum_inclusive, application_compatibility_maximum_exclusive from ai_crm_migrations.applied_migrations order by version",
     );
     const appliedByVersion = new Map(result.rows.map((row) => [row.version, row]));
     const issues: MigrationCompatibilityIssue[] = [];
@@ -90,8 +91,21 @@ export async function checkMigrationCompatibilityWithPool(
       if (applied.name !== migration.name || applied.module_owner !== migration.metadata.moduleOwner) {
         issues.push({ kind: "record-mismatch", migrationVersion: migration.version });
       }
-      if (!supportsApplicationSchemaVersion(migration.metadata.applicationCompatibility, parsedApplicationSchemaVersion)) {
-        issues.push({ kind: "application-schema-version-unsupported", migrationVersion: migration.version });
+      if (applied.application_compatibility_minimum_inclusive === null) {
+        issues.push({ kind: "compatibility-evidence-unavailable", migrationVersion: migration.version });
+      } else {
+        const evidence: ApplicationCompatibility = {
+          ...(applied.application_compatibility_maximum_exclusive === null
+            ? {}
+            : { maximumExclusive: applied.application_compatibility_maximum_exclusive }),
+          minimumInclusive: applied.application_compatibility_minimum_inclusive,
+        };
+        if (evidence.minimumInclusive !== migration.metadata.applicationCompatibilityRange.minimumInclusive
+          || evidence.maximumExclusive !== migration.metadata.applicationCompatibilityRange.maximumExclusive) {
+          issues.push({ kind: "compatibility-evidence-mismatch", migrationVersion: migration.version });
+        } else if (!supportsApplicationSchemaVersion(evidence, parsedApplicationSchemaVersion)) {
+          issues.push({ kind: "application-schema-version-unsupported", migrationVersion: migration.version });
+        }
       }
     }
     for (const applied of result.rows) {
@@ -108,18 +122,5 @@ export async function checkMigrationCompatibilityWithPool(
     };
   } finally {
     client.release();
-  }
-}
-
-export async function checkMigrationCompatibility(
-  connectionString: string,
-  directories: string | readonly string[],
-  applicationSchemaVersion: string,
-): Promise<MigrationCompatibilityReport> {
-  const pool = new Pool({ application_name: "ai_crm_migration_compatibility", connectionString, max: 1 });
-  try {
-    return await checkMigrationCompatibilityWithPool(pool as unknown as MigrationPool, directories, applicationSchemaVersion);
-  } finally {
-    await pool.end();
   }
 }

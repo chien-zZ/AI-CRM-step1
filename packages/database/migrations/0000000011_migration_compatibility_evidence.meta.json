@@ -1,0 +1,13 @@
+{
+  "moduleOwner": "database",
+  "purpose": "Persist machine-verifiable application schema compatibility evidence for applied migrations.",
+  "applicationCompatibility": {
+    "minimumInclusive": "0.0.0"
+  },
+  "lockImpact": "Takes a short ACCESS EXCLUSIVE lock on the small technical migration registry while adding nullable columns and constraints.",
+  "dataImpact": "Backfills compatibility evidence only for applied versions 0000000001 through 0000000010 whose persisted SQL checksums exactly match the reviewed values.",
+  "backfill": "A bounded, idempotency-by-transaction UPDATE covers at most ten technical registry rows; checksum mismatch aborts and rolls back the migration.",
+  "destructive": false,
+  "recovery": "Before application, restore the reviewed database recovery point if required. After application, retain the additive columns when rolling back application code; do not drop evidence while newer applications depend on it.",
+  "forwardFix": "Append a later reviewed migration to repair constraints or evidence. Never rewrite this migration after it has run."
+}

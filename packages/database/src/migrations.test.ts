@@ -34,13 +34,25 @@ describe("migration governance", () => {
       applicationCompatibility: { maximumExclusive: "2.0.0", minimumInclusive: "1.2.3" },
     });
     const migrations = await loadMigrations(directory);
-    expect(migrations[0]?.metadata.applicationCompatibility).toEqual({ maximumExclusive: "2.0.0", minimumInclusive: "1.2.3" });
+    expect(migrations[0]?.metadata.applicationCompatibility).toBe(">=1.2.3 <2.0.0");
+    expect(migrations[0]?.metadata.applicationCompatibilityRange).toEqual({ maximumExclusive: "2.0.0", minimumInclusive: "1.2.3" });
   });
 
   it("adapts the historical machine-readable compatibility range", async () => {
     const directory = await migrationDirectory("select 1;");
     const migrations = await loadMigrations(directory);
-    expect(migrations[0]?.metadata.applicationCompatibility).toEqual({ minimumInclusive: "0.0.0" });
+    expect(migrations[0]?.metadata.applicationCompatibility).toBe(">=0.0.0");
+    expect(migrations[0]?.metadata.applicationCompatibilityRange).toEqual({ minimumInclusive: "0.0.0" });
+  });
+
+  it("compares compatibility components without Number precision loss", async () => {
+    const directory = await migrationDirectory("select 1;", {
+      applicationCompatibility: {
+        maximumExclusive: "90071992547409931234567891.0.0",
+        minimumInclusive: "90071992547409931234567890.0.0",
+      },
+    });
+    await expect(loadMigrations(directory)).resolves.toHaveLength(1);
   });
 
   it("rejects new free-text and empty compatibility ranges", async () => {
@@ -95,6 +107,32 @@ describe("migration governance", () => {
     await expect(runMigrationsWithPool(pool, directory)).rejects.toThrow("migration failed");
     expect(statements).toContain("rollback");
     expect(statements.some((sql) => sql.startsWith("insert into"))).toBe(false);
+  });
+
+  it("persists normalized compatibility evidence for registry version 11 and later", async () => {
+    const directory = await migrationDirectory(
+      "select evidence;",
+      { applicationCompatibility: { maximumExclusive: "3.0.0", minimumInclusive: "2.0.0" } },
+      "0000000011",
+    );
+    const calls: { readonly sql: string; readonly values?: readonly unknown[] }[] = [];
+    const connection: MigrationConnection = {
+      query<Row>(sql: string, values?: readonly unknown[]): Promise<{ rows: Row[] }> {
+        calls.push({ sql, ...(values === undefined ? {} : { values }) });
+        if (sql.startsWith("select version")) {
+          const error = new Error("missing") as Error & { code: string };
+          error.code = "42P01";
+          return Promise.reject(error);
+        }
+        return Promise.resolve({ rows: [] as Row[] });
+      },
+      release() {},
+    };
+    const pool: MigrationPool = { connect: () => Promise.resolve(connection), end: () => Promise.resolve() };
+    await runMigrationsWithPool(pool, directory);
+    const insert = calls.find(({ sql }) => sql.startsWith("insert into"));
+    expect(insert?.sql).toContain("application_compatibility_minimum_inclusive");
+    expect(insert?.values?.slice(-2)).toEqual(["2.0.0", "3.0.0"]);
   });
 
   it("orders globally versioned migrations across module directories",async()=>{
