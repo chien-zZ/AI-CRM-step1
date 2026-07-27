@@ -1,0 +1,55 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import test from "node:test";
+import { checkArtifacts } from "./check-artifacts.mjs";
+
+async function fixture({ h5Html = '<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><script src="/js/app.js"></script><link rel="stylesheet" href="/css/app.css">', source = "export const safe = true;", weappApp = "safe" } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "external-portal-artifacts-"));
+  const files = {
+    "src/index.ts": source,
+    "dist/h5/index.html": h5Html,
+    "dist/h5/js/app.js": "javascript",
+    "dist/h5/css/app.css": "stylesheet",
+    "dist/weapp/app.js": weappApp,
+    "dist/weapp/app.json": "{}",
+  };
+  for (const [name, content] of Object.entries(files)) {
+    const path = join(root, name);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content);
+  }
+  await mkdir(join(root, "config"), { recursive: true });
+  await writeFile(join(root, "config", "index.ts"), "packages/api-client/src/external.ts");
+  return root;
+}
+
+test("accepts safe dual-target artifacts within budgets", async (context) => {
+  const root = await fixture();
+  context.after(() => rm(root, { force: true, recursive: true }));
+  const result = await checkArtifacts({ appRoot: root });
+  assert.equal(result.h5EntrypointBytes, 20);
+  assert.equal(result.weappBytes, 6);
+});
+
+test("rejects any non-allowlisted API client import before artifact acceptance", async (context) => {
+  const forbiddenSpecifier = ["@ai-crm/api-client", "internal"].join("/");
+  const root = await fixture({ source: `import { internalOperations } from "${forbiddenSpecifier}";` });
+  await mkdir(join(root, "config"), { recursive: true });
+  await writeFile(join(root, "config", "index.ts"), "packages/api-client/src/external.ts");
+  context.after(() => rm(root, { force: true, recursive: true }));
+  await assert.rejects(checkArtifacts({ appRoot: root }), /imports a non-allowlisted API client/u);
+});
+
+test("rejects source maps, production fixture content, and budget overflow", async (context) => {
+  const fixtureLeak = await fixture({ weappApp: "developmentFixturePort" });
+  const oversized = await fixture();
+  await writeFile(join(oversized, "dist", "weapp", "extra.js"), "x".repeat(20));
+  const sourceMap = await fixture();
+  await writeFile(join(sourceMap, "dist", "h5", "js", "app.js.map"), "{}");
+  context.after(() => Promise.all([fixtureLeak, oversized, sourceMap].map((root) => rm(root, { force: true, recursive: true }))));
+  await assert.rejects(checkArtifacts({ appRoot: fixtureLeak }), /Forbidden external artifact content/u);
+  await assert.rejects(checkArtifacts({ appRoot: oversized, weappBudgetBytes: 10 }), /weapp package is/u);
+  await assert.rejects(checkArtifacts({ appRoot: sourceMap }), /source maps are forbidden/u);
+});

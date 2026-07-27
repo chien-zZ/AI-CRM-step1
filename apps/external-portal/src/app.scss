@@ -1,0 +1,14 @@
+:root { color: #15231f; background: #f4f7f6; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f4f7f6; }
+.portal-app { min-height: 100vh; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.portal-navigation { display: flex; gap: 10px; padding: 16px; background: #fff; border-bottom: 1px solid #dce7e2; }
+.portal-content { display: block; width: min(100%, 760px); margin: 0 auto; padding: 20px 16px; }
+.hero-card, .boundary-card, .entry-card { display: flex; flex-direction: column; gap: 10px; padding: 20px; background: #fff; border: 1px solid #dce7e2; border-radius: 18px; box-shadow: 0 10px 30px rgb(24 72 57 / 8%); }
+.hero-title, .entry-title { display: block; font-weight: 700; color: #123d31; }
+.hero-title { font-size: 24px; line-height: 1.25; }
+.hero-copy, .entry-summary { display: block; color: #52635e; line-height: 1.65; overflow-wrap: anywhere; }
+.entry-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+.status-page, .full-state { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; }
+.status-actions { display: flex; justify-content: center; }
+@media (max-width: 420px) { .portal-content { padding: 14px 12px; } .hero-card, .boundary-card, .entry-card { border-radius: 14px; padding: 16px; } .hero-title { font-size: 21px; } }
