@@ -4,7 +4,7 @@ First-stage external client built with Taro, React, TypeScript, and NutUI React.
 
 It is independently built and deployed from internal applications and uses a separately approved identity, session, API exposure, rate-limit, privacy, and error-disclosure boundary. Target-specific network, session, navigation, and file behavior stays behind tested adapters.
 
-The portal supports explicitly contracted anonymous, restricted-invitation, and long-term-login modes. Anonymous access is never an authentication fallback, and an invitation grants only a bounded resource action without identifying its holder. No concrete external workflow is implemented until its domain owner is confirmed.
+Future owning domains must explicitly select and contract anonymous, restricted-invitation, or long-term-login access per operation. None of those business access modes is enabled by this shell. Anonymous access can never be an authentication fallback, and no invitation or external account model exists here.
 
 When long-term login is required, the H5 artifact uses an independent BFF HTTP-only cookie and the WeChat Mini Program can hold only a short-lived, revocable opaque server-session handle. It never receives Keycloak tokens, provider secrets, or the WeChat `session_key`. Provider login remains disabled until a concrete external subject and account lifecycle are approved.
 

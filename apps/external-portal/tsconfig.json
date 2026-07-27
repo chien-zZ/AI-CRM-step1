@@ -1,1 +1,16 @@
-{ "extends": "../../packages/tsconfig/base.json" }
+{
+  "extends": "../../packages/tsconfig/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@ai-crm/api-client/external": ["../../packages/api-client/src/external.ts"],
+      "@external-portal/runtime-port": ["./src/runtime.production.ts"]
+    },
+    "rootDir": "../..",
+    "types": ["@tarojs/taro", "node"]
+  },
+  "include": ["config/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"]
+}
