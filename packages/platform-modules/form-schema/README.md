@@ -7,3 +7,5 @@ Confirmed business forms remain semantically owned by their domain modules, and 
 Workflow instances reference versioned form definitions or approved snapshots; Flowable variables do not become a duplicate form or business-data store.
 
 See [ADR-0013](../../../docs/08-架构决策/ADR-0013-版本化表单与业务配置中心.md) and the [module description](../../../docs/03-模块说明/表单定义模块.md).
+
+`createPostgresFormSchemaQueryService` is the production read/validation boundary. Every call carries an explicit authenticated Actor, current workforce authorization subject, and request Trace. It authorizes the exact definition and immutable release before reading the module-owned PostgreSQL Store. Validation reads the exact release, persists no submitted value, and retains the existing controlled server-side dialect and stable failure semantics.

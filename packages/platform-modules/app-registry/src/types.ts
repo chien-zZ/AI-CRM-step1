@@ -101,3 +101,39 @@ export interface ApplicationRegistryService {
   mutate(command: RegistryMutationCommand): Promise<{ readonly replayed: boolean }>;
   resolveDeepLink(input: { readonly actor: RegistryActor; readonly audience: RegistryAudience; readonly link: RegisteredDeepLink }): Promise<ResolvedDeepLink>;
 }
+
+export interface RegistryAuthorizationSubject {
+  readonly activeAssignmentIds: readonly string[];
+  readonly selectedAssignmentId?: string;
+  readonly workforcePersonId: string;
+}
+
+export interface RegistryQueryContext {
+  readonly actor: RegistryActor;
+  readonly subject: RegistryAuthorizationSubject;
+  readonly traceId: string;
+}
+
+export interface RegistryPermissionReference {
+  readonly action: string;
+  readonly code: string;
+  readonly resource: string;
+}
+
+export interface RegistryQueryAuthorizationRequest {
+  readonly actor: RegistryActor;
+  readonly permission: RegistryPermissionReference;
+  readonly resourceId: string;
+  readonly resourceType: "application" | "route";
+  readonly subject: RegistryAuthorizationSubject;
+  readonly traceId: string;
+}
+
+export interface RegistryQueryAuthorizer {
+  authorize(request: RegistryQueryAuthorizationRequest): Promise<{ readonly allowed: boolean; readonly decisionId: string }>;
+}
+
+export interface ApplicationRegistryQueryService {
+  loadRegistry(input: { readonly audience: RegistryAudience; readonly context: RegistryQueryContext }): Promise<RegistrySnapshot>;
+  resolveDeepLink(input: { readonly audience: RegistryAudience; readonly context: RegistryQueryContext; readonly link: RegisteredDeepLink }): Promise<ResolvedDeepLink>;
+}

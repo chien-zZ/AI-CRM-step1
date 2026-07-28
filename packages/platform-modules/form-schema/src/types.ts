@@ -25,4 +25,35 @@ export interface FormSchemaService {
   validateSubmission(input: { readonly actor: FormActor; readonly data: unknown; readonly definitionId: string; readonly releaseVersion: number }): Promise<FormValidationResult>;
 }
 
+export interface FormAuthorizationSubject {
+  readonly activeAssignmentIds: readonly string[];
+  readonly selectedAssignmentId?: string;
+  readonly workforcePersonId: string;
+}
+
+export interface FormQueryContext {
+  readonly actor: FormActor;
+  readonly subject: FormAuthorizationSubject;
+  readonly traceId: string;
+}
+
+export interface FormQueryAuthorizationRequest {
+  readonly action: "read" | "validate";
+  readonly actor: FormActor;
+  readonly definitionId: string;
+  readonly permission: Readonly<{ readonly action: "read" | "validate"; readonly code: string; readonly resource: "platform.form-schema.form-release" }>;
+  readonly releaseVersion: number;
+  readonly subject: FormAuthorizationSubject;
+  readonly traceId: string;
+}
+
+export interface FormQueryAuthorizer {
+  authorize(request: FormQueryAuthorizationRequest): Promise<{ readonly allowed: boolean; readonly decisionId: string }>;
+}
+
+export interface FormSchemaQueryService {
+  getRelease(input: { readonly context: FormQueryContext; readonly definitionId: string; readonly releaseVersion: number }): Promise<FormRelease>;
+  validateSubmission(input: { readonly context: FormQueryContext; readonly data: unknown; readonly definitionId: string; readonly releaseVersion: number }): Promise<FormValidationResult>;
+}
+
 export interface FormOutboxEvent { readonly eventId: string; readonly eventType: "form.release.active_changed" | "form.release.published"; readonly occurredAt: string; readonly payload: Readonly<{ definitionId: string; releaseVersion: number }> }
