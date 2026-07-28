@@ -1,4 +1,5 @@
 export const packageId = "@ai-crm/platform-audit" as const;
+export { createPostgresAuditCapabilityProbe, type AuditCapabilityProbe, type AuditCapabilityStatus } from "./capability-probe.js";
 export { AuditError, type AuditErrorCode } from "./errors.js";
 export { createMemoryAuditStore } from "./memory-store.js";
 export { createPostgresAuditStore } from "./postgres-store.js";
