@@ -28,8 +28,14 @@
 
 ## 迁移与回收
 
-权限由全局追加迁移 `0000000013_runtime_database_grants.sql` 管理。它先从 `PUBLIC` 回收当前应用数据库的 `CONNECT/TEMPORARY` 和 `public` Schema 权限，再回收 `ai_crm_runtime` 在当前应用 Schema/表上的既有权限，只向运行角色返还 `CONNECT` 和上述精确集合。迁移不修改数据或历史迁移。隔离模块测试数据库没有该生产角色时只跳过角色权限语句；生产初始化已权威创建该角色，数据库集成环境也复用同一初始化脚本，并在应用迁移前显式断言角色存在。
+权限由全局追加迁移 `0000000013_runtime_database_grants.sql` 管理。它先要求 `ai_crm_runtime` 已由受控初始化创建；角色缺失时迁移以 `42704` 中止且不会写入迁移账本。随后从 `PUBLIC` 回收当前应用数据库的 `CONNECT/TEMPORARY` 和 `public` Schema 权限，再回收 `ai_crm_runtime` 在当前应用 Schema/表上的既有权限，只向运行角色返还 `CONNECT` 和上述精确集合。迁移不修改数据或历史迁移。隔离测试必须显式预建受限角色，不能通过跳过权限语句制造成功结果。
 
 生产不执行机械 Down Migration。若权限过宽，追加迁移立即 `REVOKE` 并验证受影响能力；若合法路径缺少权限，停止该能力发布，基于实际 SQL 追加最小 `GRANT`。不得临时授予 Schema 全表写权限或使用迁移凭据运行应用。
 
 Integration Owner 合并前必须重新扫描全仓迁移编号；若 `0013` 已占用，应同时重编号 SQL、元数据与测试期望，保持全仓版本唯一。
+
+## 运行能力探针
+
+`@ai-crm/database` 公开 `createPostgresRuntimeRoleCapabilityProbe` 只读探针。它固定要求 `current_user` 精确为 `ai_crm_runtime`，不能由配置替换 expected role；同时要求角色可登录、不是 Superuser、没有 `CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS`，没有任何继承角色成员关系，并且没有数据库 `CREATE/TEMPORARY` 或 `public` Schema `CREATE/USAGE`。
+
+探针查询失败、结果缺失、字段增加/缺失、任一禁止能力存在、Owner/额外角色连接或继承角色关系存在时统一返回 `unavailable`，不返回角色详情。Integration Owner 必须在 API 生产 Composition 中使用真实 API DatabaseRuntime 接入该探针，并将失败结果纳入 required readiness。在该接入完成并验证前，不得声称本矩阵已在生产连接上生效或 API Ready。

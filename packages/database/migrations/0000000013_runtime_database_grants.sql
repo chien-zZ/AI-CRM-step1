@@ -1,8 +1,7 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'ai_crm_runtime') THEN
-    RAISE NOTICE 'ai_crm_runtime is absent; runtime grants are not applicable to this isolated migration database';
-    RETURN;
+    RAISE EXCEPTION 'required database role ai_crm_runtime is absent' USING ERRCODE = '42704';
   END IF;
 
   EXECUTE format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());

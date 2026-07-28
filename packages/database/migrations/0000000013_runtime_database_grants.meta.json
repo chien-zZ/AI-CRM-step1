@@ -8,6 +8,6 @@
   "dataImpact": "No rows are changed. Existing ai_crm_runtime privileges on current application schemas and tables are reset before the reviewed API permissions are granted.",
   "backfill": "Not required. The migration changes PostgreSQL privileges only and is effective immediately for new statements.",
   "destructive": false,
-  "recovery": "Do not restore broad privileges. If the current API must be rolled back, retain this matrix because it supports the existing read and append paths. If an omitted authorized path is discovered, stop the affected rollout and apply a reviewed forward grant.",
+  "recovery": "If ai_crm_runtime is absent, create the reviewed restricted role and rerun the unapplied migration; the failed transaction is not recorded. Do not restore broad privileges. If an omitted authorized path is discovered, stop the affected rollout and apply a reviewed forward grant.",
   "forwardFix": "Append a later globally numbered migration to add, narrow, or revoke a specific privilege after rechecking production composition. Never rewrite this migration after application."
 }
