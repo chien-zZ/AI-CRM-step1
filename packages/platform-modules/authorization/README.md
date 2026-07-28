@@ -32,6 +32,14 @@ Migration `0000000012_authorization_policy_persistence.sql` is additive and inte
 
 The production caller, publication authorization/approval route, cache-invalidation delivery, retention, and readiness composition remain deliberately unresolved. Therefore this package exposes no HTTP writer, default administrator, seeded Permission/Role/Grant, or production-ready claim.
 
+## Protected Publication Command
+
+`createProtectedAuthorizationPolicyPublisher` is an additive application-service boundary in front of the transactional publisher. Construction requires four explicit dependencies: the existing policy publisher, a server-side authorizer, the exact reviewed publication `PermissionRequest`, and an adapter to the separately owned management-audit capability. There is no default authorizer or built-in publication permission.
+
+The command carries a stable operation/publication identity, authenticated actor reference, complete current Workforce Person/active Assignment context, optional explicitly selected active Assignment, reason code, W3C Trace reference and complete non-empty v1 policy snapshot. It snapshots and validates all command data before awaiting dependencies. Denial or authorization/audit failure prevents persistence; publication failures create a management-audit failure intent. A success-audit failure after the PostgreSQL transaction commits is an uncertain-success result, not a rollback: callers retry the identical publication ID and let the transactional publisher replay it safely.
+
+This boundary does not solve first-policy bootstrap. With no current production policy, the normal policy-backed authorizer correctly fails closed and cannot authorize the first publication. Production activation still requires an accepted bootstrap authority/Owner, exact permission declaration, approval and emergency rules, administrative transport, concrete audit adapter, and reviewed non-empty policy content. Until those facts exist, no application should compose this service as a production write path.
+
 Run the real local Redis adapter check after the local Compose stack is healthy:
 
 ```powershell

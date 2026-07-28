@@ -1,0 +1,90 @@
+# CMP-AUTH-POLICY-PUBLICATION Protected Policy Publication Boundary
+
+- Status: IMPLEMENTED AND SELF-REVIEWED; ready to merge, production activation blocked
+- Owner: Authorization capability implementation
+- Branch: `codex/cmp-auth-policy-publication`
+- Allowed paths: `contracts/permissions/**`, `packages/platform-modules/authorization/**`, directly related documentation and this handoff
+
+## Known Facts
+
+- ADR-0025 is accepted and makes `authorization` the sole owner of immutable policy versions, publication history, the current-policy selection and authorization decision records.
+- The PostgreSQL publisher already validates a complete non-empty v1 snapshot, computes a canonical digest, serializes publications, commits version/history/current selection atomically and replays the same publication ID only for identical content.
+- Every production publication must be authorized against the current effective Workforce Person/Assignment context and must create management-audit evidence. Technical logs and authorization decision records do not replace management audit.
+- The real publication Owner, permission declaration, approval route, emergency procedure and first non-empty production policy have not been accepted.
+
+## Allowed Assumptions
+
+- A transport-neutral command boundary may require a stable authenticated actor reference, the complete current authorization subject, a stable operation ID, publication ID, management-audit ID, reason code, safe W3C Trace ID and the full immutable policy snapshot.
+- Application composition may inject the exact reviewed `PermissionRequest` after its Owner and declaration are accepted. The authorization package may require this injection without defining its eventual resource/action.
+- A required management-audit port may accept bounded, business-neutral publication facts and idempotently record attempted/denied/failed/succeeded outcomes.
+- The existing publication ID remains the persistence idempotency key. Retrying an identical command after an uncertain audit outcome must converge on the same publication and audit facts.
+
+## Forbidden Assumptions
+
+- Do not create or seed any real Permission, Role, Grant, Workforce Person, Assignment or production policy content.
+- Do not invent a policy administrator, Owner, approval workflow, emergency route, HTTP endpoint, session convention or Assignment-selection transport.
+- Do not trust a client-supplied allow result, actor identity, policy digest or partial/delta policy document.
+- Do not treat an audit failure after a committed publication as a rollback. The caller receives a stable unavailable result and must retry the identical command.
+- Do not expose policy contents, actor/workforce facts, raw errors, SQL, tokens, claims or provider payloads through logs or public errors.
+
+## Non-goals
+
+- No `apps/**` composition, production write API/UI, migration, database grant, cache invalidation delivery, real policy publication, seed, Compose or lockfile change.
+- No decision about publication permission ownership, approval, emergency access, retention, SLA, RPO or RTO.
+- No distributed transaction claim across authorization persistence and the separately owned audit capability.
+
+## Intended Result
+
+- Add a versioned contract for the complete protected publication command.
+- Add an additive authorization package service that validates and snapshots the command, performs a fresh server-side authorization check, records management audit semantics, and only then invokes the existing transactional publisher.
+- Keep production activation blocked until the real permission request, Owner, audit adapter and approved non-empty policy are supplied by reviewed application composition.
+
+## Review Dimensions
+
+- Authorization: exact injected permission; fresh `requireAllowed`; selected Assignment must belong to the supplied active set; denial/unavailability fails closed before publication.
+- Idempotency: publication, operation and audit IDs are stable; exact retries converge; conflicting publication reuse remains rejected by the existing publisher.
+- Transactions: policy version/history/current selection remain one PostgreSQL transaction; audit is a separate fact and no cross-module atomicity is claimed.
+- Migrations: none; the accepted persistence migration already owns the physical publication facts.
+- Observability: only stable errors leave the service; no policy body, identity data or raw dependency error is logged by this boundary.
+- Backward compatibility: additive contract, types, factory and exports; existing publisher/store/service interfaces remain unchanged.
+- Secrets: none.
+- Failure behavior: invalid input, denial, authorizer failure, audit failure, publisher conflict/unavailability and uncertain post-commit audit all fail closed.
+
+## Unresolved Production Blockers
+
+- Accepted publication capability Owner and exact permission declaration/request.
+- Approval, separation-of-duties and emergency publication rules.
+- Concrete application-composed audit adapter and authorized administrative transport.
+- An accepted bootstrap authority for the first non-empty policy. The normal current-policy authorizer cannot authorize that first publication while production correctly has no current policy; this service does not resolve or bypass that bootstrap deadlock.
+- Reviewed first non-empty production Permission/Role/Grant snapshot.
+
+## Uncertain Success And Retry
+
+- Policy persistence commits before the separately owned management-audit success fact. If that audit write fails or its commit cannot be confirmed, the service returns `AUTHORIZATION_UNAVAILABLE` and must not claim rollback.
+- Retrying the identical command re-authorizes the current actor context and reuses the same publication ID. The PostgreSQL publisher returns the already committed identical result, while the audit adapter records the retry attempt under its authorization decision correlation.
+
+## Implemented
+
+- Added `protected-policy-publication-command.v1.schema.json` with bounded actor/current workforce context, stable operation and publication IDs, reason, Trace reference and the complete non-empty v1 snapshot shape.
+- Added `createProtectedAuthorizationPolicyPublisher` and additive public ports/types. Construction fails closed without an authorizer, exact context-free permission request, management-audit adapter or transactional publisher.
+- Descriptor-safe command and authorization-decision snapshots reject accessors, sparse arrays, cycles, contradictory Assignment selection, malformed dates/IDs/Trace and widened objects before persistence.
+- Authorization denial/unavailability creates bounded management-audit semantics and never reaches the persistence publisher. Audit records minimize workforce data to the Workforce Person and explicitly selected Assignment.
+- Publication success/failure is management-audited. Success-audit uncertainty returns unavailable; an identical retry reuses the stable publication ID and converges through the existing PostgreSQL replay semantics.
+
+## Self-review
+
+- Authorization: no built-in permission, Owner, role or bypass; every call performs fresh `requireAllowed` against the complete validated current subject. First-policy bootstrap remains explicitly blocked.
+- Idempotency: the existing stable publication ID remains the persistence idempotency key; operation ID and authorization-decision-correlated audit keys separate retry attempts without conflicting immutable audit facts.
+- Transactions: unchanged PostgreSQL single-transaction version/history/current-pointer publication; audit remains a separate capability fact with documented uncertain-success behavior.
+- Migrations: not applicable; no physical data change and no migration or runtime grant was added.
+- Observability/audit: stable public errors only; no raw dependency error, policy body, Token, Claim, SQL or active Assignment set enters the audit record or technical telemetry.
+- Backward compatibility: additive schema, factory, types and package-root exports; existing publisher, store, recorder and engine contracts are unchanged.
+- Secrets: not applicable; no configuration or secret reference added.
+- Failure behavior: malformed input/dependency results, denial, authorizer failure, audit failure, persistence conflict/unavailability and post-commit audit uncertainty all fail closed.
+
+## Verification
+
+- Authorization package: typecheck and lint passed; 43 tests passed and 6 environment-gated integration tests skipped.
+- Contract source compilation/generation and repository contract checks passed.
+- `git diff --check` passed.
+- Full `pnpm check` passed: repository checks 40/40, Compose static gate, generated contract validation and Turbo 140/140.

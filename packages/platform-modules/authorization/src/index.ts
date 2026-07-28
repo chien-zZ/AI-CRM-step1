@@ -10,6 +10,7 @@ export {
   createPostgresAuthorizationPersistence,
   type PostgresAuthorizationPersistence,
 } from "./postgres-persistence.js";
+export { createProtectedAuthorizationPolicyPublisher } from "./policy-publication.js";
 export {
   connectRedisAuthorizationCache,
   createRedisAuthorizationCache,
@@ -26,6 +27,10 @@ export type {
   AuthorizationPersistenceResult,
   AuthorizationPersistenceRuntime,
   AuthorizationPolicyPublication,
+  AuthorizationPolicyPublicationActor,
+  AuthorizationPolicyPublicationAuditRecord,
+  AuthorizationPolicyPublicationAuditor,
+  AuthorizationPolicyPublicationAuthorizer,
   AuthorizationPolicyPublisher,
   AuthorizationPolicySnapshot,
   AuthorizationPolicyStore,
@@ -41,6 +46,9 @@ export type {
   GrantSubject,
   PermissionDeclaration,
   PermissionRequest,
+  ProtectedAuthorizationPolicyPublisher,
+  ProtectedAuthorizationPolicyPublisherOptions,
+  ProtectedPublishAuthorizationPolicyCommand,
   PublishAuthorizationPolicyCommand,
   RoleDefinition,
   RolePermissionBinding,

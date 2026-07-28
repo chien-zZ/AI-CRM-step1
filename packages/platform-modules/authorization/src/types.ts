@@ -122,6 +122,61 @@ export interface AuthorizationPolicyPublisher {
   publish(command: PublishAuthorizationPolicyCommand): Promise<AuthorizationPolicyPublication>;
 }
 
+export interface AuthorizationPolicyPublicationActor {
+  readonly actorId: string;
+  readonly actorType: "authenticated_subject";
+  readonly subject: AuthorizationSubjectContext;
+}
+
+export interface ProtectedPublishAuthorizationPolicyCommand extends PublishAuthorizationPolicyCommand {
+  readonly actor: AuthorizationPolicyPublicationActor;
+  readonly operationId: string;
+  readonly reason: { readonly code: string };
+  readonly traceId: string;
+}
+
+export interface AuthorizationPolicyPublicationAuthorizer {
+  requireAllowed(
+    subject: AuthorizationSubjectContext,
+    request: PermissionRequest,
+  ): Promise<Readonly<AuthorizationDecision>>;
+}
+
+export interface AuthorizationPolicyPublicationAuditRecord {
+  readonly action: "authorization.policy.publish";
+  readonly actor: {
+    readonly actorId: string;
+    readonly actorType: "authenticated_subject";
+    readonly assignmentId?: string;
+    readonly workforcePersonId: string;
+  };
+  readonly authorizationDecisionId?: string;
+  readonly idempotencyKey: string;
+  readonly operationId: string;
+  readonly policyVersion: string;
+  readonly publicationId: string;
+  readonly reason: { readonly code: string };
+  readonly result: "denied" | "failed" | "succeeded";
+  readonly stage: "authorization" | "publication";
+  readonly traceId: string;
+}
+
+/** Application composition adapts this required port to the separately owned management-audit capability. */
+export interface AuthorizationPolicyPublicationAuditor {
+  record(record: AuthorizationPolicyPublicationAuditRecord): Promise<void>;
+}
+
+export interface ProtectedAuthorizationPolicyPublisher {
+  publish(command: ProtectedPublishAuthorizationPolicyCommand): Promise<AuthorizationPolicyPublication>;
+}
+
+export interface ProtectedAuthorizationPolicyPublisherOptions {
+  readonly audit: AuthorizationPolicyPublicationAuditor;
+  readonly authorizer: AuthorizationPolicyPublicationAuthorizer;
+  readonly permission: PermissionRequest;
+  readonly publisher: AuthorizationPolicyPublisher;
+}
+
 export interface CachedAuthorizationEvaluation {
   readonly allowed: boolean;
   readonly policyVersion: string;
