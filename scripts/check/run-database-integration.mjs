@@ -25,6 +25,7 @@ const environment = {
   AI_CRM_CREATE_TEST_MIGRATION_URL: "1",
   AI_CRM_TEST_POSTGRES_PORT: String(port),
   TEST_DATABASE_MIGRATION_URL_FILE: resolve(secretDirectory, "migration_url"),
+  TEST_DATABASE_RUNTIME_PASSWORD_FILE: resolve(secretDirectory, "postgres_app_password"),
 };
 
 function run(command, args) {

@@ -1,0 +1,13 @@
+{
+  "moduleOwner": "database",
+  "purpose": "Apply the reviewed least-privilege PostgreSQL matrix for the currently composed production API runtime role.",
+  "applicationCompatibility": {
+    "minimumInclusive": "0.0.0"
+  },
+  "lockImpact": "Catalog-only GRANT and REVOKE operations take short permission metadata locks; no application table data or definitions are changed.",
+  "dataImpact": "No rows are changed. Existing ai_crm_runtime privileges on current application schemas and tables are reset before the reviewed API permissions are granted.",
+  "backfill": "Not required. The migration changes PostgreSQL privileges only and is effective immediately for new statements.",
+  "destructive": false,
+  "recovery": "Do not restore broad privileges. If the current API must be rolled back, retain this matrix because it supports the existing read and append paths. If an omitted authorized path is discovered, stop the affected rollout and apply a reviewed forward grant.",
+  "forwardFix": "Append a later globally numbered migration to add, narrow, or revoke a specific privilege after rechecking production composition. Never rewrite this migration after application."
+}
