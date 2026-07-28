@@ -51,6 +51,7 @@
 
 - P2 missing-role skip: fixed. Migration `0013` now raises PostgreSQL `42704`; its transaction is not recorded. A separate PostgreSQL container without repository initialization proves the failure, then creates the reviewed role and proves the same migration can be rerun successfully.
 - P2 no runtime verification boundary: fixed in the database package. The public probe is read-only, has no caller-supplied role name, checks exact identity, dangerous attributes, inherited memberships and effective database/public-Schema privileges, and fails closed without returning catalog details.
+- P2 missing-role test readiness race: fixed. The uninitialized PostgreSQL container now has a bounded `pg_isready` Docker Healthcheck; the runner waits for `healthy` and then performs a second bounded `select 1` through the migration URL file before starting Vitest. Timeout and failure messages are stable and never include the URL, password, or driver error.
 
 ## Verification
 
@@ -58,7 +59,7 @@
 - `pnpm --filter @ai-crm/database typecheck`: passed.
 - `pnpm --filter @ai-crm/database build`: passed.
 - `pnpm --filter @ai-crm/database test`: 26 passed, 5 environment-gated PostgreSQL tests skipped.
-- `pnpm db:test:integration`: 31/31 passed against two isolated PostgreSQL 17.5 containers.
+- `pnpm db:test:integration`: two consecutive independent runs passed 31/31 against two isolated PostgreSQL 17.5 containers per run. Both runs completed Docker `pg_isready` health and the migration-URL `select 1` probe before Vitest started.
 - The initialized container passed the full `0001` through `0013` migration, least-privilege SQL paths, effective-denial matrix, exact runtime-role probe, Owner/extra-role rejection, and inherited-membership rejection.
 - The uninitialized container proved missing `ai_crm_runtime` returns `42704`, does not record `0013`, and succeeds on forward rerun after the restricted role is created.
 - Full repository `pnpm check` is intentionally deferred to Integration Owner after independent re-review and API readiness composition.

@@ -58,6 +58,22 @@ async function waitForPort(value) {
   throw new Error(`PostgreSQL loopback port ${value} did not become reachable.`);
 }
 
+async function waitForContainerHealth(container) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const result = spawnSync(
+      "docker",
+      ["inspect", "--format={{.State.Health.Status}}", container],
+      { encoding: "utf8", env: environment, shell: false, stdio: ["ignore", "pipe", "ignore"], timeout: 2_000 },
+    );
+    const status = result.status === 0 ? result.stdout.trim() : "";
+    if (status === "healthy") return;
+    if (status === "unhealthy") throw new Error("Missing-role PostgreSQL container became unhealthy.");
+    await delay(250);
+  }
+  throw new Error("Missing-role PostgreSQL container health deadline exceeded.");
+}
+
 const compose = [
   "compose", "-p", project,
   "-f", "deploy/compose/compose.base.yml",
@@ -74,6 +90,11 @@ try {
     "--env", "POSTGRES_DB=ai_crm_missing_role",
     "--env", "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password",
     "--mount", `type=bind,source=${resolve(secretDirectory, "postgres_migration_password")},target=/run/secrets/postgres_password,readonly`,
+    "--health-cmd", "pg_isready -U ai_crm_migration -d ai_crm_missing_role",
+    "--health-interval", "1s",
+    "--health-timeout", "2s",
+    "--health-retries", "20",
+    "--health-start-period", "1s",
     "postgres:17.5-bookworm",
   ]);
   const migrationPassword = (await readFile(resolve(secretDirectory, "postgres_migration_password"), "utf8")).trim();
@@ -82,7 +103,8 @@ try {
     `postgresql://ai_crm_migration:${encodeURIComponent(migrationPassword)}@127.0.0.1:${String(missingRolePort)}/ai_crm_missing_role\n`,
     { mode: 0o600 },
   );
-  await Promise.all([waitForPort(port), waitForPort(missingRolePort)]);
+  await Promise.all([waitForPort(port), waitForContainerHealth(missingRoleContainer)]);
+  run(process.execPath, ["packages/database/scripts/wait-postgres-ready.mjs"]);
   run(process.execPath, [pnpmCli, "--filter", "@ai-crm/database", "build"]);
   run(process.execPath, [pnpmCli, "--filter", "@ai-crm/database", "test"]);
 } finally {
