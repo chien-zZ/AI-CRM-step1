@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@ai-crm/config": "workspace:*",
+    "@ai-crm/database": "workspace:*",
     "@ai-crm/observability": "workspace:*",
     "@ai-crm/platform-eventing-outbox": "workspace:*",
     "@ai-crm/platform-file-center": "workspace:*",
@@ -24,6 +25,7 @@
     "@ai-crm/platform-task-center": "workspace:*",
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
+    "amqplib": "2.0.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   }

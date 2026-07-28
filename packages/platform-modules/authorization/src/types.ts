@@ -88,6 +88,40 @@ export interface AuthorizationPolicyStore {
   load(version: string): Promise<unknown>;
 }
 
+export interface AuthorizationPersistenceResult<Row> {
+  readonly rowCount: number;
+  readonly rows: readonly Row[];
+}
+
+/** A vendor-neutral, transaction-aware SQL execution boundary supplied by application composition. */
+export interface AuthorizationPersistenceRuntime {
+  execute<Row = Record<string, unknown>>(
+    sql: string,
+    values?: readonly unknown[],
+  ): Promise<AuthorizationPersistenceResult<Row>>;
+  withTransaction<T>(work: () => Promise<T>): Promise<T>;
+}
+
+export interface PublishAuthorizationPolicyCommand {
+  readonly contractVersion: string;
+  readonly publicationId: string;
+  readonly publishedAt: string;
+  readonly snapshot: AuthorizationPolicySnapshot;
+}
+
+export interface AuthorizationPolicyPublication {
+  readonly contentDigest: string;
+  readonly previousVersion?: string;
+  readonly publicationId: string;
+  readonly publishedAt: string;
+  readonly replayed: boolean;
+  readonly version: string;
+}
+
+export interface AuthorizationPolicyPublisher {
+  publish(command: PublishAuthorizationPolicyCommand): Promise<AuthorizationPolicyPublication>;
+}
+
 export interface CachedAuthorizationEvaluation {
   readonly allowed: boolean;
   readonly policyVersion: string;

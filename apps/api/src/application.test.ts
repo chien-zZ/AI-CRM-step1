@@ -101,6 +101,102 @@ describe("API composition root", () => {
     await app.stop();
   });
 
+  it("routes protected platform HTTP operations through the reviewed adapters", async () => {
+    const authorize = vi.fn().mockResolvedValue({
+      decision: { allowed: true },
+      principal: {
+        authenticationSubject: { issuer: "https://identity.invalid/realms/synthetic", subject: "subject-1" },
+        clientId: "api",
+        expiresAt: "2026-07-28T01:00:00.000Z",
+        issuedAt: "2026-07-28T00:00:00.000Z",
+      },
+      workforce: {
+        assignments: [],
+        employmentIds: [],
+        resolvedAt: "2026-07-28T00:00:00.000Z",
+        subject: { issuer: "https://identity.invalid/realms/synthetic", subject: "subject-1" },
+        workforcePersonId: "20000000-0000-4000-8000-000000000001",
+      },
+    });
+    const applicationRegistry = {
+      loadRegistry: vi.fn().mockResolvedValue({ body: { version: 1 }, headers: { "Cache-Control": "no-store" }, status: 200 }),
+      resolveDeepLink: vi.fn(),
+    };
+    const forms = { handle: vi.fn().mockResolvedValue({ body: { valid: true }, headers: { "Cache-Control": "no-store" }, status: 200 }) };
+    const fileCenter = {
+      authorizeDownload: vi.fn(),
+      confirmUpload: vi.fn(),
+      createUpload: vi.fn().mockResolvedValue({ body: { replayed: false }, headers: { "Cache-Control": "no-store" }, status: 201 }),
+    };
+    const app = createApiApplication({
+      logger,
+      platformHttp: { applicationRegistry, authorize, fileCenter, forms },
+    });
+    await app.start(0, "127.0.0.1");
+    const address = await app.instance()?.getUrl();
+    if (address === undefined) throw new Error("api_not_started");
+    const cookie = `__Host-ai_crm_pc_session=${"a".repeat(43)}`;
+
+    const requestTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+    const registryResponse = await fetch(`${address}/application-registry`, { headers: {
+      cookie,
+      traceparent: `00-${requestTraceId}-00f067aa0ba902b7-01`,
+    } });
+    expect(registryResponse.status).toBe(200);
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
+      credential: "a".repeat(43),
+      permission: { action: "read", resource: "platform.app-registry.registry" },
+      traceId: requestTraceId,
+    }));
+    expect(applicationRegistry.loadRegistry).toHaveBeenCalledWith(expect.objectContaining({
+      workforcePersonId: "20000000-0000-4000-8000-000000000001",
+      traceId: requestTraceId,
+    }));
+
+    const rawFormBody = JSON.stringify({ data: { synthetic: "value" } });
+    const formResponse = await fetch(`${address}/form-definitions/platform.synthetic/releases/1/validate`, {
+      body: rawFormBody,
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    expect(formResponse.status).toBe(200);
+    const formRequest = forms.handle.mock.calls[0]?.[0] as { readonly body?: Uint8Array; readonly path?: string };
+    expect(formRequest.path).toBe("/form-definitions/platform.synthetic/releases/1/validate");
+    expect(new TextDecoder().decode(formRequest.body)).toBe(rawFormBody);
+    const withinContractBody = JSON.stringify({ data: "x".repeat(120_000) });
+    expect((await fetch(`${address}/form-definitions/platform.synthetic/releases/1/validate`, {
+      body: withinContractBody,
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    })).status).toBe(200);
+    const callsBeforeOversize = forms.handle.mock.calls.length;
+    expect((await fetch(`${address}/form-definitions/platform.synthetic/releases/1/validate`, {
+      body: JSON.stringify({ data: "x".repeat(270_000) }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    })).status).toBe(413);
+    expect(forms.handle).toHaveBeenCalledTimes(callsBeforeOversize);
+
+    const uploadResponse = await fetch(`${address}/files/upload-sessions`, {
+      body: JSON.stringify({ declaredMediaType: "text/plain", declaredSizeBytes: 1, displayName: "synthetic.txt", ownerModule: "platform.synthetic" }),
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "idempotency-key": "30000000-0000-4000-8000-000000000001",
+        origin: "https://workbench.invalid",
+        "x-csrf-token": "c".repeat(32),
+      },
+      method: "POST",
+    });
+    expect(uploadResponse.status).toBe(201);
+    expect(fileCenter.createUpload).toHaveBeenCalledWith(expect.objectContaining({
+      cookie,
+      idempotencyKey: "30000000-0000-4000-8000-000000000001",
+      origin: "https://workbench.invalid",
+    }), expect.objectContaining({ ownerModule: "platform.synthetic" }));
+    await app.stop();
+  });
+
   it("serializes concurrent starts", async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -192,6 +288,7 @@ describe("API composition root", () => {
       close,
       enableShutdownHooks: vi.fn(),
       listen: vi.fn(() => Promise.resolve()),
+      useBodyParser: vi.fn(),
     } as unknown as INestApplication;
     const create = vi.spyOn(NestFactory, "create").mockResolvedValueOnce(candidate);
     try {
@@ -215,7 +312,7 @@ describe("API composition root", () => {
     let release: ((candidate: INestApplication) => void) | undefined;
     const delayedCandidate = new Promise<INestApplication>((resolve) => { release = resolve; });
     const close = vi.fn(() => Promise.resolve());
-    const candidate = { close, enableShutdownHooks: vi.fn(), listen: vi.fn() } as unknown as INestApplication;
+    const candidate = { close, enableShutdownHooks: vi.fn(), listen: vi.fn(), useBodyParser: vi.fn() } as unknown as INestApplication;
     const create = vi.spyOn(NestFactory, "create").mockReturnValueOnce(delayedCandidate);
     try {
       const app = createApiApplication({ logger, startupTimeoutMs: 100 });

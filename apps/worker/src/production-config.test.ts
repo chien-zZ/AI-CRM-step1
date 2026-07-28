@@ -1,0 +1,79 @@
+import { rootCertificates } from "node:tls";
+import { describe, expect, it } from "vitest";
+import type { SecretFileSystem } from "@ai-crm/config";
+import { approvedWorkerMigrationRoots, loadProductionWorkerConfiguration, validateWorkerMigrationRootManifest } from "./production-config.js";
+import type { RabbitSecretFileAccess } from "./rabbit-config.js";
+
+const postgresPath = "D:\\secrets\\worker-postgres-url";
+const rabbitValues: Readonly<Record<string, Buffer>> = {
+  "D:\\secrets\\rabbit-ca": Buffer.from(rootCertificates[0] ?? ""),
+  "D:\\secrets\\rabbit-consumer-password": Buffer.from("consumer-password"),
+  "D:\\secrets\\rabbit-consumer-username": Buffer.from("worker-consumer"),
+  "D:\\secrets\\rabbit-publisher-password": Buffer.from("publisher-password"),
+  "D:\\secrets\\rabbit-publisher-username": Buffer.from("worker-publisher"),
+};
+
+const rabbitFiles: RabbitSecretFileAccess = {
+  access: (path) => path in rabbitValues ? Promise.resolve() : Promise.reject(new Error("missing")),
+  readFile: (path) => path in rabbitValues ? Promise.resolve(rabbitValues[path] as Buffer) : Promise.reject(new Error("missing")),
+  stat: (path) => Promise.resolve({ isFile: () => path in rabbitValues, mode: 0o100400, uid: 0 }),
+};
+
+const databaseFiles: SecretFileSystem = {
+  inspect: (path) => Promise.resolve({ isFile: path === postgresPath, isSymbolicLink: false, mode: 0o400, size: 43 }),
+  read: (path) => path === postgresPath
+    ? Promise.resolve("postgresql://worker:secret@db.internal/ai_crm")
+    : Promise.reject(new Error("missing")),
+};
+
+const environment = (): NodeJS.ProcessEnv => ({
+  AI_CRM_MIGRATIONS_ROOT: "D:\\AI-CRM",
+  AI_CRM_POSTGRES_URL_FILE: postgresPath,
+  AI_CRM_RABBIT_CA_FILE: "D:\\secrets\\rabbit-ca",
+  AI_CRM_RABBIT_CONSUMER_PASSWORD_FILE: "D:\\secrets\\rabbit-consumer-password",
+  AI_CRM_RABBIT_CONSUMER_USERNAME_FILE: "D:\\secrets\\rabbit-consumer-username",
+  AI_CRM_RABBIT_HEARTBEAT_SECONDS: "30",
+  AI_CRM_RABBIT_HOST: "rabbit.internal",
+  AI_CRM_RABBIT_PORT: "5671",
+  AI_CRM_RABBIT_PUBLISHER_PASSWORD_FILE: "D:\\secrets\\rabbit-publisher-password",
+  AI_CRM_RABBIT_PUBLISHER_USERNAME_FILE: "D:\\secrets\\rabbit-publisher-username",
+  AI_CRM_RABBIT_SERVERNAME: "rabbit.internal",
+  AI_CRM_RABBIT_TLS: "true",
+  AI_CRM_RABBIT_VHOST: "ai-crm-production",
+  AI_CRM_WORKER_SCHEMA_VERSION: "0.0.0",
+  NODE_ENV: "production",
+});
+
+describe("Worker production configuration", () => {
+  it("fails the bidirectional migration-root gate for either an added or removed root", () => {
+    expect(() => { validateWorkerMigrationRootManifest(approvedWorkerMigrationRoots); }).not.toThrow();
+    expect(() => { validateWorkerMigrationRootManifest(approvedWorkerMigrationRoots.slice(1)); }).toThrow("worker_migration_root_manifest_mismatch");
+    expect(() => { validateWorkerMigrationRootManifest([...approvedWorkerMigrationRoots, "packages/platform-modules/new-capability/migrations"]); })
+      .toThrow("worker_migration_root_manifest_mismatch");
+  });
+
+  it("loads a file-backed PostgreSQL URL, both least-privilege Rabbit accounts, and the complete migration catalog", async () => {
+    const value = await loadProductionWorkerConfiguration({
+      env: environment(),
+      rabbitSecretFiles: rabbitFiles,
+      secretFilePolicy: { fileSystem: databaseFiles },
+    });
+    expect(value.database).toMatchObject({ applicationName: "ai_crm_worker", maxConnections: 5 });
+    expect(value.database.connectionString).toContain("db.internal/ai_crm");
+    expect(value.rabbit.publisher.username).toBe("worker-publisher");
+    expect(value.rabbit.consumer.username).toBe("worker-consumer");
+    expect(value.migrations).toHaveLength(11);
+    expect(value.migrations.some((path) => path.endsWith("platform-modules\\authorization\\migrations"))).toBe(true);
+  });
+
+  it("rejects plaintext PostgreSQL values and an unsafe health window", async () => {
+    const env = { ...environment(), AI_CRM_POSTGRES_URL: "postgresql://forbidden", AI_CRM_POSTGRES_URL_FILE: undefined };
+    await expect(loadProductionWorkerConfiguration({ env, rabbitSecretFiles: rabbitFiles, secretFilePolicy: { fileSystem: databaseFiles } }))
+      .rejects.toThrow();
+    await expect(loadProductionWorkerConfiguration({
+      env: { ...environment(), AI_CRM_WORKER_POSTGRES_HEALTH_INTERVAL_MS: "1000", AI_CRM_WORKER_POSTGRES_HEALTH_TIMEOUT_MS: "1000" },
+      rabbitSecretFiles: rabbitFiles,
+      secretFilePolicy: { fileSystem: databaseFiles },
+    })).rejects.toThrow("worker_database_health_window_invalid");
+  });
+});

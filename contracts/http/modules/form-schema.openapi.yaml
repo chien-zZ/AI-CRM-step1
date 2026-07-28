@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info: { title: AI-CRM Form Schema API, version: 0.1.0 }
+paths:
+  /form-definitions/{definitionId}/releases/{releaseVersion}:
+    get:
+      operationId: getFormRelease
+      description: Reads one exact immutable release after current resource authorization. It does not resolve a mutable current version.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.form-schema, code: platform.form-schema.form-release:read, resource: platform.form-schema.form-release, action: read }
+      x-ai-crm-csrf: { mode: not-required, reason: read-only }
+      x-ai-crm-idempotency: { mode: none, reason: read-only }
+      parameters: [ { $ref: "#/components/parameters/FormDefinitionId" }, { $ref: "#/components/parameters/FormReleaseVersion" } ]
+      responses:
+        "200": { description: Exact immutable form release., content: { application/json: { schema: { $ref: "#/components/schemas/FormSchemaRelease" } } } }
+        "401": { $ref: "#/components/responses/FormUnauthorized" }
+        "403": { $ref: "#/components/responses/FormForbidden" }
+        "404": { description: Exact form release does not exist. }
+        "503": { $ref: "#/components/responses/FormUnavailable" }
+  /form-definitions/{definitionId}/releases/{releaseVersion}/validate:
+    post:
+      operationId: validateFormSubmission
+      description: Validates a proposed value against one exact immutable release on the server. The value is not persisted, authorization and domain invariants are not inferred, and client validation never becomes authoritative.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.form-schema, code: platform.form-schema.form-release:validate, resource: platform.form-schema.form-release, action: validate }
+      x-ai-crm-csrf: { mode: not-required, reason: read-only-validation }
+      x-ai-crm-idempotency: { mode: none, reason: no-state-change }
+      x-ai-crm-request-limits: { maxBodyBytes: 262144, jsonLimitTarget: requestBody.data, maxJsonDepth: 32, jsonRootDepth: 1, maxJsonNodes: 10000, jsonNodeCounting: object-array-and-scalar-values-including-data-root, enforcement: before-authorization-and-service }
+      parameters: [ { $ref: "#/components/parameters/FormDefinitionId" }, { $ref: "#/components/parameters/FormReleaseVersion" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FormSchemaValidationRequest" } } }
+      responses:
+        "200": { description: Server validation result for the exact release., content: { application/json: { schema: { $ref: "#/components/schemas/FormSchemaValidationResult" } } } }
+        "400": { description: Request payload is malformed or outside the bounded transport contract. }
+        "413": { description: "Request body exceeds 262144 bytes, JSON nesting exceeds 32 levels, or parsed JSON exceeds 10000 total object/array/scalar nodes. The Controller rejects it before authorization and before invoking Form Schema." }
+        "401": { $ref: "#/components/responses/FormUnauthorized" }
+        "403": { $ref: "#/components/responses/FormForbidden" }
+        "404": { description: Exact form release does not exist. }
+        "422": { description: The registered release cannot be compiled by the controlled server dialect; no submitted data is persisted. }
+        "503": { $ref: "#/components/responses/FormUnavailable" }
+components:
+  parameters:
+    FormDefinitionId: { name: definitionId, in: path, required: true, schema: { $ref: "#/components/schemas/FormSchemaId" } }
+    FormReleaseVersion: { name: releaseVersion, in: path, required: true, schema: { type: integer, minimum: 1 } }
+  responses:
+    FormUnauthorized: { description: No valid internal BFF session. }
+    FormForbidden: { description: Current server-side resource authorization denied. }
+    FormUnavailable: { description: Authorization or form persistence is unavailable; fails closed. }
+  schemas:
+    FormSchemaId: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,127}$" }
+    FormSchemaUiField:
+      type: object
+      additionalProperties: false
+      required: [component,field,order]
+      properties:
+        component: { type: string, enum: [date,input,number,select,switch,textarea] }
+        field: { $ref: "#/components/schemas/FormSchemaId" }
+        order: { type: integer, minimum: 0, maximum: 100000 }
+        span: { type: integer, minimum: 1, maximum: 24 }
+    FormSchemaUi:
+      type: object
+      additionalProperties: false
+      required: [fields,layout,version]
+      properties:
+        fields: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/FormSchemaUiField" } }
+        layout: { type: string, enum: [grid,vertical] }
+        version: { const: 1 }
+    FormSchemaRelease:
+      type: object
+      additionalProperties: false
+      required: [active,contentDigest,definitionId,jsonSchema,ownerModule,publishedAt,releaseVersion,uiSchema,version]
+      properties:
+        active: { type: boolean }
+        contentDigest: { type: string, pattern: "^[a-f0-9]{64}$" }
+        definitionId: { $ref: "#/components/schemas/FormSchemaId" }
+        jsonSchema: { type: object }
+        ownerModule: { $ref: "#/components/schemas/FormSchemaId" }
+        publishedAt: { type: string, format: date-time }
+        releaseVersion: { type: integer, minimum: 1 }
+        uiSchema: { $ref: "#/components/schemas/FormSchemaUi" }
+        version: { const: 1 }
+    FormSchemaReference:
+      type: object
+      additionalProperties: false
+      required: [contentDigest,definitionId,releaseVersion,version]
+      properties:
+        contentDigest: { type: string, pattern: "^[a-f0-9]{64}$" }
+        definitionId: { $ref: "#/components/schemas/FormSchemaId" }
+        releaseVersion: { type: integer, minimum: 1 }
+        version: { const: 1 }
+    FormSchemaValidationRequest:
+      type: object
+      additionalProperties: false
+      description: The complete encoded request body is limited to 262144 bytes. The data value is depth 1; each nested object/array value increases depth by 1. Data is limited to depth 32 and 10000 total object, array, and scalar value nodes including the data root by x-ai-crm-request-limits before authorization and service invocation.
+      required: [data]
+      properties: { data: {} }
+    FormSchemaValidationError:
+      type: object
+      additionalProperties: false
+      required: [instancePath,keyword]
+      properties:
+        instancePath: { type: string, maxLength: 2048 }
+        keyword: { type: string, maxLength: 128 }
+    FormSchemaValidationResult:
+      type: object
+      additionalProperties: false
+      required: [errors,reference,valid]
+      properties:
+        errors: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/FormSchemaValidationError" } }
+        reference: { $ref: "#/components/schemas/FormSchemaReference" }
+        valid: { type: boolean }

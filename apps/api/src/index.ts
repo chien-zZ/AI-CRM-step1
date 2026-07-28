@@ -1,10 +1,15 @@
+import { createHash } from "node:crypto";
 import "reflect-metadata";
 import { Controller, Get, Inject, Injectable, Module, Post, Req, Res, type OnApplicationShutdown } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { DynamicModule, INestApplication } from "@nestjs/common";
 import type { Request, Response } from "express";
-import { evaluateHealth, type ApplicationLogger, type HealthDependency, type HealthResult } from "@ai-crm/observability";
-import type { AuthenticationHttpResponse, BrowserRequestContext, PcAuthenticationHttpAdapter } from "./auth/http-adapter.js";
+import { evaluateHealth, extractTraceContext, type ApplicationLogger, type HealthDependency, type HealthResult } from "@ai-crm/observability";
+import type { PermissionRequest } from "@ai-crm/platform-authorization";
+import { BrowserSessionFailure } from "./auth/errors.js";
+import { parsePcSessionCredential, type AuthenticationHttpResponse, type BrowserRequestContext, type PcAuthenticationHttpAdapter } from "./auth/http-adapter.js";
+import type { ApiPlatformHttpComposition, AuthorizedOperationContext } from "./composition.js";
 
 export const applicationId = "@ai-crm/api" as const;
 const API_COMPOSITION = Symbol("api-composition");
@@ -18,8 +23,37 @@ export interface ApiComposition {
   readonly logger: ApplicationLogger;
   readonly onStart?: (signal: AbortSignal) => void | Promise<void>;
   readonly onStop?: () => void | Promise<void>;
+  readonly platformHttp?: Readonly<ApiPlatformHttpComposition>;
   readonly shutdownTimeoutMs?: number;
   readonly startupTimeoutMs?: number;
+}
+
+interface PlatformHttpResponse {
+  readonly body?: unknown;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly status: number;
+}
+
+function sendPlatformResponse(response: Response, result: PlatformHttpResponse): void {
+  for (const [name, value] of Object.entries(result.headers)) response.setHeader(name, value);
+  if (result.body === undefined) response.status(result.status).send();
+  else response.status(result.status).json(result.body);
+}
+
+function stableActorId(context: Readonly<AuthorizedOperationContext>): string {
+  const subject = context.principal.authenticationSubject;
+  return `subject:${createHash("sha256").update(`${subject.issuer}\0${subject.subject}`).digest("hex")}`;
+}
+
+function credentialFromRequest(request: Request): string | undefined {
+  const cookie = singleHeader(request, "cookie", 4096);
+  if (!cookie.valid) return undefined;
+  try { return parsePcSessionCredential(cookie.value); } catch { return undefined; }
+}
+
+function platformHeader(request: Request, name: string, maximumLength: number, minimumLength = 0): string | undefined {
+  const result = singleHeader(request, name, maximumLength, minimumLength);
+  return result.valid ? result.value : undefined;
 }
 
 interface RequestValue {
@@ -145,6 +179,126 @@ class PcAuthenticationController {
   }
 }
 
+function platform(composition: ApiComposition): Readonly<ApiPlatformHttpComposition> {
+  if (composition.platformHttp === undefined) throw new Error("api_platform_http_binding_missing");
+  return composition.platformHttp;
+}
+
+function registryAuthorizationFailure(error: unknown): PlatformHttpResponse {
+  const unavailable = error instanceof BrowserSessionFailure && error.code === "authentication_dependency_unavailable";
+  const unauthorized = error instanceof BrowserSessionFailure && !unavailable;
+  const forbidden = !unauthorized && !unavailable && typeof error === "object" && error !== null &&
+    (Reflect.get(error, "name") === "AuthorizationDeniedError" ||
+      ["subject_not_associated", "employment_not_active", "assignment_not_active"].includes(String(Reflect.get(error, "code"))));
+  const status = unauthorized ? 401 : forbidden ? 403 : 503;
+  const code = unauthorized ? "app_registry_unauthorized" : forbidden ? "app_registry_denied" : "app_registry_unavailable";
+  return Object.freeze({
+    body: Object.freeze({ code }),
+    headers: Object.freeze({ "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'" }),
+    status,
+  });
+}
+
+@Controller("application-registry")
+class ApplicationRegistryController {
+  constructor(@Inject(API_COMPOSITION) private readonly composition: ApiComposition) {}
+
+  private async context(request: Request, permission: PermissionRequest): Promise<Readonly<Record<string, string>>> {
+    const credential = credentialFromRequest(request);
+    if (credential === undefined) throw new BrowserSessionFailure("authentication_session_invalid");
+    const traceId = extractTraceContext({ traceparent: platformHeader(request, "traceparent", 512) }).traceId;
+    const authorized = await platform(this.composition).authorize({
+      at: new Date().toISOString(),
+      credential,
+      permission,
+      traceId,
+    });
+    return Object.freeze({
+      actorId: stableActorId(authorized),
+      traceId,
+      workforcePersonId: authorized.workforce.workforcePersonId,
+    });
+  }
+
+  @Get()
+  async load(@Req() request: Request, @Res() response: Response): Promise<void> {
+    try {
+      const context = await this.context(request, { action: "read", resource: "platform.app-registry.registry" });
+      sendPlatformResponse(response, await platform(this.composition).applicationRegistry.loadRegistry(context));
+    } catch (error) { sendPlatformResponse(response, registryAuthorizationFailure(error)); }
+  }
+
+  @Post("deep-links/resolve")
+  async resolve(@Req() request: Request, @Res() response: Response): Promise<void> {
+    try {
+      const context = await this.context(request, { action: "resolve", resource: "platform.app-registry.deep-link" });
+      sendPlatformResponse(response, await platform(this.composition).applicationRegistry.resolveDeepLink(context, request.body));
+    } catch (error) { sendPlatformResponse(response, registryAuthorizationFailure(error)); }
+  }
+}
+
+@Controller("form-definitions")
+class FormSchemaController {
+  constructor(@Inject(API_COMPOSITION) private readonly composition: ApiComposition) {}
+
+  private request(request: Request): Parameters<ApiPlatformHttpComposition["forms"]["handle"]>[0] {
+    const rawBody = Reflect.get(request, "rawBody") as unknown;
+    const contentType = platformHeader(request, "content-type", 128);
+    const credential = credentialFromRequest(request);
+    const traceparent = platformHeader(request, "traceparent", 512);
+    return {
+      at: new Date().toISOString(),
+      ...(rawBody instanceof Uint8Array ? { body: rawBody } : {}),
+      ...(contentType === undefined ? {} : { contentType }),
+      ...(credential === undefined ? {} : { credential }),
+      method: request.method,
+      path: request.path,
+      ...(traceparent === undefined ? {} : { traceparent }),
+    };
+  }
+
+  @Get(":definitionId/releases/:releaseVersion")
+  async release(@Req() request: Request, @Res() response: Response): Promise<void> {
+    sendPlatformResponse(response, await platform(this.composition).forms.handle(this.request(request)));
+  }
+
+  @Post(":definitionId/releases/:releaseVersion/validate")
+  async validate(@Req() request: Request, @Res() response: Response): Promise<void> {
+    sendPlatformResponse(response, await platform(this.composition).forms.handle(this.request(request)));
+  }
+}
+
+@Controller("files")
+class FileCenterController {
+  constructor(@Inject(API_COMPOSITION) private readonly composition: ApiComposition) {}
+
+  private context(request: Request) {
+    return Object.freeze({
+      cookie: platformHeader(request, "cookie", 4096),
+      csrfToken: platformHeader(request, "x-csrf-token", 512),
+      idempotencyKey: platformHeader(request, "idempotency-key", 64),
+      origin: platformHeader(request, "origin", 512),
+      referer: platformHeader(request, "referer", 2048),
+      traceparent: platformHeader(request, "traceparent", 512),
+    });
+  }
+
+  @Post("upload-sessions")
+  async createUpload(@Req() request: Request, @Res() response: Response): Promise<void> {
+    sendPlatformResponse(response, await platform(this.composition).fileCenter.createUpload(this.context(request), request.body));
+  }
+
+  @Post("upload-sessions/:sessionId/confirm")
+  async confirmUpload(@Req() request: Request, @Res() response: Response): Promise<void> {
+    sendPlatformResponse(response, await platform(this.composition).fileCenter.confirmUpload(this.context(request), request.params["sessionId"]));
+  }
+
+  @Post("download-grants")
+  async download(@Req() request: Request, @Res() response: Response): Promise<void> {
+    sendPlatformResponse(response, await platform(this.composition).fileCenter.authorizeDownload(this.context(request), request.body));
+  }
+}
+
 const unavailableDependency = Object.freeze([{ name: "dependency-check", required: true, healthy: false }]);
 function apiDependencies(composition: ApiComposition): readonly HealthDependency[] {
   try {
@@ -194,7 +348,7 @@ class ApiLifecycle implements OnApplicationShutdown {
 class ApiModule {}
 
 const createApiModule = (composition: ApiComposition, state: ApiRuntimeState): DynamicModule => ({
-  controllers: [HealthController, PcAuthenticationController],
+  controllers: [HealthController, PcAuthenticationController, ApplicationRegistryController, FormSchemaController, FileCenterController],
   module: ApiModule,
   providers: [
     { provide: API_COMPOSITION, useValue: composition },
@@ -267,7 +421,14 @@ export const createApiApplication = (composition: ApiComposition): ApiApplicatio
         initialize = (async (): Promise<void> => {
           await composition.onStart?.(controller.signal);
           if (cancelled()) throw new Error("api_start_cancelled");
-          candidate = await NestFactory.create(createApiModule(attemptComposition, state), { abortOnError: false, logger: false });
+          const created = await NestFactory.create<NestExpressApplication>(createApiModule(attemptComposition, state), {
+            abortOnError: false,
+            bodyParser: false,
+            logger: false,
+            rawBody: true,
+          });
+          created.useBodyParser("json", { limit: 262_144 });
+          candidate = created;
           if (cancelled()) {
             await closeCandidate();
             throw new Error("api_start_cancelled");

@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info: { title: AI-CRM File Center API, version: 0.1.0 }
+paths:
+  /files/upload-sessions:
+    post:
+      operationId: createFileUploadSession
+      description: Creates an initial immutable content version and a short-lived upload session. Declared metadata is untrusted; the returned FileReference is not usable until trusted inspection and malware scanning make the content available.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.file-center, code: platform.file-center.file:upload, resource: platform.file-center.file, action: upload }
+      x-ai-crm-csrf: { mode: required, tokenHeader: X-CSRF-Token, originCheck: required }
+      x-ai-crm-idempotency: { mode: required, keyHeader: Idempotency-Key, durableReplay: original-identities, ephemeralGrant: freshly-minted-within-original-session-expiry, conflictStatus: 409 }
+      parameters: [ { $ref: "#/components/parameters/FileIdempotencyKey" }, { $ref: "#/components/parameters/FileCsrfToken" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FileCreateUploadRequest" } } }
+      responses:
+        "201": { description: Durable session and ephemeral upload grant. An identical replay returns the original file/content/session identities but mints a fresh short-lived upload grant bounded by the original session expiry; it never extends durable lifetime., content: { application/json: { schema: { $ref: "#/components/schemas/FileUploadSessionResult" } } } }
+        "400": { $ref: "#/components/responses/FileInvalid" }
+        "401": { $ref: "#/components/responses/FileUnauthorized" }
+        "403": { $ref: "#/components/responses/FileForbidden" }
+        "409": { $ref: "#/components/responses/FileConflict" }
+        "503": { $ref: "#/components/responses/FileUnavailable" }
+  /files/upload-sessions/{sessionId}/confirm:
+    post:
+      operationId: confirmFileUpload
+      description: Idempotently inspects the uploaded object and confirms trusted metadata. Success moves content only to pending_scan; it never makes content available and never exposes scanner or storage-provider internals.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.file-center, code: platform.file-center.file:upload, resource: platform.file-center.file, action: upload }
+      x-ai-crm-csrf: { mode: required, tokenHeader: X-CSRF-Token, originCheck: required }
+      x-ai-crm-idempotency: { mode: required, keyHeader: Idempotency-Key, replay: original-result, conflictStatus: 409 }
+      parameters: [ { $ref: "#/components/parameters/FileSessionId" }, { $ref: "#/components/parameters/FileIdempotencyKey" }, { $ref: "#/components/parameters/FileCsrfToken" } ]
+      responses:
+        "200": { description: Current confirmed immutable content-version status. Replays do not re-run provider inspection., content: { application/json: { schema: { $ref: "#/components/schemas/FileConfirmUploadResult" } } } }
+        "400": { $ref: "#/components/responses/FileInvalid" }
+        "401": { $ref: "#/components/responses/FileUnauthorized" }
+        "403": { $ref: "#/components/responses/FileForbidden" }
+        "404": { description: Upload session is unavailable to the current principal. }
+        "409": { description: "Upload session is expired, not in a confirmable state, or conflicts with the idempotency operation. These conditions share the public File Center operation-conflict error and are intentionally not distinguished by the Controller." }
+        "503": { $ref: "#/components/responses/FileUnavailable" }
+  /files/download-grants:
+    post:
+      operationId: createFileDownloadGrant
+      description: Reauthorizes both File Center access and the current owning resource reference before minting a fresh short-lived download grant. A grant is ephemeral, is not a permanent provider URL, and does not prove the owning resource remains accessible later.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.file-center, code: platform.file-center.file:download, resource: platform.file-center.file, action: download }
+      x-ai-crm-csrf: { mode: not-required, reason: read-only-short-lived-grant }
+      x-ai-crm-idempotency: { mode: audit-operation-only, keyHeader: Idempotency-Key, replay: fresh-ephemeral-grant }
+      parameters: [ { $ref: "#/components/parameters/FileIdempotencyKey" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FileDownloadGrantRequest" } } }
+      responses:
+        "200": { description: Fresh short-lived download grant after current authorization., content: { application/json: { schema: { $ref: "#/components/schemas/FileDownloadGrant" } } } }
+        "400": { $ref: "#/components/responses/FileInvalid" }
+        "401": { $ref: "#/components/responses/FileUnauthorized" }
+        "403": { $ref: "#/components/responses/FileForbidden" }
+        "404": { description: File version or current resource reference is unavailable to the current principal. }
+        "409": { description: Content is not currently available for download. }
+        "503": { $ref: "#/components/responses/FileUnavailable" }
+components:
+  parameters:
+    FileSessionId: { name: sessionId, in: path, required: true, schema: { $ref: "#/components/schemas/FileUuid" } }
+    FileIdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { $ref: "#/components/schemas/FileUuid" } }
+    FileCsrfToken: { name: X-CSRF-Token, in: header, required: true, schema: { type: string, minLength: 32, maxLength: 512 } }
+  responses:
+    FileInvalid: { description: "Request shape, identifier, media type, size, or header is invalid." }
+    FileUnauthorized: { description: No valid internal BFF session. }
+    FileForbidden: { description: CSRF validation or current server-side authorization denied. }
+    FileConflict: { description: Idempotency key was reused with changed semantics or the current lifecycle state conflicts with the command. }
+    FileUnavailable: { description: "Authorization, audit, file persistence, or storage inspection/grant dependency is unavailable; fails closed." }
+  schemas:
+    FileUuid: { type: string, format: uuid, pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }
+    FileModuleId: { type: string, pattern: "^[a-z][a-z0-9_.:-]{1,127}$" }
+    FileResourceId: { type: string, minLength: 1, maxLength: 255, pattern: "^[A-Za-z0-9_.:@/-]+$" }
+    FileReference:
+      type: object
+      additionalProperties: false
+      required: [contentVersionId,displayName,fileId,version]
+      properties:
+        contentVersionId: { $ref: "#/components/schemas/FileUuid" }
+        displayName: { type: string, minLength: 1, maxLength: 255, pattern: "^[^\\u0000-\\u001F\\u007F]+$" }
+        fileId: { $ref: "#/components/schemas/FileUuid" }
+        mediaType: { type: string, minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" }
+        sizeBytes: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        version: { const: 1 }
+    FileUploadSession:
+      type: object
+      additionalProperties: false
+      required: [contentVersionId,createdAt,expiresAt,fileId,sessionId,status,version]
+      properties:
+        contentVersionId: { $ref: "#/components/schemas/FileUuid" }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        fileId: { $ref: "#/components/schemas/FileUuid" }
+        sessionId: { $ref: "#/components/schemas/FileUuid" }
+        status: { type: string, enum: [created,pending_scan,expired,cleanup_pending,cleaned] }
+        version: { const: 1 }
+    FileUploadGrant:
+      type: object
+      additionalProperties: false
+      required: [expiresAt,headers,method,uploadUrl,version]
+      properties:
+        expiresAt: { type: string, format: date-time }
+        headers: { type: object, maxProperties: 20, additionalProperties: { type: string, maxLength: 1024 } }
+        method: { const: PUT }
+        uploadUrl: { type: string, maxLength: 2048, pattern: "^https?://[^\\s]+$" }
+        version: { const: 1 }
+    FileContentVersion:
+      type: object
+      additionalProperties: false
+      required: [contentVersionId,createdAt,declaredMediaType,declaredSizeBytes,fileId,status,version,versionNumber]
+      properties:
+        actualSizeBytes: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        checksumSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        completedAt: { type: string, format: date-time }
+        contentVersionId: { $ref: "#/components/schemas/FileUuid" }
+        createdAt: { type: string, format: date-time }
+        declaredMediaType: { type: string, minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" }
+        declaredSizeBytes: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        detectedMediaType: { type: string, minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" }
+        fileId: { $ref: "#/components/schemas/FileUuid" }
+        scannedAt: { type: string, format: date-time }
+        status: { type: string, enum: [awaiting_upload,pending_scan,available,quarantine_pending,quarantined,object_missing,cleanup_pending,deleted] }
+        version: { const: 1 }
+        versionNumber: { type: integer, minimum: 1 }
+    FileCreateUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [declaredMediaType,declaredSizeBytes,displayName,ownerModule]
+      properties:
+        classificationReference: { $ref: "#/components/schemas/FileResourceId" }
+        declaredMediaType: { type: string, minLength: 3, maxLength: 255, pattern: "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" }
+        declaredSizeBytes: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        displayName: { type: string, minLength: 1, maxLength: 255, pattern: "^[^\\u0000-\\u001F\\u007F]+$" }
+        ownerModule: { $ref: "#/components/schemas/FileModuleId" }
+    FileUploadSessionResult:
+      type: object
+      additionalProperties: false
+      required: [fileReference,replayed,session,uploadGrant]
+      properties:
+        fileReference: { $ref: "#/components/schemas/FileReference" }
+        replayed: { type: boolean }
+        session: { $ref: "#/components/schemas/FileUploadSession" }
+        uploadGrant: { $ref: "#/components/schemas/FileUploadGrant" }
+    FileConfirmUploadResult:
+      type: object
+      additionalProperties: false
+      required: [contentVersion,replayed]
+      properties:
+        contentVersion: { $ref: "#/components/schemas/FileContentVersion" }
+        replayed: { type: boolean }
+    FileResourceReference:
+      type: object
+      additionalProperties: false
+      required: [resourceId,resourceType]
+      properties:
+        resourceId: { $ref: "#/components/schemas/FileResourceId" }
+        resourceType: { $ref: "#/components/schemas/FileModuleId" }
+    FileDownloadGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [fileReference,resource]
+      properties:
+        fileReference: { $ref: "#/components/schemas/FileReference" }
+        resource: { $ref: "#/components/schemas/FileResourceReference" }
+    FileDownloadGrant:
+      type: object
+      additionalProperties: false
+      required: [downloadUrl,expiresAt,fileReference,version]
+      properties:
+        downloadUrl: { type: string, maxLength: 2048, pattern: "^https?://[^\\s]+$" }
+        expiresAt: { type: string, format: date-time }
+        fileReference: { $ref: "#/components/schemas/FileReference" }
+        version: { const: 1 }

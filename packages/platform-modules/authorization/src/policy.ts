@@ -16,6 +16,9 @@ const POLICY_VERSION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const VALUE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,254}$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 
+/** Locale-independent UTF-16 code-unit order for canonical policy material. */
+export const compareCodeUnits = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+
 export class PolicyValidationError extends Error {
   public constructor() {
     super("AUTHORIZATION_POLICY_INVALID");
@@ -78,7 +81,7 @@ const normalizeScope = (value: unknown, dimensions: readonly string[]): Readonly
       const values = uniqueStrings(constraintRecord["values"], VALUE, 256, 255);
       if (values.length === 0) invalid();
       return Object.freeze({ dimension, values });
-    }).sort((left, right) => left.dimension.localeCompare(right.dimension));
+    }).sort((left, right) => compareCodeUnits(left.dimension, right.dimension));
     if (new Set(constraints.map(({ dimension }) => dimension)).size !== constraints.length ||
       constraints.length !== dimensions.length) invalid();
     return Object.freeze({ constraints: Object.freeze(constraints), kind: "match" as const });
@@ -87,7 +90,7 @@ const normalizeScope = (value: unknown, dimensions: readonly string[]): Readonly
     return Object.freeze({ terms: Object.freeze([{ kind: "all" as const }]), version: 1 as const });
   }
   const deduplicated = [...new Map(terms.map((term) => [JSON.stringify(term), term])).values()]
-    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    .sort((left, right) => compareCodeUnits(JSON.stringify(left), JSON.stringify(right)));
   return Object.freeze({ terms: Object.freeze(deduplicated), version: 1 as const });
 };
 
@@ -216,7 +219,7 @@ export const validatePermissionRequest = (value: unknown): Readonly<PermissionRe
   return Object.freeze({
     action: value["action"], resource: value["resource"],
     resourceContext: Object.freeze(Object.fromEntries(
-      Object.entries(resourceContext).sort(([left], [right]) => left.localeCompare(right)),
+      Object.entries(resourceContext).sort(([left], [right]) => compareCodeUnits(left, right)),
     )),
   });
 };

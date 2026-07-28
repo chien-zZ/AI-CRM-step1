@@ -31,32 +31,37 @@ function bindings(overrides: Partial<ApiPlatformBindings> = {}): ApiPlatformBind
     audit: { readSensitive: vi.fn(), record: vi.fn() },
     authentication: { beginLogin: vi.fn(), completeLogin: vi.fn(), currentSession: vi.fn(), logout: vi.fn(), refresh: vi.fn() },
     authenticationCallbackUrl: (requestPathAndQuery) => `https://api.invalid${requestPathAndQuery}`,
+    browserSecurity: { allowedOrigins: ["https://workbench.invalid"] },
     authorization: { requireAllowed: vi.fn().mockResolvedValue(decision) } as unknown as ApiPlatformBindings["authorization"],
+    authorizationTrace: { run: async (_traceId, work) => work() },
     databaseCompatibility: { assertCompatible: vi.fn() },
     organization: { resolveWorkforceContext: vi.fn().mockResolvedValue(workforce) } as unknown as ApiPlatformBindings["organization"],
     queries: {
       applicationRegistry: { loadRegistry: vi.fn(), resolveDeepLink: vi.fn() },
-      fileCenter: { authorizeDownload: vi.fn() },
+      fileCenter: { authorizeDownload: vi.fn(), completeUpload: vi.fn(), createUploadSession: vi.fn() },
       forms: { getRelease: vi.fn(), validateSubmission: vi.fn() },
       notifications: { get: vi.fn(), list: vi.fn(), unreadCount: vi.fn() },
       tasks: { get: vi.fn(), list: vi.fn() },
     },
     readiness: () => [],
-    sessions: { resolvePrincipal: vi.fn().mockResolvedValue(principal) },
+    sessions: { resolvePrincipal: vi.fn().mockResolvedValue(principal), sessionForMutation: vi.fn() },
     ...overrides,
   };
 }
 
 describe("API platform composition", () => {
   it("resolves principal, workforce, and authorization in fail-closed order", async () => {
-    const configured = bindings();
+    const run = vi.fn(async (_traceId: string, work: () => Promise<unknown>) => work());
+    const configured = bindings({ authorizationTrace: { run } as unknown as ApiPlatformBindings["authorizationTrace"] });
     const composition = createApiPlatformComposition(configured);
     await expect(composition.authorize({
       at: "2026-07-27T00:00:00.000Z",
       credential: "synthetic-credential",
       permission: { action: "read", resource: "synthetic:resource" },
       selectedAssignmentId: "assignment-a",
+      traceId: "1234567890abcdef1234567890abcdef",
     })).resolves.toEqual({ decision, principal, workforce });
+    expect(run).toHaveBeenCalledWith("1234567890abcdef1234567890abcdef", expect.any(Function));
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(configured.organization.resolveWorkforceContext).toHaveBeenCalledWith(
       principal.authenticationSubject,

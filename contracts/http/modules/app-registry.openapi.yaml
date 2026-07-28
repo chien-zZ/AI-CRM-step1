@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info: { title: AI-CRM Application Registry API, version: 0.1.0 }
+paths:
+  /application-registry:
+    get:
+      operationId: getInternalApplicationRegistry
+      description: Returns only enabled internal applications, routes, and ancestor-closed navigation currently authorized for the internal principal. Registrations for other audiences and unauthorized targets are filtered server-side.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.app-registry, code: platform.app-registry.registry:read, resource: platform.app-registry.registry, action: read }
+      x-ai-crm-csrf: { mode: not-required, reason: read-only }
+      x-ai-crm-idempotency: { mode: none, reason: read-only }
+      responses:
+        "200": { description: Current authorized internal registry snapshot., content: { application/json: { schema: { $ref: "#/components/schemas/AppRegistrySnapshot" } } } }
+        "401": { $ref: "#/components/responses/AppRegistryUnauthorized" }
+        "403": { $ref: "#/components/responses/AppRegistryForbidden" }
+        "503": { $ref: "#/components/responses/AppRegistryUnavailable" }
+  /application-registry/deep-links/resolve:
+    post:
+      operationId: resolveInternalApplicationDeepLink
+      description: Resolves a Task or Notification deep-link descriptor only after rechecking the current internal audience, application and route enablement, source allowlist, and target authorization. The relative route template and resource reference remain separate; the result is not durable authorization.
+      x-ai-crm-audiences: [internal]
+      x-ai-crm-permission: { version: 1, owner: platform.app-registry, code: platform.app-registry.deep-link:resolve, resource: platform.app-registry.deep-link, action: resolve }
+      x-ai-crm-csrf: { mode: not-required, reason: read-only-resolution }
+      x-ai-crm-idempotency: { mode: none, reason: read-only-resolution }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AppRegistryDeepLink" } } }
+      responses:
+        "200": { description: Currently authorized relative route target., content: { application/json: { schema: { $ref: "#/components/schemas/AppRegistryResolvedDeepLink" } } } }
+        "400": { $ref: "#/components/responses/AppRegistryInvalid" }
+        "401": { $ref: "#/components/responses/AppRegistryUnauthorized" }
+        "403": { $ref: "#/components/responses/AppRegistryForbidden" }
+        "404": { description: "Target is missing, disabled, audience-mismatched, or not registered for this source; details are intentionally not distinguished." }
+        "503": { $ref: "#/components/responses/AppRegistryUnavailable" }
+components:
+  responses:
+    AppRegistryInvalid: { description: Request shape is invalid. }
+    AppRegistryUnauthorized: { description: No valid internal BFF session. }
+    AppRegistryForbidden: { description: Current server-side or target authorization denied. }
+    AppRegistryUnavailable: { description: Authorization or registry persistence is unavailable; fails closed. }
+  schemas:
+    AppRegistryId: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,127}$" }
+    AppRegistryPermissionCode: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}:[a-z][a-z0-9_.-]{0,63}$" }
+    AppRegistryApplication:
+      type: object
+      additionalProperties: false
+      required: [applicationId,audience,enabled,permissionCode]
+      properties:
+        applicationId: { $ref: "#/components/schemas/AppRegistryId" }
+        audience: { const: internal }
+        enabled: { const: true }
+        permissionCode: { $ref: "#/components/schemas/AppRegistryPermissionCode" }
+    AppRegistryRoute:
+      type: object
+      additionalProperties: false
+      required: [applicationId,deepLinkSources,enabled,path,permissionCode,routeId]
+      properties:
+        applicationId: { $ref: "#/components/schemas/AppRegistryId" }
+        deepLinkSources: { type: array, maxItems: 2, uniqueItems: true, items: { type: string, enum: [task,notification] } }
+        enabled: { const: true }
+        path: { type: string, pattern: "^/[a-z0-9_./:-]{0,255}$" }
+        permissionCode: { $ref: "#/components/schemas/AppRegistryPermissionCode" }
+        routeId: { $ref: "#/components/schemas/AppRegistryId" }
+    AppRegistryNavigation:
+      type: object
+      additionalProperties: false
+      required: [applicationId,enabled,navigationId,order,routeId]
+      properties:
+        applicationId: { $ref: "#/components/schemas/AppRegistryId" }
+        enabled: { const: true }
+        navigationId: { $ref: "#/components/schemas/AppRegistryId" }
+        order: { type: integer, minimum: 0, maximum: 100000 }
+        parentNavigationId: { $ref: "#/components/schemas/AppRegistryId" }
+        routeId: { $ref: "#/components/schemas/AppRegistryId" }
+    AppRegistrySnapshot:
+      type: object
+      additionalProperties: false
+      required: [applications,navigation,routes,version]
+      properties:
+        applications: { type: array, items: { $ref: "#/components/schemas/AppRegistryApplication" } }
+        navigation: { type: array, items: { $ref: "#/components/schemas/AppRegistryNavigation" } }
+        routes: { type: array, items: { $ref: "#/components/schemas/AppRegistryRoute" } }
+        version: { const: 1 }
+    AppRegistryDeepLink:
+      type: object
+      additionalProperties: false
+      required: [applicationId,resourceReference,routeId,source,version]
+      properties:
+        applicationId: { $ref: "#/components/schemas/AppRegistryId" }
+        resourceReference: { type: string, minLength: 1, maxLength: 255, pattern: "^[A-Za-z0-9_.:-]+$" }
+        routeId: { $ref: "#/components/schemas/AppRegistryId" }
+        source: { type: string, enum: [task,notification] }
+        version: { const: 1 }
+    AppRegistryResolvedDeepLink:
+      type: object
+      additionalProperties: false
+      required: [applicationId,path,resourceReference,routeId]
+      properties:
+        applicationId: { $ref: "#/components/schemas/AppRegistryId" }
+        path: { type: string, pattern: "^/[a-z0-9_./:-]{0,255}$" }
+        resourceReference: { type: string, minLength: 1, maxLength: 255, pattern: "^[A-Za-z0-9_.:-]+$" }
+        routeId: { $ref: "#/components/schemas/AppRegistryId" }

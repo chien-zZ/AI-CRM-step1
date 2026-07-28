@@ -73,6 +73,7 @@ const migrationDirectories = [
   "packages/database/migrations",
   "packages/platform-modules/app-registry/migrations",
   "packages/platform-modules/audit/migrations",
+  "packages/platform-modules/authorization/migrations",
   "packages/platform-modules/business-configuration/migrations",
   "packages/platform-modules/eventing-outbox/migrations",
   "packages/platform-modules/file-center/migrations",

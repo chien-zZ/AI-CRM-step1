@@ -26,7 +26,11 @@ Redis is an optional performance adapter, not an authorization fact source. Ever
 
 `connectRedisAuthorizationCache` requires an explicit namespace, bounded TTL configuration in the engine, password supplied by the composing application, and `rediss://` by default. Plain `redis://` requires the explicit development-only flag. Cache connection failure disables that adapter at composition time; runtime cache errors fall back to fresh policy evaluation.
 
-The durable Policy Store and policy-management plane remain unresolved by ADR-0007. The current port and synthetic fixtures do not constitute a production policy database, publication workflow, administration API, or migration design.
+ADR-0025 now defines the durable boundary. `createPostgresAuthorizationPersistence` supplies the production policy store, transactional publisher, and decision recorder through the public vendor-neutral `AuthorizationPersistenceRuntime`; no PostgreSQL client, Drizzle schema, query builder, or transaction handle is exposed. Publication accepts only a complete, contract-valid, non-empty snapshot and atomically writes an immutable version, an append-only publication fact, and the current pointer. Publication IDs and decision IDs support identical replay while conflicting reuse fails closed.
+
+Migration `0000000012_authorization_policy_persistence.sql` is additive and intentionally seeds no policy. Apply it only through the reviewed deployment migration runner; application startup must never synchronize the schema. A database with no current complete policy is not production-ready. Before first application the reserved migration may be review-corrected. After facts exist, rollback application code while retaining the schema and immutable history, then forward-fix with a newly reserved migration. Restoring an older policy means appending a new publication, never updating history or the stored snapshot.
+
+The production caller, publication authorization/approval route, cache-invalidation delivery, retention, and readiness composition remain deliberately unresolved. Therefore this package exposes no HTTP writer, default administrator, seeded Permission/Role/Grant, or production-ready claim.
 
 Run the real local Redis adapter check after the local Compose stack is healthy:
 

@@ -1,0 +1,12 @@
+name: ai-crm-prod-b
+
+services:
+  api:
+    environment:
+      AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_ID: ${AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_ID:?previous session encryption key id is required when rotation overlay is enabled}
+      AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_FILE: /run/secrets/pc_session_previous_encryption_key
+    secrets: [pc_session_previous_encryption_key]
+
+secrets:
+  pc_session_previous_encryption_key:
+    file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_previous_encryption_key"

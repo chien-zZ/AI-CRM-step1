@@ -11,13 +11,20 @@ const methods = new Set(["get", "put", "post", "delete", "options", "head", "pat
 const readJson = async (path) => JSON.parse(await readFile(resolve(root, path), "utf8"));
 const readYaml = async (path) => YAML.parse(await readFile(resolve(root, path), "utf8"));
 
-test("Task and Notification HTTP operations map to reviewed platform PermissionRequests", async () => {
+const protectedDocuments = [
+  "contracts/http/modules/app-registry.openapi.yaml",
+  "contracts/http/modules/file-center.openapi.yaml",
+  "contracts/http/modules/form-schema.openapi.yaml",
+  "contracts/http/modules/notifications.openapi.yaml",
+  "contracts/http/modules/task-center.openapi.yaml",
+];
+
+test("protected platform HTTP operations map completely to reviewed platform PermissionRequests", async () => {
   const [bindingSchema, catalogSchema, catalog, ...documents] = await Promise.all([
     readJson("contracts/permissions/http-permission-binding.v1.schema.json"),
     readJson("contracts/permissions/platform-permission-catalog.v1.schema.json"),
     readJson("contracts/permissions/platform-permission-catalog.v1.json"),
-    readYaml("contracts/http/modules/task-center.openapi.yaml"),
-    readYaml("contracts/http/modules/notifications.openapi.yaml"),
+    ...protectedDocuments.map(readYaml),
   ]);
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   const validateBinding = ajv.compile(bindingSchema);
@@ -41,6 +48,7 @@ test("Task and Notification HTTP operations map to reviewed platform PermissionR
     for (const pathItem of Object.values(document.paths)) {
       for (const [method, operation] of Object.entries(pathItem)) {
         if (!methods.has(method)) continue;
+        assert.deepEqual(operation["x-ai-crm-audiences"], ["internal"], `${operation.operationId}: protected platform surface must be internal-only`);
         const binding = operation["x-ai-crm-permission"];
         assert.equal(validateBinding(binding), true, `${operation.operationId}: ${JSON.stringify(validateBinding.errors)}`);
         assert.equal(binding.code, `${binding.resource}:${binding.action}`, `${operation.operationId}: code must match PermissionRequest`);
@@ -60,6 +68,60 @@ test("Task and Notification HTTP operations map to reviewed platform PermissionR
   assert.ok(catalog.permissions.every((permission) => permission.scopeDimensions.length === 0));
   assert.equal(Object.hasOwn(catalog, "roles"), false);
   assert.equal(Object.hasOwn(catalog, "grants"), false);
+});
+
+test("new platform HTTP contracts declare bounded CSRF and idempotency semantics", async () => {
+  const documents = await Promise.all(protectedDocuments.slice(0, 3).map(readYaml));
+  const operations = new Map();
+  for (const document of documents) {
+    for (const pathItem of Object.values(document.paths)) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (!methods.has(method)) continue;
+        assert.equal(typeof operation["x-ai-crm-csrf"]?.mode, "string", `${operation.operationId}: CSRF mode is required`);
+        assert.equal(typeof operation["x-ai-crm-idempotency"]?.mode, "string", `${operation.operationId}: idempotency mode is required`);
+        operations.set(operation.operationId, operation);
+      }
+    }
+  }
+
+  for (const operationId of ["createFileUploadSession", "confirmFileUpload"]) {
+    const operation = operations.get(operationId);
+    assert.equal(operation["x-ai-crm-csrf"].mode, "required");
+    assert.equal(operation["x-ai-crm-csrf"].tokenHeader, "X-CSRF-Token");
+    assert.equal(operation["x-ai-crm-csrf"].originCheck, "required");
+    assert.equal(operation["x-ai-crm-idempotency"].mode, "required");
+    assert.equal(operation["x-ai-crm-idempotency"].keyHeader, "Idempotency-Key");
+    assert.equal(operation.responses["409"] !== undefined, true);
+  }
+  const createUpload = operations.get("createFileUploadSession");
+  assert.equal(createUpload["x-ai-crm-idempotency"].durableReplay, "original-identities");
+  assert.equal(createUpload["x-ai-crm-idempotency"].ephemeralGrant, "freshly-minted-within-original-session-expiry");
+  assert.equal(Object.hasOwn(createUpload["x-ai-crm-idempotency"], "replay"), false, "upload replay must not claim the ephemeral grant is the original result");
+  const confirmUpload = operations.get("confirmFileUpload");
+  assert.equal(Object.hasOwn(confirmUpload.responses, "410"), false, "public File Center errors cannot distinguish expired upload sessions from other operation conflicts");
+  assert.match(confirmUpload.responses["409"].description, /intentionally not distinguished/u);
+  for (const operationId of ["getInternalApplicationRegistry", "resolveInternalApplicationDeepLink", "getFormRelease", "validateFormSubmission"]) {
+    assert.equal(operations.get(operationId)["x-ai-crm-csrf"].mode, "not-required");
+  }
+  assert.equal(operations.get("createFileDownloadGrant")["x-ai-crm-idempotency"].mode, "audit-operation-only");
+
+  const validation = operations.get("validateFormSubmission");
+  assert.deepEqual(validation["x-ai-crm-request-limits"], {
+    maxBodyBytes: 262144,
+    jsonLimitTarget: "requestBody.data",
+    maxJsonDepth: 32,
+    jsonRootDepth: 1,
+    maxJsonNodes: 10000,
+    jsonNodeCounting: "object-array-and-scalar-values-including-data-root",
+    enforcement: "before-authorization-and-service",
+  });
+  assert.equal(validation.responses["413"] !== undefined, true);
+  assert.match(validation.responses["413"].description, /before authorization and before invoking Form Schema/u);
+
+  const fileContract = JSON.stringify(documents[1]).toLowerCase();
+  for (const forbidden of ["bucket", "objectkey", "objecthandle", "credential", "permanenturl", "scannerpayload"]) {
+    assert.equal(fileContract.includes(forbidden), false, `File HTTP contract must not expose ${forbidden}`);
+  }
 });
 
 test("permission binding schemas reject undeclared authority and mismatched shapes", async () => {

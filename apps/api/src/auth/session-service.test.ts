@@ -342,6 +342,32 @@ describe("createPcBffSessionService", () => {
     expect(store.sessions.has(createSessionIndex(completed.credential, options.indexingKey))).toBe(false);
   });
 
+  it("derives the same audit operation for repeated logout of one logical session", async () => {
+    const service = createPcBffSessionService(options);
+    await service.beginLogin("/tasks");
+    const completed = await service.completeLogin(`https://workbench.example.test/auth/pc/callback?code=synthetic&state=${state}`);
+    const mutation = await service.sessionForMutation(completed.credential);
+
+    await service.logout(completed.credential, mutation.sessionReference);
+    await service.logout(completed.credential, mutation.sessionReference);
+    const events = audit.events.filter(({ action }) => action === "session_logout_requested");
+    expect(events).toHaveLength(2);
+    expect(events[0]?.operationId).toBe(events[1]?.operationId);
+    expect(events.every(({ traceId }) => /^(?!0{32})[0-9a-f]{32}$/u.test(traceId))).toBe(true);
+  });
+
+  it("separates refresh audit operations by session revision", async () => {
+    const service = createPcBffSessionService(options);
+    await service.beginLogin("/tasks");
+    const completed = await service.completeLogin(`https://workbench.example.test/auth/pc/callback?code=synthetic&state=${state}`);
+    const first = await service.refresh(completed.credential);
+    await service.refresh(first.credential);
+
+    const events = audit.events.filter(({ action }) => action === "session_refreshed");
+    expect(events).toHaveLength(2);
+    expect(events[0]?.operationId).not.toBe(events[1]?.operationId);
+  });
+
   it("revokes the rotated session when refresh wins the race with logout", async () => {
     const service = createPcBffSessionService(options);
     await service.beginLogin("/tasks");

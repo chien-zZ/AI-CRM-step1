@@ -7,9 +7,10 @@ import { afterEach, describe, expect, it } from "vitest";
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true }); });
 
-async function waitFor(predicate: () => boolean, timeoutMs = 3_000): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 10_000, child?: ChildProcess): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
+    if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) throw new Error("child_exited_before_condition");
     if (Date.now() >= deadline) throw new Error("child_condition_timeout");
     await new Promise<void>((resolveWait) => { setTimeout(resolveWait, 20); });
   }
@@ -40,7 +41,7 @@ async function signalChild(mode: "startup" | "steady" | "stuck", signal: "SIGINT
     silent: true,
   });
   if (mode === "startup") await new Promise<void>((resolveWait) => { setTimeout(resolveWait, 100); });
-  else await waitFor(() => existsSync(healthFile));
+  else await waitFor(() => existsSync(healthFile), 10_000, child);
   const exited = waitForExit(child);
   if (process.platform === "win32") child.send(signal);
   else child.kill(signal);

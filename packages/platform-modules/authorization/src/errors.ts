@@ -17,3 +17,19 @@ export class AuthorizationUnavailableError extends Error {
     this.name = "AuthorizationUnavailableError";
   }
 }
+
+export type AuthorizationPersistenceErrorCode =
+  | "authorization_decision_conflict"
+  | "authorization_persistence_unavailable"
+  | "authorization_policy_conflict"
+  | "authorization_policy_invalid";
+
+export class AuthorizationPersistenceError extends Error {
+  public readonly code: AuthorizationPersistenceErrorCode;
+
+  public constructor(code: AuthorizationPersistenceErrorCode) {
+    super(code);
+    this.name = "AuthorizationPersistenceError";
+    this.code = code;
+  }
+}

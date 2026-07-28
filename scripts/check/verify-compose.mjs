@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import YAML from "yaml";
+import { validatePreviousSessionKeyOverlay } from "./production-deployment-gates.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const parseCompose = async (path) => YAML.parse(await readFile(resolve(root, path), "utf8"), { merge: true });
@@ -10,6 +11,8 @@ const test = await parseCompose("deploy/compose/compose.test.yml");
 const authTest = await parseCompose("deploy/compose/compose.auth-test.yml");
 const productionA = await parseCompose("deploy/compose/production/compose.host-a.yml");
 const productionB = await parseCompose("deploy/compose/production/compose.host-b.yml");
+const productionAPreviousKey = await parseCompose("deploy/compose/production/compose.host-a.bff-previous-key.yml");
+const productionBPreviousKey = await parseCompose("deploy/compose/production/compose.host-b.bff-previous-key.yml");
 const keycloakRealm = JSON.parse(await readFile(resolve(root, "deploy/keycloak/realm-dev.json"), "utf8"));
 const keycloakEntrypoint = await readFile(resolve(root, "deploy/compose/entrypoints/keycloak-entrypoint.sh"), "utf8");
 const secretBootstrap = await readFile(resolve(root, "scripts/bootstrap/compose-secrets.mjs"), "utf8");
@@ -156,6 +159,13 @@ for (const [host, definition] of [["host-a", productionA], ["host-b", production
       errors.push(`${host}/edge must provide a UID/GID-scoped writable tmpfs for ${directory}.`);
     }
   }
+}
+for (const error of validatePreviousSessionKeyOverlay(productionA, productionAPreviousKey, "ai-crm-prod-a")) errors.push(`host-a: ${error}`);
+for (const error of validatePreviousSessionKeyOverlay(productionB, productionBPreviousKey, "ai-crm-prod-b")) errors.push(`host-b: ${error}`);
+const worker = productionB.services?.worker;
+if (worker?.environment?.AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS !== "${AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS:?required}" ||
+  worker?.stop_grace_period !== "${AI_CRM_WORKER_STOP_GRACE_PERIOD:?required}") {
+  errors.push("host-b/worker must require explicit drain seconds and stop grace duration for rendered numeric verification.");
 }
 if (!productionNginx.includes("access_log /dev/stdout safe_technical") ||
   /log_format[^;]*\$(?:request(?:\s|['"])|request_uri|args|remote_addr)/u.test(productionNginx)) {

@@ -28,18 +28,20 @@ function bindings(): ApiPlatformBindings {
     audit: { readSensitive: vi.fn(), record: vi.fn() },
     authentication: { beginLogin: vi.fn(), completeLogin: vi.fn(), currentSession: vi.fn(), logout: vi.fn(), refresh: vi.fn() },
     authenticationCallbackUrl: (requestPathAndQuery) => `https://api.invalid${requestPathAndQuery}`,
+    browserSecurity: { allowedOrigins: ["https://workbench.invalid"] },
     authorization: { requireAllowed: vi.fn() } as unknown as ApiPlatformBindings["authorization"],
+    authorizationTrace: { run: async (_traceId, work) => work() },
     databaseCompatibility: { assertCompatible: vi.fn() },
     organization: { resolveWorkforceContext: vi.fn() } as unknown as ApiPlatformBindings["organization"],
     queries: {
       applicationRegistry: { loadRegistry: vi.fn(), resolveDeepLink: vi.fn() },
-      fileCenter: { authorizeDownload: vi.fn() },
+      fileCenter: { authorizeDownload: vi.fn(), completeUpload: vi.fn(), createUploadSession: vi.fn() },
       forms: { getRelease: vi.fn(), validateSubmission: vi.fn() },
       notifications: { get: vi.fn(), list: vi.fn(), unreadCount: vi.fn() },
       tasks: { get: vi.fn(), list: vi.fn() },
     },
     readiness: () => [],
-    sessions: { resolvePrincipal: vi.fn() },
+    sessions: { resolvePrincipal: vi.fn(), sessionForMutation: vi.fn() },
   };
 }
 

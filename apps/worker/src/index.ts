@@ -9,6 +9,10 @@ export { bootstrapWorker, type WorkerBootstrapOptions } from "./bootstrap.js";
 export { defaultWorkerHealthFile, loadWorkerRuntimeConfiguration, type WorkerRuntimeConfiguration } from "./runtime-config.js";
 export { createFileWorkerHealthReporter, type WorkerHealthReporter, type WorkerHealthStatus } from "./health-file.js";
 export { createWorkerHandlerRegistry, type WorkerHandlerRegistry } from "./handler-registry.js";
+export { loadRabbitConnectionConfiguration, type RabbitAccountRole, type RabbitConnectionConfiguration, type RabbitSecretFileAccess } from "./rabbit-config.js";
+export { approvedWorkerMigrationRoots, loadProductionWorkerConfiguration, validateWorkerMigrationRootManifest, type LoadProductionWorkerConfigurationOptions, type ProductionWorkerConfiguration } from "./production-config.js";
+export { createDefaultProductionWorkerResources, createProductionWorkerResources, taskProjectionConsumerPolicyUnavailable, type ProductionWorkerResourceDependencies, type ProductionWorkerResources } from "./production-composition.js";
+export { createAmqplibConsumerAdapter, createAmqplibPublisherAdapter, createAmqplibResourceRuntime, type AbortableRabbitConsumerAdapter, type AmqplibConnector, type RabbitConsumerTopology, type RabbitPublisherAdapter, type RabbitResourceRuntime, type RabbitRetryLayer } from "./rabbit-adapter.js";
 export {
   createFileMaintenanceHandler,
   createNotificationIntentHandler,

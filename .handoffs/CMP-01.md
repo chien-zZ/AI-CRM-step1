@@ -2,10 +2,12 @@
 
 - Status: IMPLEMENTING
 - Owner: 当前会话（`apps/api`、`apps/worker` 组合根单一 Owner）
-- Reviewer: 独立 Review 多轮完成，本轮生命周期与健康检查范围无开放 P1/P2
+- Reviewer: 独立 Review 多轮完成；授权持久化、RabbitMQ Adapter 与 API 授权/审计/组织组合的复审 finding 已清零
 - Allowed paths: `apps/api`、`apps/worker` 的 Composition Root、Module Wiring、启动与健康入口，以及本任务 handoff
 
-## CMP-API-DB-READY 子包边界
+## CMP-API-DB-READY 历史子包边界
+
+本节保留已完成数据库 Readiness 子包当时的范围；后文“当前实现”与“尚未完成”记录后续授权、组织、审计和 RabbitMQ Adapter 的增量结果。
 
 ### 已知事实
 
@@ -21,7 +23,7 @@
 
 - 不把 Pool 存在、启动检查成功或过期缓存视为当前健康。
 - 探测不执行迁移、DDL、模块查询或跨模块表访问。
-- Stop、Abort、超时或旧代探测不得更新状态或继续调度。
+- 超时探测的迟到结果不得更新状态；只有底层调用真正结束后才可进入独立下一轮。Stop、Abort 或旧代探测不得更新状态或继续调度。
 - 健康响应不得暴露 SQL、错误详情、依赖名称、拓扑或 Secret。
 
 ### 非目标
@@ -70,21 +72,30 @@
 - Worker 已提供密封 Handler Registry、全体 Ready 后统一取活、运行期依赖失效 Fatal Drain、实际 Rabbit Binding ID/并发/Prefetch/在途 Drain Port，以及 Outbox、Inbox、文件维护、任务对账和通知 Intent Handler。
 - `@ai-crm/database` 已增加只读 Pool-based 迁移兼容检查；全局迁移 `0000000011` 将 Schema 兼容范围持久化到迁移注册表，应用启动仍不运行迁移。
 - API 已在兼容检查后通过公共 `DatabaseRuntime.healthCheck()` 启动有界、非重叠的 PostgreSQL 运行期探测缓存；失败摘除、后续成功恢复，Stop/Abort 会清除定时器、失效代际并拒绝迟到更新。
+- ADR-0025 与 ADR-0026 已于 2026-07-28 被项目负责人接受；接受确认持久化与运行边界，不等同于策略数据或生产消费者启用。
+- Authorization 已实现迁移 `0000000012`、不可变策略版本/发布、原子当前策略指针、事务发布器和耐久幂等 Decision Recorder；没有 Permission、Role 或 Grant seed。
+- API 生产组合已接入 PostgreSQL Authorization Store/Recorder、Organization 只读 workforce 解析、PostgreSQL Audit 与真实认证审计 Adapter。组织写在数据库访问前失败关闭；无完整当前策略时 API 保持 Not Ready；没有 audit-owned 非写健康合同前 authentication-audit required Readiness 也保持 Not Ready。
+- Worker 已提供固定 `amqplib@2.0.1` 的文件式 AMQPS Adapter，覆盖 Confirm/Return、背压、ACK/NACK、固定 TTL 分层重试、DLQ、Prefetch/Concurrency、Readiness 和可中止 Drain/Close；生产 bootstrap 尚未接线，消费者保持禁用。
 
 ## 尚未完成
 
-- 生产 API Binding Factory 已闭合 PostgreSQL、Redis Session、OIDC、迁移检查和资源生命周期；Organization、持久化 Authorization Policy/Decision、认证 Audit 及查询 Facade 仍无已审核生产适配器。
-- Task/Notification 的 9 个 HTTP operation 已映射到 8 个业务中立平台权限；未创建角色或 Grant。Registry/Form/File 仍无 HTTP 模块合同，受保护 Controller 仍不得越过合同先行要求。
-- AsyncAPI 已声明 Task projection 主路由与 DLQ，明确 Confirm/ACK/Attempt/VHost 规则；因事件运行策略值和无队头阻塞的延迟机制尚未审定，生产消费显式禁用。Worker 生产组合继续失败关闭。
-- API 已组合文件式 PostgreSQL/Redis/OIDC/会话配置、只读迁移兼容检查、运行期数据库 Readiness 探测和有界资源生命周期；持久化授权策略与认证审计未确认，因此生产 Readiness 保持失败关闭。
-- 接入真实 Error Reporter/Trace、Worker RabbitMQ/数据库 Secret、Worker Drain 与 `stop_grace_period` 静态关系，并补 Worker 真实消息联合测试。
+- 生产 API Binding Factory 已闭合 PostgreSQL、Redis Session、OIDC、迁移检查、资源生命周期、Organization 只读解析、持久化 Authorization Policy/Decision 与认证 Audit；Registry/Form/File 的 internal-only HTTP 合同、受保护 Controller 和框架无关 Adapter 已组合。生产 Registry/Form 查询服务与 File storage/scanner Provider 尚未组合，三个 required Readiness 依赖保持失败关闭。
+- Task/Notification 的 9 个 HTTP operation 已映射到 8 个业务中立平台权限；Registry/Form/File 新增 7 个 HTTP operation 与 6 个业务中立权限。未创建角色、Grant 或策略 seed。
+- AsyncAPI 与 ADR-0026 已确认固定 TTL 分层重试机制，具体 Adapter 已实现；Task projection 的 `maxAttempts`、`backoffSeconds`、`timeoutMs`、`prefetch`、`concurrency`、错误分类、容量和告警值仍未接受，因此生产消费显式禁用，Worker 生产组合继续失败关闭。
+- API 已组合文件式 PostgreSQL/Redis/OIDC/会话配置、只读迁移兼容检查、运行期数据库 Readiness 探测、授权/组织/认证审计与有界资源生命周期；没有当前完整策略时按设计保持 Not Ready，不以 seed 绕过。
+- API 受保护平台 HTTP 使用一次入站 W3C Trace 贯穿授权耐久记录、模块调用和响应关联；Form 原始 JSON 体在授权前执行 262144 字节/深度 32/节点 10000 限额；File mutation 在服务调用前执行幂等键、BFF Origin/CSRF 与当前授权。未确认 Assignment 选择传输，Controller 不发明 Header 或会话约定。
+- Worker 已组合文件式 PostgreSQL 配置、完整迁移目录双向门、只读兼容检查、DB 健康缓存和双账户 Rabbit TLS 资源生命周期；Task policy 不可用时仍稳定失败关闭，未声明 topology 或激活 consumer。接入真实 Error Reporter/Trace、生产 Secret 挂载与真实 RabbitMQ 4.2.9 TLS 联合测试仍待完成。Worker Drain `< stop_grace_period` 静态门和 BFF previous-key 生产 overlay 已完成，但不构成 G3 通过。
 
 ## 验证
 
-- API：普通门 90 tests passed、5 integration tests skipped；真实 PostgreSQL/Redis/Keycloak 认证集成最近证据 88/88 通过；专项 lint/typecheck/build/contracts 通过。
-- Worker：45/45 tests passed；专项 lint/typecheck/build/contracts 通过；7 个真实 Node 子进程场景覆盖 Handler Fatal Exit、SIGINT/SIGTERM、启动取消、Drain Timeout、生产空组合失败和 Readiness 清理。
+- API：普通门 164 tests passed、5 integration tests skipped；三条平台 HTTP Adapter 64/64，Controller 真实 HTTP 路由、120 KiB 合法体与超 262144 字节拒绝均有回归；lint/typecheck/build/contracts 通过。
+- Worker：RabbitMQ Adapter 最新专项 20/20；NACK 后同 message ID 重试不会消费旧 Confirm 状态。生产消费者仍禁用。
+- Authorization：普通单元测试 34/34；隔离 PostgreSQL 17.5 集成 5/5；未知合同版本和 denied-decision policy authority 独立复核问题已关闭。
 - Database：普通门 23 tests passed、1 integration test skipped；隔离 PostgreSQL 运行全仓 11 条迁移及兼容检查 24/24 通过。
-- Lockfile 由单一 Owner 离线更新；完整 `pnpm check` 140/140、`pnpm compose:test:integration`、`pnpm db:test:integration`、`pnpm auth:test:integration` 全部通过，临时容器、网络和 Volume 已清理。
+- Platform HTTP contracts：权限/HTTP 专项 3/3、contracts 28/28、Repository 40/40；独立复审关闭 3 项 P2，无新增 finding。
+- Worker：89/89；通用生产组合聚焦 32/32；独立复审关闭 1 项 P1 与 2 项 P2，无新增 finding。
+- Lockfile 由单一 Integration Owner 更新 `amqplib@2.0.1` 与 Worker/authorization 的 `@ai-crm/database workspace:*` importer；`pnpm install --frozen-lockfile` 通过。最新串行完整 `pnpm check` 通过：Repository 40/40、Compose static、contracts generation/check，Turbo 140/140。
+- 本批次最终 `pnpm check` 再次通过：Repository 40/40、Compose static、contracts generation/check 与 Turbo 140/140；API 164 passed/5 skipped。
 
 ## 独立 Review
 
@@ -97,13 +108,17 @@
 - DB-COMPAT-01 独立复审关闭元数据证据信任根、无界 Pool 和 SemVer 精度问题；治理登记与 handoff 口径已由 Integration Owner 修正。
 - 权限/HTTP 与 AsyncAPI 独立审查关闭文档相对引用、Retry Queue 队头阻塞、Attempt 语义、VHost、生成器基址和门禁覆盖问题；生产消费在策略与延迟机制确认前保持禁用。
 - API 生产组合独立审查关闭 Factory 获取早于信号/Deadline、部分初始化清理无界且吞错、Factory 失败缺少结构化日志三项问题；回归覆盖获取期 SIGTERM、关闭拒绝和永不结束。
+- Authorization persistence 独立审查关闭 locale 相关摘要、裁决一致性/已发布策略校验、原始数据库错误泄漏、非法日历时间、并发同 ID 冲突和历史策略恢复问题。
+- RabbitMQ Adapter 独立审查关闭 `0440` Secret 权限、逐发布 Return 关联、重试 Channel 故障、Drain/Close 错误传播、元数据边界、拓扑防御复制和消息类型长度问题；最终复审无残留 finding。
+- API 授权/审计/组织组合独立审查关闭认证操作 ID、单逻辑操作 Trace、相同命令不确定提交重试及慢策略加载生命周期竞态；最终窄复核无残留 finding。
+- 平台 HTTP 独立 Review 发现生产查询未组合却可能 Ready、File 授权拒绝误报 503、Nest 默认 100 KiB Parser、Form GET Content-Type 误拒绝和入站 Trace 分裂；全部修复并由原 Reviewer 复审清零。Assignment 选择来源仍待契约评审，本批次未发明 Header。
 
 ## 未解决问题
 
-- RabbitMQ concrete adapter、TLS/VHost 连接配置、事件策略值和无队头阻塞的延迟机制尚未确认；合同禁止在此之前启用消费者。
+- RabbitMQ concrete adapter、文件式 AMQPS/TLS/VHost 配置与固定 TTL 分层延迟机制已实现；Task projection 的精确重试/超时/流控、错误分类、容量和告警值尚未接受，合同禁止在此之前启用消费者。
 - Production Compose 已向两台 API 挂载专用 `api_postgres_url`，并声明 Schema 版本、迁移根、JWKS 与生命周期预算；不可变 API 镜像是否包含完整迁移目录仍需制品门证明。
-- Production Compose 尚未向 Worker 挂载应用运行时 PostgreSQL、RabbitMQ/Redis 等连接 Secret；在消费激活合同解决前禁止猜测变量名或绕过文件式 Secret。
-- Worker Drain deadline 与 Compose `stop_grace_period` 尚无静态关系校验，不能证明容器会给应用留下完整排空预算。
-- BFF previous encryption key 轮换对已由代码支持，但当前生产 Compose 尚不能表达该可选轮换配置。
+- Worker 生产代码已定义文件式 PostgreSQL 与 Rabbit TLS 配置，但 Production Compose 尚未挂载相应 Secret；在消费激活合同解决前不把资源组合解释为消费者 Ready。
+- Worker Drain deadline 与 Compose `stop_grace_period` 的静态门已实现并通过；仍需真实生产组合和运行证据。
+- BFF previous encryption key 轮换已由代码与生产 Compose overlay 表达并通过静态门；密钥值仍只来自受限文件。
 - Worker 尚未向公共只读迁移兼容检查提供受控 Pool、完整迁移目录和独立应用 Schema SemVer；API 已独立使用 `AI_CRM_API_SCHEMA_VERSION`，不得改传 Release ID 或调用 `runMigrations`。
 - CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。

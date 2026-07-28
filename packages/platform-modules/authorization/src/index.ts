@@ -1,6 +1,15 @@
 export const packageId = "@ai-crm/platform-authorization" as const;
-export { AuthorizationDeniedError, AuthorizationUnavailableError } from "./errors.js";
+export {
+  AuthorizationDeniedError,
+  AuthorizationPersistenceError,
+  AuthorizationUnavailableError,
+  type AuthorizationPersistenceErrorCode,
+} from "./errors.js";
 export { createAuthorizationService } from "./engine.js";
+export {
+  createPostgresAuthorizationPersistence,
+  type PostgresAuthorizationPersistence,
+} from "./postgres-persistence.js";
 export {
   connectRedisAuthorizationCache,
   createRedisAuthorizationCache,
@@ -14,6 +23,10 @@ export type {
   AuthorizationDecisionRecord,
   AuthorizationDecisionRecorder,
   AuthorizationObserver,
+  AuthorizationPersistenceResult,
+  AuthorizationPersistenceRuntime,
+  AuthorizationPolicyPublication,
+  AuthorizationPolicyPublisher,
   AuthorizationPolicySnapshot,
   AuthorizationPolicyStore,
   AuthorizationService,
@@ -28,6 +41,7 @@ export type {
   GrantSubject,
   PermissionDeclaration,
   PermissionRequest,
+  PublishAuthorizationPolicyCommand,
   RoleDefinition,
   RolePermissionBinding,
   ScopeConstraint,

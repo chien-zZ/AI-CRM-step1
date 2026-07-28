@@ -363,6 +363,9 @@ importers:
       '@ai-crm/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@ai-crm/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -384,6 +387,9 @@ importers:
       '@nestjs/core':
         specifier: 11.1.28
         version: 11.1.28(@nestjs/common@11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.28)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      amqplib:
+        specifier: 2.0.1
+        version: 2.0.1
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -456,6 +462,10 @@ importers:
       redis:
         specifier: 5.8.2
         version: 5.8.2
+    devDependencies:
+      '@ai-crm/database':
+        specifier: workspace:*
+        version: link:../../database
 
   packages/platform-modules/business-configuration:
     dependencies:
@@ -3887,6 +3897,10 @@ packages:
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
+  amqplib@2.0.1:
+    resolution: {integrity: sha512-a3P2MgfCf9nzVis12VxWEn0dS6hcqve7dlEAhXDtIWR27BlhtMkILOc+H9aeHjDi6i6r94dYKc2Kx2OFe3avvg==}
+    engines: {node: '>=18'}
 
   ansi-align@2.0.0:
     resolution: {integrity: sha512-TdlOggdA/zURfMYa7ABC66j+oqfMew58KpJMbUlH3bcZP1b+cBHIHDDn5uH9INsxrHBPjsqM0tDB4jPTF/vgJA==}
@@ -13364,6 +13378,8 @@ snapshots:
       fast-uri: 3.1.4
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+
+  amqplib@2.0.1: {}
 
   ansi-align@2.0.0:
     dependencies:

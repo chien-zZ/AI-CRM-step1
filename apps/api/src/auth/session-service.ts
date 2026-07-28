@@ -3,7 +3,8 @@ import {
   type AuthenticatedPrincipal,
   type TokenVerifier,
 } from "@ai-crm/platform-auth-context";
-import { timingSafeEqual } from "node:crypto";
+import { createTraceContext } from "@ai-crm/observability";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 import { BrowserSessionFailure } from "./errors.js";
 import type { OidcClientPort } from "./oidc.js";
@@ -24,8 +25,10 @@ export type AuthenticationAuditAction =
 
 export interface AuthenticationAuditEvent {
   readonly action: AuthenticationAuditAction;
+  readonly operationId: string;
   readonly result: "succeeded";
   readonly sessionReference?: string;
+  readonly traceId: string;
 }
 
 export interface AuthenticationAuditPort {
@@ -131,6 +134,35 @@ async function auditOrFail(audit: AuthenticationAuditPort, event: Authentication
   }
 }
 
+function auditOperationId(action: AuthenticationAuditAction, logicalReference: string): string {
+  const bytes = createHash("sha256")
+    .update("ai-crm:pc-bff:authentication-audit:v1\0", "utf8")
+    .update(action, "utf8")
+    .update("\0", "utf8")
+    .update(logicalReference, "utf8")
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function authenticationAuditEvent(
+  action: AuthenticationAuditAction,
+  logicalReference: string,
+  traceId: string,
+  sessionReference?: string,
+): AuthenticationAuditEvent {
+  return Object.freeze({
+    action,
+    operationId: auditOperationId(action, logicalReference),
+    result: "succeeded",
+    ...(sessionReference === undefined ? {} : { sessionReference }),
+    traceId,
+  });
+}
+
 function snapshotKeyring(options: PcBffSessionServiceOptions): Readonly<{
   decryptionKeys: readonly Readonly<KeyEncryptionKey>[];
   encryptionKey: Readonly<KeyEncryptionKey>;
@@ -227,11 +259,12 @@ export function createPcBffSessionService(
 
   return Object.freeze({
     async beginLogin(returnTo: string): Promise<Readonly<LoginRedirect>> {
+      const traceId = createTraceContext().traceId;
       const result = await options.oidc.beginLogin(returnTo);
       const stateIndex = createSessionIndex(result.transaction.state, securityKeys.indexingKey);
       await options.store.storeLoginTransaction(stateIndex, result.transaction, loginTtlMs);
       try {
-        await auditOrFail(options.audit, { action: "login_started", result: "succeeded" });
+        await auditOrFail(options.audit, authenticationAuditEvent("login_started", stateIndex, traceId));
       } catch (error) {
         await options.store.consumeLoginTransaction(stateIndex);
         throw error;
@@ -240,6 +273,7 @@ export function createPcBffSessionService(
     },
 
     async completeLogin(callbackUrl: string): Promise<Readonly<CompletedLogin>> {
+      const traceId = createTraceContext().traceId;
       const state = stateFromCallback(callbackUrl);
       let stateIndex: string;
       try {
@@ -265,11 +299,8 @@ export function createPcBffSessionService(
       });
       await options.store.createSession(sessionIndex, session, idleTtlMs);
       try {
-        await auditOrFail(options.audit, {
-          action: "login_completed",
-          result: "succeeded",
-          sessionReference: session.id,
-        });
+        await auditOrFail(options.audit,
+          authenticationAuditEvent("login_completed", session.id, traceId, session.id));
       } catch (error) {
         await options.store.deleteSession(sessionIndex);
         throw error;
@@ -283,17 +314,15 @@ export function createPcBffSessionService(
 
     async logout(credential: string | undefined, expectedSessionReference?: string): Promise<Readonly<LogoutResult>> {
       if (credential === undefined) return Object.freeze({});
+      const traceId = createTraceContext().traceId;
       const sessionIndex = createSessionIndex(credential, securityKeys.indexingKey);
       const current = expectedSessionReference === undefined
         ? await options.store.getSession(sessionIndex, idleTtlMs, now())
         : undefined;
       const sessionReference = expectedSessionReference ?? current?.id;
       if (sessionReference === undefined) return Object.freeze({});
-      await auditOrFail(options.audit, {
-        action: "session_logout_requested",
-        result: "succeeded",
-        sessionReference,
-      });
+      await auditOrFail(options.audit,
+        authenticationAuditEvent("session_logout_requested", sessionReference, traceId, sessionReference));
       const session = await options.store.revokeSession(sessionIndex, sessionReference);
       if (!session) return Object.freeze({});
       const endSessionUrl = options.oidc.endSessionUrl();
@@ -301,6 +330,7 @@ export function createPcBffSessionService(
     },
 
     async refresh(credential: string): Promise<Readonly<RefreshedSession>> {
+      const traceId = createTraceContext().traceId;
       const previousIndex = createSessionIndex(credential, securityKeys.indexingKey);
       const initial = await options.store.getSession(previousIndex, idleTtlMs, now());
       if (!initial) throw new BrowserSessionFailure("authentication_session_invalid");
@@ -333,11 +363,9 @@ export function createPcBffSessionService(
         );
         if (!rotated) throw new BrowserSessionFailure("authentication_session_invalid");
         try {
-          await auditOrFail(options.audit, {
-            action: "session_refreshed",
-            result: "succeeded",
-            sessionReference: current.id,
-          });
+          await auditOrFail(options.audit, authenticationAuditEvent(
+            "session_refreshed", `${current.id}:${String(nextSession.revision)}`, traceId, current.id,
+          ));
         } catch (error) {
           await options.store.deleteSession(nextIndex);
           throw error;

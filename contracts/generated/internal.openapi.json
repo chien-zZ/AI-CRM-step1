@@ -8,6 +8,302 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/application-registry": {
+      "get": {
+        "description": "Returns only enabled internal applications, routes, and ancestor-closed navigation currently authorized for the internal principal. Registrations for other audiences and unauthorized targets are filtered server-side.",
+        "operationId": "getInternalApplicationRegistry",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "applications": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "applicationId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          },
+                          "audience": {
+                            "const": "internal"
+                          },
+                          "enabled": {
+                            "const": true
+                          },
+                          "permissionCode": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,63}:[a-z][a-z0-9_.-]{0,63}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "applicationId",
+                          "audience",
+                          "enabled",
+                          "permissionCode"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "navigation": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "applicationId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "const": true
+                          },
+                          "navigationId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          },
+                          "order": {
+                            "maximum": 100000,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "parentNavigationId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          },
+                          "routeId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "applicationId",
+                          "enabled",
+                          "navigationId",
+                          "order",
+                          "routeId"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "routes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "applicationId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          },
+                          "deepLinkSources": {
+                            "items": {
+                              "enum": [
+                                "task",
+                                "notification"
+                              ],
+                              "type": "string"
+                            },
+                            "maxItems": 2,
+                            "type": "array",
+                            "uniqueItems": true
+                          },
+                          "enabled": {
+                            "const": true
+                          },
+                          "path": {
+                            "pattern": "^/[a-z0-9_./:-]{0,255}$",
+                            "type": "string"
+                          },
+                          "permissionCode": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,63}:[a-z][a-z0-9_.-]{0,63}$",
+                            "type": "string"
+                          },
+                          "routeId": {
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "applicationId",
+                          "deepLinkSources",
+                          "enabled",
+                          "path",
+                          "permissionCode",
+                          "routeId"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "const": 1
+                    }
+                  },
+                  "required": [
+                    "applications",
+                    "navigation",
+                    "routes",
+                    "version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current authorized internal registry snapshot."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side or target authorization denied."
+          },
+          "503": {
+            "description": "Authorization or registry persistence is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "not-required",
+          "reason": "read-only"
+        },
+        "x-ai-crm-idempotency": {
+          "mode": "none",
+          "reason": "read-only"
+        },
+        "x-ai-crm-permission": {
+          "action": "read",
+          "code": "platform.app-registry.registry:read",
+          "owner": "platform.app-registry",
+          "resource": "platform.app-registry.registry",
+          "version": 1
+        }
+      }
+    },
+    "/application-registry/deep-links/resolve": {
+      "post": {
+        "description": "Resolves a Task or Notification deep-link descriptor only after rechecking the current internal audience, application and route enablement, source allowlist, and target authorization. The relative route template and resource reference remain separate; the result is not durable authorization.",
+        "operationId": "resolveInternalApplicationDeepLink",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "applicationId": {
+                    "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                    "type": "string"
+                  },
+                  "resourceReference": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9_.:-]+$",
+                    "type": "string"
+                  },
+                  "routeId": {
+                    "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": [
+                      "task",
+                      "notification"
+                    ],
+                    "type": "string"
+                  },
+                  "version": {
+                    "const": 1
+                  }
+                },
+                "required": [
+                  "applicationId",
+                  "resourceReference",
+                  "routeId",
+                  "source",
+                  "version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "applicationId": {
+                      "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                      "type": "string"
+                    },
+                    "path": {
+                      "pattern": "^/[a-z0-9_./:-]{0,255}$",
+                      "type": "string"
+                    },
+                    "resourceReference": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9_.:-]+$",
+                      "type": "string"
+                    },
+                    "routeId": {
+                      "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "applicationId",
+                    "path",
+                    "resourceReference",
+                    "routeId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Currently authorized relative route target."
+          },
+          "400": {
+            "description": "Request shape is invalid."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side or target authorization denied."
+          },
+          "404": {
+            "description": "Target is missing, disabled, audience-mismatched, or not registered for this source; details are intentionally not distinguished."
+          },
+          "503": {
+            "description": "Authorization or registry persistence is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "not-required",
+          "reason": "read-only-resolution"
+        },
+        "x-ai-crm-idempotency": {
+          "mode": "none",
+          "reason": "read-only-resolution"
+        },
+        "x-ai-crm-permission": {
+          "action": "resolve",
+          "code": "platform.app-registry.deep-link:resolve",
+          "owner": "platform.app-registry",
+          "resource": "platform.app-registry.deep-link",
+          "version": 1
+        }
+      }
+    },
     "/auth/pc/callback": {
       "get": {
         "operationId": "completePcLogin",
@@ -672,6 +968,998 @@
         "x-ai-crm-audiences": [
           "internal"
         ]
+      }
+    },
+    "/files/download-grants": {
+      "post": {
+        "description": "Reauthorizes both File Center access and the current owning resource reference before minting a fresh short-lived download grant. A grant is ephemeral, is not a permanent provider URL, and does not prove the owning resource remains accessible later.",
+        "operationId": "createFileDownloadGrant",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "fileReference": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentVersionId": {
+                        "format": "uuid",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                        "type": "string"
+                      },
+                      "displayName": {
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                        "type": "string"
+                      },
+                      "fileId": {
+                        "format": "uuid",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                        "type": "string"
+                      },
+                      "mediaType": {
+                        "maxLength": 255,
+                        "minLength": 3,
+                        "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+                        "type": "string"
+                      },
+                      "sizeBytes": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "version": {
+                        "const": 1
+                      }
+                    },
+                    "required": [
+                      "contentVersionId",
+                      "displayName",
+                      "fileId",
+                      "version"
+                    ],
+                    "type": "object"
+                  },
+                  "resource": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "resourceId": {
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9_.:@/-]+$",
+                        "type": "string"
+                      },
+                      "resourceType": {
+                        "pattern": "^[a-z][a-z0-9_.:-]{1,127}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "resourceId",
+                      "resourceType"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "fileReference",
+                  "resource"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "downloadUrl": {
+                      "maxLength": 2048,
+                      "pattern": "^https?://[^\\s]+$",
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "fileReference": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentVersionId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "mediaType": {
+                          "maxLength": 255,
+                          "minLength": 3,
+                          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "version": {
+                          "const": 1
+                        }
+                      },
+                      "required": [
+                        "contentVersionId",
+                        "displayName",
+                        "fileId",
+                        "version"
+                      ],
+                      "type": "object"
+                    },
+                    "version": {
+                      "const": 1
+                    }
+                  },
+                  "required": [
+                    "downloadUrl",
+                    "expiresAt",
+                    "fileReference",
+                    "version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Fresh short-lived download grant after current authorization."
+          },
+          "400": {
+            "description": "Request shape, identifier, media type, size, or header is invalid."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "CSRF validation or current server-side authorization denied."
+          },
+          "404": {
+            "description": "File version or current resource reference is unavailable to the current principal."
+          },
+          "409": {
+            "description": "Content is not currently available for download."
+          },
+          "503": {
+            "description": "Authorization, audit, file persistence, or storage inspection/grant dependency is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "not-required",
+          "reason": "read-only-short-lived-grant"
+        },
+        "x-ai-crm-idempotency": {
+          "keyHeader": "Idempotency-Key",
+          "mode": "audit-operation-only",
+          "replay": "fresh-ephemeral-grant"
+        },
+        "x-ai-crm-permission": {
+          "action": "download",
+          "code": "platform.file-center.file:download",
+          "owner": "platform.file-center",
+          "resource": "platform.file-center.file",
+          "version": 1
+        }
+      }
+    },
+    "/files/upload-sessions": {
+      "post": {
+        "description": "Creates an initial immutable content version and a short-lived upload session. Declared metadata is untrusted; the returned FileReference is not usable until trusted inspection and malware scanning make the content available.",
+        "operationId": "createFileUploadSession",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 32,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "classificationReference": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9_.:@/-]+$",
+                    "type": "string"
+                  },
+                  "declaredMediaType": {
+                    "maxLength": 255,
+                    "minLength": 3,
+                    "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+                    "type": "string"
+                  },
+                  "declaredSizeBytes": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "displayName": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "ownerModule": {
+                    "pattern": "^[a-z][a-z0-9_.:-]{1,127}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "declaredMediaType",
+                  "declaredSizeBytes",
+                  "displayName",
+                  "ownerModule"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "fileReference": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentVersionId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "mediaType": {
+                          "maxLength": 255,
+                          "minLength": 3,
+                          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "version": {
+                          "const": 1
+                        }
+                      },
+                      "required": [
+                        "contentVersionId",
+                        "displayName",
+                        "fileId",
+                        "version"
+                      ],
+                      "type": "object"
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "session": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentVersionId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "created",
+                            "pending_scan",
+                            "expired",
+                            "cleanup_pending",
+                            "cleaned"
+                          ],
+                          "type": "string"
+                        },
+                        "version": {
+                          "const": 1
+                        }
+                      },
+                      "required": [
+                        "contentVersionId",
+                        "createdAt",
+                        "expiresAt",
+                        "fileId",
+                        "sessionId",
+                        "status",
+                        "version"
+                      ],
+                      "type": "object"
+                    },
+                    "uploadGrant": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expiresAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "headers": {
+                          "additionalProperties": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "maxProperties": 20,
+                          "type": "object"
+                        },
+                        "method": {
+                          "const": "PUT"
+                        },
+                        "uploadUrl": {
+                          "maxLength": 2048,
+                          "pattern": "^https?://[^\\s]+$",
+                          "type": "string"
+                        },
+                        "version": {
+                          "const": 1
+                        }
+                      },
+                      "required": [
+                        "expiresAt",
+                        "headers",
+                        "method",
+                        "uploadUrl",
+                        "version"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "fileReference",
+                    "replayed",
+                    "session",
+                    "uploadGrant"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Durable session and ephemeral upload grant. An identical replay returns the original file/content/session identities but mints a fresh short-lived upload grant bounded by the original session expiry; it never extends durable lifetime."
+          },
+          "400": {
+            "description": "Request shape, identifier, media type, size, or header is invalid."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "CSRF validation or current server-side authorization denied."
+          },
+          "409": {
+            "description": "Idempotency key was reused with changed semantics or the current lifecycle state conflicts with the command."
+          },
+          "503": {
+            "description": "Authorization, audit, file persistence, or storage inspection/grant dependency is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "required",
+          "originCheck": "required",
+          "tokenHeader": "X-CSRF-Token"
+        },
+        "x-ai-crm-idempotency": {
+          "conflictStatus": 409,
+          "durableReplay": "original-identities",
+          "ephemeralGrant": "freshly-minted-within-original-session-expiry",
+          "keyHeader": "Idempotency-Key",
+          "mode": "required"
+        },
+        "x-ai-crm-permission": {
+          "action": "upload",
+          "code": "platform.file-center.file:upload",
+          "owner": "platform.file-center",
+          "resource": "platform.file-center.file",
+          "version": 1
+        }
+      }
+    },
+    "/files/upload-sessions/{sessionId}/confirm": {
+      "post": {
+        "description": "Idempotently inspects the uploaded object and confirms trusted metadata. Success moves content only to pending_scan; it never makes content available and never exposes scanner or storage-provider internals.",
+        "operationId": "confirmFileUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 32,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentVersion": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "actualSizeBytes": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "checksumSha256": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "contentVersionId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "declaredMediaType": {
+                          "maxLength": 255,
+                          "minLength": 3,
+                          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+                          "type": "string"
+                        },
+                        "declaredSizeBytes": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "detectedMediaType": {
+                          "maxLength": 255,
+                          "minLength": 3,
+                          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "format": "uuid",
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "scannedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "awaiting_upload",
+                            "pending_scan",
+                            "available",
+                            "quarantine_pending",
+                            "quarantined",
+                            "object_missing",
+                            "cleanup_pending",
+                            "deleted"
+                          ],
+                          "type": "string"
+                        },
+                        "version": {
+                          "const": 1
+                        },
+                        "versionNumber": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "contentVersionId",
+                        "createdAt",
+                        "declaredMediaType",
+                        "declaredSizeBytes",
+                        "fileId",
+                        "status",
+                        "version",
+                        "versionNumber"
+                      ],
+                      "type": "object"
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "contentVersion",
+                    "replayed"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current confirmed immutable content-version status. Replays do not re-run provider inspection."
+          },
+          "400": {
+            "description": "Request shape, identifier, media type, size, or header is invalid."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "CSRF validation or current server-side authorization denied."
+          },
+          "404": {
+            "description": "Upload session is unavailable to the current principal."
+          },
+          "409": {
+            "description": "Upload session is expired, not in a confirmable state, or conflicts with the idempotency operation. These conditions share the public File Center operation-conflict error and are intentionally not distinguished by the Controller."
+          },
+          "503": {
+            "description": "Authorization, audit, file persistence, or storage inspection/grant dependency is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "required",
+          "originCheck": "required",
+          "tokenHeader": "X-CSRF-Token"
+        },
+        "x-ai-crm-idempotency": {
+          "conflictStatus": 409,
+          "keyHeader": "Idempotency-Key",
+          "mode": "required",
+          "replay": "original-result"
+        },
+        "x-ai-crm-permission": {
+          "action": "upload",
+          "code": "platform.file-center.file:upload",
+          "owner": "platform.file-center",
+          "resource": "platform.file-center.file",
+          "version": 1
+        }
+      }
+    },
+    "/form-definitions/{definitionId}/releases/{releaseVersion}": {
+      "get": {
+        "description": "Reads one exact immutable release after current resource authorization. It does not resolve a mutable current version.",
+        "operationId": "getFormRelease",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definitionId",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "releaseVersion",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "contentDigest": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "definitionId": {
+                      "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                      "type": "string"
+                    },
+                    "jsonSchema": {
+                      "type": "object"
+                    },
+                    "ownerModule": {
+                      "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "releaseVersion": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "uiSchema": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "fields": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "component": {
+                                "enum": [
+                                  "date",
+                                  "input",
+                                  "number",
+                                  "select",
+                                  "switch",
+                                  "textarea"
+                                ],
+                                "type": "string"
+                              },
+                              "field": {
+                                "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                                "type": "string"
+                              },
+                              "order": {
+                                "maximum": 100000,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "span": {
+                                "maximum": 24,
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "component",
+                              "field",
+                              "order"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 100,
+                          "type": "array"
+                        },
+                        "layout": {
+                          "enum": [
+                            "grid",
+                            "vertical"
+                          ],
+                          "type": "string"
+                        },
+                        "version": {
+                          "const": 1
+                        }
+                      },
+                      "required": [
+                        "fields",
+                        "layout",
+                        "version"
+                      ],
+                      "type": "object"
+                    },
+                    "version": {
+                      "const": 1
+                    }
+                  },
+                  "required": [
+                    "active",
+                    "contentDigest",
+                    "definitionId",
+                    "jsonSchema",
+                    "ownerModule",
+                    "publishedAt",
+                    "releaseVersion",
+                    "uiSchema",
+                    "version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Exact immutable form release."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side resource authorization denied."
+          },
+          "404": {
+            "description": "Exact form release does not exist."
+          },
+          "503": {
+            "description": "Authorization or form persistence is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "not-required",
+          "reason": "read-only"
+        },
+        "x-ai-crm-idempotency": {
+          "mode": "none",
+          "reason": "read-only"
+        },
+        "x-ai-crm-permission": {
+          "action": "read",
+          "code": "platform.form-schema.form-release:read",
+          "owner": "platform.form-schema",
+          "resource": "platform.form-schema.form-release",
+          "version": 1
+        }
+      }
+    },
+    "/form-definitions/{definitionId}/releases/{releaseVersion}/validate": {
+      "post": {
+        "description": "Validates a proposed value against one exact immutable release on the server. The value is not persisted, authorization and domain invariants are not inferred, and client validation never becomes authoritative.",
+        "operationId": "validateFormSubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definitionId",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "releaseVersion",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "The complete encoded request body is limited to 262144 bytes. The data value is depth 1; each nested object/array value increases depth by 1. Data is limited to depth 32 and 10000 total object, array, and scalar value nodes including the data root by x-ai-crm-request-limits before authorization and service invocation.",
+                "properties": {
+                  "data": {}
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "errors": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "instancePath": {
+                            "maxLength": 2048,
+                            "type": "string"
+                          },
+                          "keyword": {
+                            "maxLength": 128,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "instancePath",
+                          "keyword"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 100,
+                      "type": "array"
+                    },
+                    "reference": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentDigest": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "definitionId": {
+                          "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                          "type": "string"
+                        },
+                        "releaseVersion": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "version": {
+                          "const": 1
+                        }
+                      },
+                      "required": [
+                        "contentDigest",
+                        "definitionId",
+                        "releaseVersion",
+                        "version"
+                      ],
+                      "type": "object"
+                    },
+                    "valid": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "errors",
+                    "reference",
+                    "valid"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Server validation result for the exact release."
+          },
+          "400": {
+            "description": "Request payload is malformed or outside the bounded transport contract."
+          },
+          "401": {
+            "description": "No valid internal BFF session."
+          },
+          "403": {
+            "description": "Current server-side resource authorization denied."
+          },
+          "404": {
+            "description": "Exact form release does not exist."
+          },
+          "413": {
+            "description": "Request body exceeds 262144 bytes, JSON nesting exceeds 32 levels, or parsed JSON exceeds 10000 total object/array/scalar nodes. The Controller rejects it before authorization and before invoking Form Schema."
+          },
+          "422": {
+            "description": "The registered release cannot be compiled by the controlled server dialect; no submitted data is persisted."
+          },
+          "503": {
+            "description": "Authorization or form persistence is unavailable; fails closed."
+          }
+        },
+        "x-ai-crm-audiences": [
+          "internal"
+        ],
+        "x-ai-crm-csrf": {
+          "mode": "not-required",
+          "reason": "read-only-validation"
+        },
+        "x-ai-crm-idempotency": {
+          "mode": "none",
+          "reason": "no-state-change"
+        },
+        "x-ai-crm-permission": {
+          "action": "validate",
+          "code": "platform.form-schema.form-release:validate",
+          "owner": "platform.form-schema",
+          "resource": "platform.form-schema.form-release",
+          "version": 1
+        },
+        "x-ai-crm-request-limits": {
+          "enforcement": "before-authorization-and-service",
+          "jsonLimitTarget": "requestBody.data",
+          "jsonNodeCounting": "object-array-and-scalar-values-including-data-root",
+          "jsonRootDepth": 1,
+          "maxBodyBytes": 262144,
+          "maxJsonDepth": 32,
+          "maxJsonNodes": 10000
+        }
       }
     },
     "/health/live": {

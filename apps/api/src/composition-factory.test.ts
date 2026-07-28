@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -55,15 +56,21 @@ function dependencies(compatible = true): {
   readonly closeDatabase: ReturnType<typeof vi.fn>;
   readonly closeSessions: ReturnType<typeof vi.fn>;
   readonly healthCheck: ReturnType<typeof vi.fn>;
+  readonly execute: ReturnType<typeof vi.fn>;
+  readonly withTransaction: ReturnType<typeof vi.fn>;
   readonly value: ProductionApiBindingDependencies;
 } {
   const closeDatabase = vi.fn(() => Promise.resolve());
   const closeSessions = vi.fn(() => Promise.resolve());
   const healthCheck = vi.fn(() => Promise.resolve({ latencyMs: 1, status: "ready" as const }));
+  const execute = vi.fn(() => Promise.resolve({ rowCount: 0, rows: [] }));
+  const withTransaction = vi.fn(<T>(work: () => Promise<T>) => work());
   return {
     closeDatabase,
     closeSessions,
     healthCheck,
+    execute,
+    withTransaction,
     value: {
       checkCompatibility: vi.fn(() => Promise.resolve({
         applicationSchemaVersion: "0.0.0",
@@ -78,9 +85,9 @@ function dependencies(compatible = true): {
       })),
       createDatabase: vi.fn(() => ({
         close: closeDatabase,
-        execute: vi.fn(() => Promise.resolve({ rowCount: 0, rows: [] })),
+        execute,
         healthCheck,
-        withTransaction: <T>(work: () => Promise<T>) => work(),
+        withTransaction: <T>(work: () => Promise<T>) => withTransaction(work) as Promise<T>,
       })),
       createOidc: vi.fn(() => Promise.resolve({
         beginLogin: vi.fn(),
@@ -105,9 +112,14 @@ describe("production API platform binding factory", () => {
       { healthy: true, name: "session-store", required: true },
       { healthy: false, name: "authorization-policy", required: true },
       { healthy: false, name: "authentication-audit", required: true },
+      { healthy: false, name: "application-registry-query", required: true },
+      { healthy: false, name: "form-schema-query", required: true },
+      { healthy: false, name: "file-center-provider", required: true },
     ]);
     await bindings.databaseCompatibility.assertCompatible(signal);
     expect(bindings.readiness()[0]).toMatchObject({ healthy: true });
+    expect(bindings.readiness()[2]).toMatchObject({ healthy: false });
+    expect(bindings.readiness()[3]).toMatchObject({ healthy: false });
     expect(bindings.authenticationCallbackUrl("/auth/pc/callback?code=value&state=state"))
       .toBe("https://api.example.test/auth/pc/callback?code=value&state=state");
     let callbackFailure: unknown;
@@ -122,6 +134,178 @@ describe("production API platform binding factory", () => {
     expect(fixture.closeSessions).toHaveBeenCalledTimes(1);
     expect(fixture.closeDatabase).toHaveBeenCalledTimes(1);
     expect(bindings.readiness().every(({ healthy }) => !healthy)).toBe(true);
+  });
+
+  it("becomes ready only after loading a complete authoritative policy", async () => {
+    const fixture = dependencies();
+    const snapshot = {
+      grants: [{
+        grantId: "33333333-3333-4333-8333-333333333333",
+        roleId: "55555555-5555-4555-8555-555555555555",
+        subject: { kind: "workforce_person" as const, workforcePersonId: "44444444-4444-4444-8444-444444444444" },
+        validFrom: "2026-01-01T00:00:00.000Z",
+      }],
+      permissions: [{ action: "read", code: "synthetic.record:read", resource: "synthetic.record", scopeDimensions: [] }],
+      roles: [{ permissions: [{ permissionCode: "synthetic.record:read", scope: { terms: [{ kind: "all" as const }], version: 1 as const } }], roleId: "55555555-5555-4555-8555-555555555555" }],
+      version: "baseline-v1",
+    };
+    const canonical = (value: unknown): string => {
+      if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+      if (typeof value === "object" && value !== null) {
+        const record = value as Record<string, unknown>;
+        return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
+      }
+      return JSON.stringify(value);
+    };
+    const contentDigest = createHash("sha256").update(canonical(snapshot)).digest("hex");
+    fixture.execute.mockImplementation((sql: string) => {
+      if (sql.includes("authorization_core.current_policy")) {
+        return Promise.resolve({ rowCount: 1, rows: [{ content_digest: contentDigest, contract_version: "authorization-policy.v1", version: snapshot.version }] });
+      }
+      if (sql.includes("authorization_core.policy_versions")) {
+        return Promise.resolve({ rowCount: 1, rows: [{ content_digest: contentDigest, contract_version: "authorization-policy.v1", snapshot, version: snapshot.version }] });
+      }
+      if (sql.startsWith("insert into authorization_core.decision_records")) {
+        return Promise.resolve({ rowCount: 1, rows: [{}] });
+      }
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    });
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+    expect(bindings.readiness().slice(0, 3).every(({ healthy }) => healthy)).toBe(true);
+    expect(bindings.readiness().slice(3).every(({ healthy }) => !healthy)).toBe(true);
+    const traceId = "abcdefabcdefabcdefabcdefabcdefab";
+    await expect(bindings.authorizationTrace.run(traceId, () => bindings.authorization.check({
+      activeAssignmentIds: [],
+      workforcePersonId: "44444444-4444-4444-8444-444444444444",
+    }, { action: "read", resource: "synthetic.record" }))).resolves.toMatchObject({ allowed: true });
+    expect(fixture.execute.mock.calls.some(([sql]) =>
+      typeof sql === "string" && sql.startsWith("insert into authorization_core.decision_records"))).toBe(true);
+    expect(fixture.execute.mock.calls.some(([sql, values]) =>
+      typeof sql === "string" && sql.startsWith("insert into authorization_core.decision_records") &&
+      Array.isArray(values) && values.includes(traceId))).toBe(true);
+    await bindings.close?.();
+  });
+
+  it("fails organization writes before database access", async () => {
+    const fixture = dependencies();
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    await expect(bindings.organization.createWorkforcePerson({
+      actor: { actorId: "api.pc_bff", actorType: "system" },
+      operationId: "11111111-1111-4111-8111-111111111111",
+      reason: "not_authorized",
+      recordedAt: "2026-07-28T00:00:00.000Z",
+      traceId: "1234567890abcdef1234567890abcdef",
+      workforcePersonId: "22222222-2222-4222-8222-222222222222",
+    })).rejects.toThrow();
+    expect(fixture.execute).not.toHaveBeenCalled();
+    await bindings.close?.();
+  });
+
+  it("records real authentication events through the durable audit service", async () => {
+    const fixture = dependencies();
+    const sendCommand = vi.fn((command: readonly string[]) =>
+      Promise.resolve(command[0] === "SET" ? "OK" : undefined));
+    const value: ProductionApiBindingDependencies = {
+      ...fixture.value,
+      connectSessions: vi.fn(() => Promise.resolve({
+        close: fixture.closeSessions,
+        executor: { sendCommand },
+        isReady: () => true,
+      })),
+      createOidc: vi.fn(() => Promise.resolve({
+        beginLogin: vi.fn(() => Promise.resolve({
+          authorizationUrl: "https://identity.example.test/authorize?state=opaque",
+          transaction: {
+            codeVerifier: "v".repeat(43), nonce: "n".repeat(43), returnTo: "/", state: "s".repeat(43),
+          },
+        })),
+        endSessionUrl: () => undefined,
+        exchangeCallback: vi.fn(),
+        refresh: vi.fn(),
+      })),
+    };
+    const bindings = await createProductionApiPlatformBindings(value);
+    await expect(bindings.authentication.beginLogin("/")).resolves.toMatchObject({ status: 302 });
+    const append = fixture.execute.mock.calls.find(([sql]) =>
+      typeof sql === "string" && sql.startsWith("insert into audit.records"));
+    expect(append?.[1]).toEqual(expect.arrayContaining([
+      "authentication.login_started", "api.pc_bff", "system", "authentication_event",
+    ]));
+    expect(JSON.stringify(append)).not.toContain("identity.example.test/authorize");
+    await bindings.close?.();
+  });
+
+  it("fails authentication closed when durable audit append fails", async () => {
+    const fixture = dependencies();
+    fixture.execute.mockImplementation((sql: string) => sql.startsWith("insert into audit.records")
+      ? Promise.reject(new Error("audit unavailable"))
+      : Promise.resolve({ rowCount: 0, rows: [] }));
+    const sendCommand = vi.fn((command: readonly string[]) =>
+      Promise.resolve(command[0] === "SET" ? "OK" : undefined));
+    const value: ProductionApiBindingDependencies = {
+      ...fixture.value,
+      connectSessions: vi.fn(() => Promise.resolve({
+        close: fixture.closeSessions,
+        executor: { sendCommand },
+        isReady: () => true,
+      })),
+      createOidc: vi.fn(() => Promise.resolve({
+        beginLogin: vi.fn(() => Promise.resolve({
+          authorizationUrl: "https://identity.example.test/authorize?state=opaque",
+          transaction: {
+            codeVerifier: "v".repeat(43), nonce: "n".repeat(43), returnTo: "/", state: "s".repeat(43),
+          },
+        })),
+        endSessionUrl: () => undefined,
+        exchangeCallback: vi.fn(),
+        refresh: vi.fn(),
+      })),
+    };
+    const bindings = await createProductionApiPlatformBindings(value);
+    await expect(bindings.authentication.beginLogin("/")).resolves.toMatchObject({ status: 503 });
+    expect(sendCommand.mock.calls.some(([command]) => command[0] === "GETDEL")).toBe(true);
+    await bindings.close?.();
+  });
+
+  it("retries an uncertain committed authentication audit with the same receipt and no duplicate record", async () => {
+    const fixture = dependencies();
+    let receipt: { audit_id: string; fingerprint: string } | undefined;
+    fixture.execute.mockImplementation((sql: string, values?: readonly unknown[]) => {
+      if (sql.startsWith("select audit_id, fingerprint from audit.operation_receipts")) {
+        return Promise.resolve({ rowCount: receipt === undefined ? 0 : 1, rows: receipt === undefined ? [] : [receipt] });
+      }
+      if (sql.startsWith("insert into audit.operation_receipts")) {
+        receipt = { audit_id: String(values?.[1]), fingerprint: String(values?.[2]) };
+      }
+      return Promise.resolve({ rowCount: 1, rows: [] });
+    });
+    let transactionCalls = 0;
+    fixture.withTransaction.mockImplementation(async <T>(work: () => Promise<T>) => {
+      const result = await work();
+      transactionCalls += 1;
+      if (transactionCalls === 1) throw new Error("commit result uncertain");
+      return result;
+    });
+    const sendCommand = vi.fn((command: readonly string[]) =>
+      Promise.resolve(command[0] === "SET" ? "OK" : undefined));
+    const value: ProductionApiBindingDependencies = {
+      ...fixture.value,
+      connectSessions: vi.fn(() => Promise.resolve({ close: fixture.closeSessions, executor: { sendCommand }, isReady: () => true })),
+      createOidc: vi.fn(() => Promise.resolve({
+        beginLogin: vi.fn(() => Promise.resolve({
+          authorizationUrl: "https://identity.example.test/authorize?state=opaque",
+          transaction: { codeVerifier: "v".repeat(43), nonce: "n".repeat(43), returnTo: "/", state: "s".repeat(43) },
+        })),
+        endSessionUrl: () => undefined, exchangeCallback: vi.fn(), refresh: vi.fn(),
+      })),
+    };
+    const bindings = await createProductionApiPlatformBindings(value);
+    await expect(bindings.authentication.beginLogin("/")).resolves.toMatchObject({ status: 302 });
+    expect(fixture.execute.mock.calls.filter(([sql]) =>
+      typeof sql === "string" && sql.startsWith("insert into audit.records"))).toHaveLength(1);
+    expect(transactionCalls).toBe(2);
+    await bindings.close?.();
   });
 
   it("rejects an incompatible database without publishing database readiness", async () => {
@@ -192,6 +376,42 @@ describe("production API platform binding factory", () => {
     await expect(checking).rejects.toThrow("api_start_cancelled");
     expect(bindings.readiness()[0]).toMatchObject({ healthy: false });
     expect(fixture.healthCheck).not.toHaveBeenCalled();
+    await bindings.close?.();
+  });
+
+  it("does not publish a slow policy result after close", async () => {
+    const fixture = dependencies();
+    let resolvePolicy: ((value: { rowCount: number; rows: readonly unknown[] }) => void) | undefined;
+    fixture.execute.mockImplementation((sql: string) => sql.includes("authorization_core.current_policy")
+      ? new Promise((resolve) => { resolvePolicy = resolve; })
+      : Promise.resolve({ rowCount: 0, rows: [] }));
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    const checking = bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+    await vi.waitFor(() => { expect(resolvePolicy).toBeTypeOf("function"); });
+    await bindings.close?.();
+    resolvePolicy?.({ rowCount: 0, rows: [] });
+    await expect(checking).rejects.toThrow("api_start_cancelled");
+    expect(bindings.readiness().every(({ healthy }) => !healthy)).toBe(true);
+  });
+
+  it("does not publish a slow policy result from an obsolete probe generation", async () => {
+    const fixture = dependencies();
+    let currentPolicyCalls = 0;
+    let resolveFirstPolicy: ((value: { rowCount: number; rows: readonly unknown[] }) => void) | undefined;
+    fixture.execute.mockImplementation((sql: string) => {
+      if (!sql.includes("authorization_core.current_policy")) return Promise.resolve({ rowCount: 0, rows: [] });
+      currentPolicyCalls += 1;
+      return currentPolicyCalls === 1
+        ? new Promise((resolve) => { resolveFirstPolicy = resolve; })
+        : Promise.resolve({ rowCount: 0, rows: [] });
+    });
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    const obsolete = bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+    await vi.waitFor(() => { expect(resolveFirstPolicy).toBeTypeOf("function"); });
+    await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+    resolveFirstPolicy?.({ rowCount: 0, rows: [] });
+    await expect(obsolete).rejects.toThrow("api_start_cancelled");
+    expect(bindings.readiness()[2]).toMatchObject({ healthy: false });
     await bindings.close?.();
   });
 

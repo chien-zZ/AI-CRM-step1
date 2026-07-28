@@ -9,10 +9,13 @@
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "test": "vitest run --config ../../../vitest.config.ts",
-    "test:integration": "vitest run src/runtime.integration.test.ts --config ../../../vitest.config.ts",
+    "test:integration": "node scripts/run-postgres-integration.mjs",
     "contracts:check": "node ../../../scripts/check/verify-package.mjs"
   },
   "dependencies": {
     "redis": "5.8.2"
+  },
+  "devDependencies": {
+    "@ai-crm/database": "workspace:*"
   }
 }

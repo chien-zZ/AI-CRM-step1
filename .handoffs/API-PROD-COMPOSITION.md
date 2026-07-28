@@ -4,7 +4,9 @@
 - Owner: CMP-01 API production composition line
 - Allowed paths: `apps/api/**` and this handoff
 
-## CMP-API-DB-READY Task Boundary
+## Historical CMP-API-DB-READY Task Boundary
+
+This section preserves that completed subtask's original scope. The later `CMP-API-AUTH-PERSIST Integration Result` section records the additive authorization, Organization, and audit composition.
 
 ### Known Facts
 
@@ -22,7 +24,7 @@
 
 - A successful startup compatibility check, open Pool, or stale successful probe proves current database readiness.
 - The probe may run migrations, DDL, module queries, or inspect another module's tables.
-- A stopped, aborted, timed-out, or superseded probe may update readiness or schedule another timer.
+- A timed-out probe's late result may not update readiness; another interval may start only after its underlying call settles. A stopped, aborted, or superseded generation may neither update readiness nor schedule another timer.
 - Health output may expose SQL, connection details, dependency errors, topology, or Secret values.
 
 ### Non-goals
@@ -36,7 +38,7 @@
 - API has reviewed PC BFF authentication routes and a principal -> workforce context -> authorization chain.
 - `@ai-crm/database` publicly exposes a bounded PostgreSQL runtime and read-only migration compatibility checker.
 - The API authentication boundary publicly exposes file-backed BFF configuration, Redis session storage, OIDC discovery, token verification, and HTTP/session adapters.
-- No reviewed durable `AuthorizationPolicyStore`, `AuthorizationDecisionRecorder`, or authentication-audit adapter exists at the application boundary.
+- ADR-0025 is accepted. The application boundary now has reviewed PostgreSQL `AuthorizationPolicyStore`, `AuthorizationDecisionRecorder`, Organization read resolution, and authentication-audit composition through public module entry points.
 - Application startup must check migration compatibility and must not apply migrations or synchronize schema.
 
 ## Allowed Assumptions
@@ -65,19 +67,19 @@
 - PostgreSQL runtime, Redis session connection, OIDC discovery, token verification, BFF session service, and HTTP authentication adapter are composed from public package/application entry points.
 - Migration compatibility reads the complete reviewed catalog and fails startup on missing, unknown, modified, evidence-mismatched, or application-incompatible migrations.
 - Initialization failure closes resources already acquired. Application stop closes Redis and PostgreSQL once; close failure remains a lifecycle failure.
-- Readiness tracks migration compatibility and live Redis client readiness, but remains unavailable while authorization policy and authentication audit are unresolved.
+- Readiness tracks migration compatibility, live Redis and PostgreSQL state, the formally composed authentication-audit dependency, and a freshly loaded complete current authorization policy. Because no Permission, Role, Grant, or current policy is seeded, an empty production database remains Not Ready by design.
 - After migration compatibility succeeds, Readiness also tracks a cached, bounded `DatabaseRuntime.healthCheck()` loop. Probes do not overlap; timeout, rejection and unavailable results fail closed, later success recovers, and shutdown/abort invalidates timers and late results before resource close.
 
 ## Authorization And Audit
 
-- Authorization remains default-deny through the existing `AuthorizationUnavailableError` boundary.
-- Workforce and protected query operations remain unavailable; no synthetic organization or policy data is used in production.
-- Authentication state-changing operations require the session service audit port. The unresolved production adapter rejects audit recording, so login/session mutations fail closed and clean up transient session state according to the existing session-service tests.
+- Authorization remains default-deny through the existing `AuthorizationUnavailableError` boundary and uses the durable PostgreSQL policy store and decision recorder.
+- Workforce resolution uses the PostgreSQL Organization public service. Organization writes fail at the application authorizer before database access; no synthetic organization or policy data is used in production.
+- Authentication state-changing operations use the PostgreSQL Audit public service. Logical operation IDs are deterministically derived from the state index, session ID, or session ID plus next revision; one safe trace is captured per logical operation, and an uncertain append retries once with the same immutable command.
 - No audit record, authorization decision, or successful protected operation is fabricated.
 
 ## Idempotency, Transactions, And Failure
 
-- This composition adds no domain command or idempotency contract.
+- This composition adds no domain command. Authorization decisions use the durable recorder's idempotency semantics; authentication audit retries preserve the same deterministic operation ID and immutable command.
 - Redis session Lua operations retain their reviewed atomicity and session rotation semantics.
 - Migration compatibility is read-only and does not open an application transaction or acquire a migration lock.
 - PostgreSQL, Redis, OIDC, JWKS, Secret, compatibility, and cleanup failures reject initialization or readiness without exposing credentials or dependency details through HTTP health output.
@@ -87,18 +89,18 @@
 - Existing API lifecycle logging records stable operation/error categories without Secret values, bodies, tokens, SQL parameters, or provider payloads.
 - Health responses remain the existing `{status}` contract; internal dependency labels are not serialized.
 - Development/test synthetic bindings retain their previous behavior. `ApiPlatformBindings.close` is optional for source compatibility; production supplies it.
-- `apps/api/package.json` now declares `@ai-crm/database`; the Integration Owner must update the root Lockfile once after parallel lines merge.
+- The shared Lockfile has been updated by the single Integration Owner for the accepted workspace dependency window and passes frozen installation.
 
 ## Verification
 
-- API ordinary suite: 85 passed, 5 dependency integration tests skipped; the isolated PostgreSQL/Redis/Keycloak gate passed all 88 tests before the final two process-only regression cases and cleaned its resources.
-- Focused typecheck, lint, build, and contract checks are required before merge.
+- API ordinary suite: 99 passed, 5 dependency integration tests skipped.
+- Focused typecheck and lint passed. The final repository `pnpm check` passed 140/140 Turbo tasks, including build and contract checks.
 - Real PostgreSQL/Redis/Keycloak integration gates remain the Integration Owner's responsibility after production Compose wiring is merged.
 
 ## Unresolved Questions And G3 Blockers
 
-- What reviewed durable store owns authorization permissions, roles, grants, policy versioning, and decision records?
-- How are authentication audit events mapped to durable audit facts with actor, operation, trace, retention, and failure semantics without inventing evidence?
+- Resolved by ADR-0025 and AUTH-PERSIST-01: authorization policy versions/publications and decision records use the reviewed module-owned PostgreSQL persistence; no real policy facts are seeded.
+- Resolved for production composition by CMP-API-AUTH-PERSIST: authentication audit maps through the public PostgreSQL Audit service with deterministic logical operation IDs and safe retry. Retention remains an Audit Owner decision and is not invented here.
 - What production image path supplies all migration source files, and how is its catalog integrity tied to the immutable release artifact?
 - Resolved by CMP-API-DB-READY: the synchronous health dependency reads a bounded application cache maintained by the public `DatabaseRuntime`; it does not execute a fresh query per request.
 - CMP-01 remains IMPLEMENTING and E2E-01 remains blocked until these items and the other G3 lines are closed.
@@ -118,5 +120,14 @@
 - An application timeout cannot cancel the public `DatabaseRuntime.healthCheck()` call. Scheduling therefore waits for that underlying call to settle before starting the interval, preventing accumulated Pool queries when a probe remains stuck; a never-settling call leaves Readiness unavailable without launching more probes.
 - The probe uses only public `DatabaseRuntime.healthCheck()` and does not run migration, DDL, module SQL or automatic schema synchronization.
 - Verification: API ordinary suite 90 passed and 5 dependency integration tests skipped; API typecheck, lint, build and contracts check passed; `git diff --check` passed.
-- Authorization policy and authentication audit remain deliberate production Readiness blockers, so CMP-01 remains IMPLEMENTING and E2E-01 remains blocked.
-- Independent review found one P1 overlapping-query risk after an application timeout and no other finding. The scheduler now waits for underlying settlement, and regression coverage proves advancing multiple timeout/interval windows cannot start a second query while the first is pending.
+- The reviewed authorization and authentication-audit adapters are composed. Absence of a complete published policy still deliberately keeps production Not Ready; CMP-01 remains IMPLEMENTING and E2E-01 remains blocked by the remaining G3 lines.
+- Independent review found one P2 overlapping-query risk after an application timeout. The scheduler now waits for underlying settlement, and regression coverage proves advancing multiple timeout/interval windows cannot start a second query while the first is pending. Re-review closed the P2 with no new P1/P2; its P3 wording correction now distinguishes ignored late readiness from the permitted next interval after underlying settlement.
+
+## CMP-API-AUTH-PERSIST Integration Result
+
+- ADR-0025 was accepted by the project owner on 2026-07-28. Authorization migration `0000000012` and its module-owned `authorization_core` schema are included in the reviewed migration catalog; startup still performs compatibility checks only and never applies migrations.
+- Production composition now creates the PostgreSQL authorization store/recorder/service, Organization read resolver, PostgreSQL Audit service, and authentication-audit adapter through package public entry points.
+- Policy readiness reloads the authoritative complete current policy after database probes and rechecks close, cancellation, and binding generation before publishing state. Slow or stale loads cannot restore readiness.
+- No Permission, Role, Grant, policy, administrator, workforce fact, or readiness audit record is seeded or synthesized. Missing policy continues to fail closed.
+- Independent review closed deterministic authentication operation identity, one-trace-per-logical-operation, same-command retry after uncertain audit commits, and slow-policy-load lifecycle races. The focused final re-review covered 37 tests with no residual finding.
+- Detailed evidence and boundaries are recorded in `CMP-API-AUTH-PERSIST.md`; this integration does not add Registry/Form/File controllers or claim G3 completion.

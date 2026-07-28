@@ -1,5 +1,17 @@
-import { AuthorizationUnavailableError } from "@ai-crm/platform-authorization";
+import { createTraceContext } from "@ai-crm/observability";
+import { createAuditService, createPostgresAuditStore } from "@ai-crm/platform-audit";
+import {
+  AuthorizationUnavailableError,
+  createAuthorizationService,
+  createPostgresAuthorizationPersistence,
+  type AuthorizationPolicyStore,
+} from "@ai-crm/platform-authorization";
 import { createOidcTokenVerifier, type TokenVerifier } from "@ai-crm/platform-auth-context";
+import {
+  createPostgresOrganizationService,
+  type OrganizationCommandAuthorizer,
+  type OrganizationPersistenceRuntime,
+} from "@ai-crm/platform-organization";
 import {
   checkMigrationCompatibility,
   createDatabaseRuntime,
@@ -12,6 +24,7 @@ import { BrowserSessionFailure } from "./auth/errors.js";
 import { createPcAuthenticationHttpAdapter } from "./auth/http-adapter.js";
 import { createOidcClient, type OidcClientPort } from "./auth/oidc.js";
 import { createPcBffSessionService } from "./auth/session-service.js";
+import type { AuthenticationAuditEvent, AuthenticationAuditPort } from "./auth/session-service.js";
 import {
   connectRedisSessionStore,
   createRedisBrowserSessionStore,
@@ -43,6 +56,60 @@ function rejected<T>(): Promise<T> {
   return Promise.reject(new Error("api_synthetic_capability_unavailable"));
 }
 
+const failClosedOrganizationAuthorizer: OrganizationCommandAuthorizer = Object.freeze({
+  authorize: () => Promise.reject(new Error("organization_write_authorization_unavailable")),
+});
+
+function organizationRuntime(database: DatabaseRuntime): OrganizationPersistenceRuntime {
+  return Object.freeze({
+    execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]) {
+      return database.execute<Row>(sql, values);
+    },
+    recordAuditIntent: () => Promise.reject(new Error("organization_write_audit_unavailable")),
+    recordEventIntent: () => Promise.reject(new Error("organization_write_event_unavailable")),
+    withTransaction<T>(work: () => Promise<T>) {
+      return database.withTransaction(work);
+    },
+  });
+}
+
+function authenticationAuditPort(audit: ApiPlatformBindings["audit"]): AuthenticationAuditPort {
+  return Object.freeze({
+    async record(event: AuthenticationAuditEvent): Promise<void> {
+      const command = {
+        action: `authentication.${event.action}`,
+        actor: { actorId: "api.pc_bff", actorType: "system" },
+        reason: { code: "authentication_event" },
+        resource: {
+          resourceId: event.sessionReference ?? event.action,
+          resourceType: event.sessionReference === undefined ? "authentication_attempt" : "pc_bff_session",
+        },
+        result: event.result,
+        trace: { operationId: event.operationId, traceId: event.traceId },
+      } as const;
+      try {
+        await audit.record(command);
+      } catch {
+        await audit.record(command);
+      }
+    },
+  });
+}
+
+async function hasCompleteCurrentPolicy(store: AuthorizationPolicyStore): Promise<boolean> {
+  try {
+    const version = await store.currentVersion();
+    const snapshot = await store.load(version);
+    if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot)) return false;
+    const candidate = snapshot as Record<string, unknown>;
+    return Array.isArray(candidate["permissions"]) && candidate["permissions"].length > 0 &&
+      Array.isArray(candidate["roles"]) && candidate["roles"].length > 0 &&
+      Array.isArray(candidate["grants"]) && candidate["grants"].length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function createUnavailableBindings(): ApiPlatformBindings {
   const bindings: ApiPlatformBindings = {
     audit: { readSensitive: () => rejected(), record: () => rejected() },
@@ -54,6 +121,7 @@ function createUnavailableBindings(): ApiPlatformBindings {
       refresh: () => Promise.resolve(unavailableAuthenticationResponse),
     },
     authenticationCallbackUrl: (requestPathAndQuery: string) => new URL(requestPathAndQuery, "https://api.invalid").href,
+    browserSecurity: { allowedOrigins: ["https://workbench.invalid"] },
     authorization: {
       batchCheck: () => Promise.reject(new AuthorizationUnavailableError()),
       check: () => Promise.reject(new AuthorizationUnavailableError()),
@@ -61,6 +129,7 @@ function createUnavailableBindings(): ApiPlatformBindings {
       requireAllowed: () => Promise.reject(new AuthorizationUnavailableError()),
       resolveDataScope: () => Promise.reject(new AuthorizationUnavailableError()),
     },
+    authorizationTrace: { run: async (_traceId, work) => work() },
     close: () => undefined,
     databaseCompatibility: { assertCompatible: () => undefined },
     organization: {
@@ -71,13 +140,16 @@ function createUnavailableBindings(): ApiPlatformBindings {
     },
     queries: {
       applicationRegistry: { loadRegistry: () => rejected(), resolveDeepLink: () => rejected() },
-      fileCenter: { authorizeDownload: () => rejected() },
+      fileCenter: { authorizeDownload: () => rejected(), completeUpload: () => rejected(), createUploadSession: () => rejected() },
       forms: { getRelease: () => rejected(), validateSubmission: () => rejected() },
       notifications: { get: () => rejected(), list: () => rejected(), unreadCount: () => rejected() },
       tasks: { get: () => rejected(), list: () => rejected() },
     },
     readiness: () => [{ healthy: false, name: "synthetic-platform", required: true }],
-    sessions: { resolvePrincipal: () => Promise.reject(new BrowserSessionFailure("authentication_dependency_unavailable")) },
+    sessions: {
+      resolvePrincipal: () => Promise.reject(new BrowserSessionFailure("authentication_dependency_unavailable")),
+      sessionForMutation: () => Promise.reject(new BrowserSessionFailure("authentication_dependency_unavailable")),
+    },
   };
   return Object.freeze(bindings);
 }
@@ -135,6 +207,15 @@ async function closeResources(
 
 function assertProductionStartActive(signal: AbortSignal, state: { readonly closed: boolean }): void {
   if (state.closed || signal.aborted) throw new Error("api_start_cancelled");
+}
+
+function probeIsObsolete(
+  state: { readonly closed: boolean },
+  controller: AbortController,
+  generation: number,
+  currentGeneration: number,
+): boolean {
+  return state.closed || controller.signal.aborted || generation !== currentGeneration;
 }
 
 function boundedDatabaseHealthCheck(
@@ -233,7 +314,25 @@ export async function createProductionApiPlatformBindings(
   const activeDatabase = database;
   const activeSessions = sessions;
   const activeOidc = oidc;
-  const state = { closed: false, databaseCompatible: false, databaseHealthy: false };
+  const authorizationTrace = new AsyncLocalStorage<string>();
+  const authorizationPersistence = createPostgresAuthorizationPersistence(activeDatabase);
+  const authorization = createAuthorizationService({
+    recorder: authorizationPersistence.recorder,
+    store: authorizationPersistence.store,
+  }, {
+    cacheTtlSeconds: 60,
+    traceId: () => authorizationTrace.getStore() ?? createTraceContext().traceId,
+  });
+  const audit = createAuditService(
+    createPostgresAuditStore(activeDatabase),
+    { authorize: () => Promise.reject(new Error("audit_read_authorization_unavailable")) },
+    { fieldPolicies: {} },
+  );
+  const organization = createPostgresOrganizationService(
+    organizationRuntime(activeDatabase),
+    failClosedOrganizationAuthorizer,
+  );
+  const state = { authorizationPolicyReady: false, closed: false, databaseCompatible: false, databaseHealthy: false };
   let probeController = new AbortController();
   let probeGeneration = 0;
   let probeTimer: NodeJS.Timeout | undefined;
@@ -243,9 +342,10 @@ export async function createProductionApiPlatformBindings(
     probeTimer = undefined;
     probeController.abort();
     state.databaseHealthy = false;
+    state.authorizationPolicyReady = false;
   };
   const scheduleDatabaseProbe = (generation: number, controller: AbortController): void => {
-    if (state.closed || controller.signal.aborted || generation !== probeGeneration) return;
+    if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
     probeTimer = setTimeout(() => {
       probeTimer = undefined;
       void boundedDatabaseHealthCheck(
@@ -253,9 +353,16 @@ export async function createProductionApiPlatformBindings(
         configuration.databaseHealthProbe.timeoutMs,
         [controller.signal],
       ).then((result) => {
-        if (state.closed || controller.signal.aborted || generation !== probeGeneration) return;
+        if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
         state.databaseHealthy = result.healthy;
-        void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
+        void result.completion.then(async () => {
+          if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
+          const policyReady = result.healthy &&
+            await hasCompleteCurrentPolicy(authorizationPersistence.store);
+          if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
+          state.authorizationPolicyReady = policyReady;
+          scheduleDatabaseProbe(generation, controller);
+        });
       });
     }, configuration.databaseHealthProbe.intervalMs);
     probeTimer.unref();
@@ -271,12 +378,17 @@ export async function createProductionApiPlatformBindings(
       [signal, controller.signal],
     );
     assertProductionStartActive(signal, state);
-    if (generation !== probeGeneration || controller.signal.aborted) throw new Error("api_start_cancelled");
+    if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
     state.databaseHealthy = result.healthy;
+    const policyReady = result.healthy &&
+      await hasCompleteCurrentPolicy(authorizationPersistence.store);
+    assertProductionStartActive(signal, state);
+    if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
+    state.authorizationPolicyReady = policyReady;
     void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
   };
   const sessionService = createPcBffSessionService({
-    audit: { record: () => rejected() },
+    audit: authenticationAuditPort(audit),
     decryptionKeys: configuration.pcBff.sessionDecryptionKeys,
     encryptionKey: configuration.pcBff.sessionEncryptionKey,
     indexingKey: configuration.pcBff.sessionIndexingKey,
@@ -292,6 +404,7 @@ export async function createProductionApiPlatformBindings(
 
   return Object.freeze({
     ...unavailable,
+    audit,
     authentication: createPcAuthenticationHttpAdapter({
       allowedOrigins: [configuration.pcBff.allowedOrigin],
       cookieMaxAgeSeconds: configuration.pcBff.sessionAbsoluteTtlSeconds,
@@ -299,10 +412,16 @@ export async function createProductionApiPlatformBindings(
     }),
     authenticationCallbackUrl: (pathAndQuery: string) =>
       authenticationCallbackUrl(pathAndQuery, configuration.pcBff.redirectUri),
+    browserSecurity: { allowedOrigins: [configuration.pcBff.allowedOrigin] },
+    authorization,
+    authorizationTrace: {
+      run: async <T>(traceId: string, work: () => Promise<T>) => authorizationTrace.run(traceId, work),
+    },
     async close() {
       if (state.closed) return;
       state.closed = true;
       state.databaseCompatible = false;
+      state.authorizationPolicyReady = false;
       stopDatabaseProbes();
       await closeResources(activeSessions, activeDatabase, cleanupTimeoutMs);
     },
@@ -321,14 +440,18 @@ export async function createProductionApiPlatformBindings(
         await startDatabaseProbes(signal);
       },
     },
+    organization,
     readiness: () => [
       { healthy: !state.closed && state.databaseCompatible && state.databaseHealthy, name: "application-database", required: true },
       { healthy: !state.closed && activeSessions.isReady(), name: "session-store", required: true },
-      // No reviewed durable policy store or authentication-audit adapter exists yet.
-      { healthy: false, name: "authorization-policy", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.authorizationPolicyReady, name: "authorization-policy", required: true },
+      // Generic database health cannot prove the Audit repository is writable without creating a false audit fact.
       { healthy: false, name: "authentication-audit", required: true },
+      { healthy: false, name: "application-registry-query", required: true },
+      { healthy: false, name: "form-schema-query", required: true },
+      { healthy: false, name: "file-center-provider", required: true },
     ],
-    sessions: { resolvePrincipal: sessionService.resolvePrincipal },
+    sessions: { resolvePrincipal: sessionService.resolvePrincipal, sessionForMutation: sessionService.sessionForMutation },
   });
 }
 
@@ -344,3 +467,4 @@ export const defaultApiPlatformBindingFactory: ApiPlatformBindingFactory = Objec
     return createUnavailableBindings();
   },
 });
+import { AsyncLocalStorage } from "node:async_hooks";

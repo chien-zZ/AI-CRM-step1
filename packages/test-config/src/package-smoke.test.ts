@@ -13,5 +13,5 @@ describe("workspace package", () => {
     await access(sourceEntry);
     const publicEntry = (await import(sourceEntry)) as { packageId?: string; applicationId?: string };
     expect(publicEntry.packageId ?? publicEntry.applicationId).toBe(manifest.name);
-  });
+  }, 30_000);
 });

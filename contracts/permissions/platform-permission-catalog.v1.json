@@ -2,6 +2,48 @@
   "version": 1,
   "permissions": [
     {
+      "owner": "platform.app-registry",
+      "code": "platform.app-registry.deep-link:resolve",
+      "resource": "platform.app-registry.deep-link",
+      "action": "resolve",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.app-registry",
+      "code": "platform.app-registry.registry:read",
+      "resource": "platform.app-registry.registry",
+      "action": "read",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.file-center",
+      "code": "platform.file-center.file:download",
+      "resource": "platform.file-center.file",
+      "action": "download",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.file-center",
+      "code": "platform.file-center.file:upload",
+      "resource": "platform.file-center.file",
+      "action": "upload",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.form-schema",
+      "code": "platform.form-schema.form-release:read",
+      "resource": "platform.form-schema.form-release",
+      "action": "read",
+      "scopeDimensions": []
+    },
+    {
+      "owner": "platform.form-schema",
+      "code": "platform.form-schema.form-release:validate",
+      "resource": "platform.form-schema.form-release",
+      "action": "validate",
+      "scopeDimensions": []
+    },
+    {
       "owner": "platform.notifications",
       "code": "platform.notifications.in-app-notification:archive",
       "resource": "platform.notifications.in-app-notification",

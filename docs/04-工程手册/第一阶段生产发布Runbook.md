@@ -10,6 +10,7 @@
 
 - 精确提交的 `pnpm check`、契约/生成制品校验、迁移空库升级、适用集成/E2E 与预发布冒烟通过。
 - 应用镜像带 SHA-256 摘要；第三方镜像带明确非 `latest` 版本并已完成许可证、安全与兼容评审。
+- API 与 Worker 镜像都包含完整受审 `packages/**/migrations` 目录和固定位置的 `ai-crm-migrations.manifest.json`；分别解包校验文件清单，且规范化 manifest 摘要与 release manifest `artifacts.migrationHead` 一致。镜像内自带 manifest 不作为自己的信任根。
 - 新旧 HTTP、事件、Job、数据库和配置版本在逐台发布窗口兼容。
 - PostgreSQL 恢复点存在且位于两台主机故障域之外；不可逆变更有前滚修复和人工批准。
 - Secret 文件清单、Owner、消费者、权限、轮换/撤销顺序和事故动作已核对，但证据不包含值。
@@ -23,7 +24,8 @@
 1. 在两台主机分别确认目标项目名只能是 `ai-crm-prod-a` 或 `ai-crm-prod-b`，确认私网地址属于批准网段。
 2. 从批准 manifest 生成仅含 release ID/镜像引用的 `images.vars`，与 root-owned 非敏感 host vars 分开保存；不使用隐式 `.env`。
 3. 逐项检查 Secret 文件存在、`root:<专用 Secret-reader GID>` ownership、`0440`、消费者最小化和只读单文件挂载。Compose 中只有声明 Secret 的服务获得该 supplementary GID；普通主机账号不得长期加入该组。任何命令和日志均不得输出内容。
-4. 分别执行 `docker compose ... config --quiet` 和 `docker compose ... pull`。禁止把两个 Compose 文件合并，禁止 Docker Socket、特权容器和公网状态端口。
+4. 分别执行 `docker compose ... config --quiet`。Host B 另输出一份受限的已渲染 Compose 临时文件，执行 `node scripts/check/verify-worker-drain.mjs <rendered-host-b.yml>`；应用 drain 秒数必须是正整数并严格小于解析后的 Compose stop grace，等于、未解析变量或仅有字符串均停止发布。保留安全摘要/结果后删除临时文件。
+5. 仅在批准的 BFF 单上一版本密钥轮换窗口，为每台主机显式追加匹配的 `compose.host-*.bff-previous-key.yml`。未轮换时不得声明 previous ID 或挂载 previous key；启用时 ID、typed `*_FILE` 与单一命名文件必须齐全，否则停止。完成兼容窗口后移除 overlay 和主机文件，再执行 `docker compose ... pull`。
 
 Keycloak 首次管理员建立或恢复必须在受控维护窗口使用独立、临时、文件式凭据执行并进入安全审计；完成后立即撤销。常驻 Keycloak Compose 服务不挂载 bootstrap 管理员凭据，也不使用开发 Realm import。
 
@@ -53,4 +55,4 @@ Keycloak 首次管理员建立或恢复必须在受控维护窗口使用独立�
 
 ## 6. Worker Drain 合约
 
-CMP-01 必须让 Worker 在 SIGTERM/停止接收后：不领取新任务；给在途任务有界完成时间；未完成任务保持可重试事实；关闭连接前刷新安全日志/Trace；以非零状态暴露无法安全停止。`compose.host-b.yml` 的健康命令和 stop grace 只是部署约束，不能替代应用实现与 E2E 证据。
+CMP-01 必须让 Worker 在 SIGTERM/停止接收后：不领取新任务；给在途任务有界完成时间；未完成任务保持可重试事实；关闭连接前刷新安全日志/Trace；以非零状态暴露无法安全停止。`compose.host-b.yml` 的健康命令和 stop grace 只是部署约束，不能替代应用实现与 E2E 证据。每次发布仍必须对已渲染配置执行数值门禁；仓库静态模板只强制两个输入失败关闭，不能凭未解析变量证明时间关系。

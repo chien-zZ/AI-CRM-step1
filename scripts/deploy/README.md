@@ -9,3 +9,18 @@ Repeatable environment deployment, health verification, rollback, and release me
 - `release-manifest.mjs` contains the pure validation/rendering functions covered by `scripts/check/release-gates.test.mjs`.
 
 These scripts validate evidence metadata and content bindings; they do not execute a production release or prove the trusted origin of the referenced tests, approval, restore point, Secret permissions, observability alerts or rollback rehearsal. The release authority must resolve each `evidence://` reference in its approved evidence store, recompute the digest and verify its CI/approval identity before deployment. Follow the versioned production Runbook and retain the underlying evidence outside the repository without sensitive payloads.
+
+## OPS-G3 Migration Artifact Integrity
+
+- `generate-migration-manifest.mjs` recursively inventories every file in the reviewed repository `packages/database/migrations` and `packages/platform-modules/*/migrations` directories. It writes a deterministic version 1 manifest with safe relative paths, sizes and SHA-256 digests and refuses to overwrite an existing output.
+- Both immutable API and Worker artifacts must contain those complete directories at their reviewed `packages/**/migrations` paths and the exact manifest at `/app/ai-crm-migrations.manifest.json`. The manifest digest is the release manifest `artifacts.migrationHead` value.
+- `verify-application-migration-artifacts.mjs` requires both unpacked image filesystems in one release gate. It reads each manifest only from the fixed artifact-root location, verifies the same approved digest, then rejects an omitted API or Worker artifact, missing directories/files, extra files, changed size/content, malformed paths, unsupported versions and symbolic links. `verify-migration-artifact.mjs` remains a single-artifact diagnostic.
+
+Example using only synthetic/local paths:
+
+```text
+node scripts/deploy/generate-migration-manifest.mjs <reviewed-repository-root> <staging-directory>/ai-crm-migrations.manifest.json
+node scripts/deploy/verify-application-migration-artifacts.mjs <unpacked-api-root> <unpacked-worker-root> <approved-migration-manifest-sha256>
+```
+
+The approved digest must come from the reviewed build evidence and must match the release manifest; a manifest carried inside an image is not its own trust root. These scripts do not build, pull, inspect a registry, run migrations or authorize a release.

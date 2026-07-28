@@ -4,6 +4,8 @@ Owns file metadata, upload sessions, immutable content versions, business-resour
 
 Production binaries live in private Tencent Cloud COS through a vendor adapter; local development uses a filesystem adapter. ClamAV scans uploaded content before it becomes available. PostgreSQL stores metadata only, and RabbitMQ workers handle verification, scanning, cleanup, and reconciliation.
 
+Every storage implementation must pass the same private `StorageAdapter` conformance harness used by `LocalFileStorageAdapter`. The harness verifies transfer-grant input propagation and bounded public output, trusted inspection and bounded reads, idempotent delete/quarantine convergence, and stable invalid-handle/missing-object failure classification. A real COS adapter is not accepted or production-ready until it passes this gate against a reviewed test Bucket; the local adapter cannot substitute for that evidence.
+
 Consumers exchange stable `FileReference` values. They never receive COS buckets, object keys, credentials, permanent URLs, SDK objects, or direct database access.
 
 The V1 service supports the complete business-neutral lifecycle: create an initial upload session, append immutable content versions to the same stable file, inspect provider metadata, scan before availability, link or unlink an available version, authorize a fresh short-lived download, clean abandoned uploads, and reconcile missing objects. Every command requires an explicit actor, reason, operation ID, and trace ID; current authorization is checked before protected state is revealed, and durable PostgreSQL mutations use operation receipts plus an Outbox event in the same transaction where a lifecycle event applies.

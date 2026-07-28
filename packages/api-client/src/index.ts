@@ -2,6 +2,16 @@
 export const packageId = "@ai-crm/api-client" as const;
 export const internalOperations = [
   {
+    "id": "getInternalApplicationRegistry",
+    "method": "GET",
+    "path": "/application-registry"
+  },
+  {
+    "id": "resolveInternalApplicationDeepLink",
+    "method": "POST",
+    "path": "/application-registry/deep-links/resolve"
+  },
+  {
     "id": "beginPcLogin",
     "method": "GET",
     "path": "/auth/pc/login"
@@ -25,6 +35,31 @@ export const internalOperations = [
     "id": "logoutPcSession",
     "method": "POST",
     "path": "/auth/pc/logout"
+  },
+  {
+    "id": "createFileUploadSession",
+    "method": "POST",
+    "path": "/files/upload-sessions"
+  },
+  {
+    "id": "confirmFileUpload",
+    "method": "POST",
+    "path": "/files/upload-sessions/{sessionId}/confirm"
+  },
+  {
+    "id": "createFileDownloadGrant",
+    "method": "POST",
+    "path": "/files/download-grants"
+  },
+  {
+    "id": "getFormRelease",
+    "method": "GET",
+    "path": "/form-definitions/{definitionId}/releases/{releaseVersion}"
+  },
+  {
+    "id": "validateFormSubmission",
+    "method": "POST",
+    "path": "/form-definitions/{definitionId}/releases/{releaseVersion}/validate"
   },
   {
     "id": "listNotifications",

@@ -53,7 +53,10 @@ describe("production API configuration", () => {
     expect(result.database).toMatchObject({ applicationName: "ai_crm_api", maxConnections: 10 });
     expect(result.databaseHealthProbe).toEqual({ intervalMs: 10_000, timeoutMs: 2_000 });
     expect(result.database.connectionString).toBe(secrets["/run/secrets/database"]);
-    expect(result.migrations).toHaveLength(10);
+    expect(result.migrations).toHaveLength(11);
+    expect(result.migrations.some((path) => path.replaceAll("\\", "/")
+      .endsWith("packages/platform-modules/authorization/migrations")))
+      .toBe(true);
     expect(result.oidcVerifier.jwksTimeoutMs).toBe(5_000);
   });
 

@@ -18,11 +18,13 @@ The placement is a first-stage baseline, not a capacity claim. CPU, memory, disk
 - A reviewed release manifest supplies the release ID and immutable image references.
 - A root-owned, non-secret host variables file supplies reviewed domain, private addresses, resource limits and bounded runtime values. `host-configuration.example.vars` is intentionally non-runnable until every `replace-after-*` value is resolved.
 - A root-owned restricted directory supplies individual Secret files. Do not put Secret values in either variables file, the shell command line, Compose YAML, images or release records.
-- CMP-01 has bound API runtime parameters and the per-service `api_postgres_url` Secret reference. Production remains blocked while authorization policy/authentication audit, migration artifact contents, and Worker RabbitMQ activation are unresolved.
+- CMP-01 has bound API runtime parameters and the per-service `api_postgres_url` Secret reference. OPS-G3 defines the migration artifact integrity and rendered Worker drain/stop-grace gates; the image build/release pipeline must retain their evidence. Production remains blocked while authorization policy/authentication audit and Worker RabbitMQ activation are unresolved.
 
 ## Required Secret Files
 
 Host A receives only the files declared by its Compose services: PostgreSQL role files, Redis/RabbitMQ credentials, the Keycloak database credential, the Flowable bootstrap credential, the API-only PostgreSQL URL, API BFF session files and TLS certificate/key files. Host B receives the API-only PostgreSQL URL, shared API BFF session files and TLS certificate/key files. Each file is environment/service/purpose specific. Because standalone Compose file-backed Secrets preserve host file permissions while the consumers are non-root, every mounted production Secret is root-owned, assigned to a dedicated numeric Secret-reader group and `0440`. The Secret directory remains root-owned and non-traversable by ordinary host users; no human deployment account is a standing member of the reader group.
+
+The base Host A and Host B files do not declare, reference or mount a previous BFF session encryption key. During an approved one-key rotation window only, add the matching `compose.host-a.bff-previous-key.yml` or `compose.host-b.bff-previous-key.yml` overlay. Enabling the overlay requires the non-secret previous key ID and the single host file `pc_session_previous_encryption_key`; it exposes only the paired `AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_ID` and typed `AI_CRM_PC_SESSION_PREVIOUS_ENCRYPTION_KEY_FILE` inputs to that host's API. A missing ID, Secret root or named file fails closed. Remove both overlays after the approved session compatibility window; never retain more than one previous key or reuse current/index key files.
 
 The long-running Keycloak service deliberately does not receive a bootstrap administrator credential. Initial administrator establishment or recovery is a separately approved, audited one-time operation; its temporary credential is revoked after use and is never retained in the normal Compose project.
 
@@ -43,5 +45,21 @@ Restrict and atomically rename `images.vars.tmp` after validation. It contains n
 docker compose --env-file <images.vars> --env-file <host-a.vars> -p ai-crm-prod-a -f deploy/compose/production/compose.host-a.yml config --quiet
 docker compose --env-file <images.vars> --env-file <host-b.vars> -p ai-crm-prod-b -f deploy/compose/production/compose.host-b.yml config --quiet
 ```
+
+If the previous-key rotation overlay is approved, append only the matching host overlay to that host command. Do not add the previous-key variable or file for the ordinary base deployment:
+
+```text
+docker compose --env-file <images.vars> --env-file <host-a.vars> -p ai-crm-prod-a -f deploy/compose/production/compose.host-a.yml -f deploy/compose/production/compose.host-a.bff-previous-key.yml config --quiet
+docker compose --env-file <images.vars> --env-file <host-b.vars> -p ai-crm-prod-b -f deploy/compose/production/compose.host-b.yml -f deploy/compose/production/compose.host-b.bff-previous-key.yml config --quiet
+```
+
+For every Host B release, render the concrete Compose configuration into a restricted temporary evidence file and run the numeric relationship gate before pull/up. The values remain reviewed deployment inputs; the repository does not guess them.
+
+```text
+docker compose --env-file <images.vars> --env-file <host-b.vars> -p ai-crm-prod-b -f deploy/compose/production/compose.host-b.yml config > <restricted-temporary-rendered-host-b.yml>
+node scripts/check/verify-worker-drain.mjs <restricted-temporary-rendered-host-b.yml>
+```
+
+Alternatively pipe `docker compose ... config` directly to `node scripts/check/verify-worker-drain.mjs -` when a rendered evidence file is not required. Delete any temporary rendered file after its safe digest/result is retained. The gate parses compound `us`, `ms`, `s`, `m` and `h` durations and requires positive integer drain seconds to be strictly less than stop grace; unresolved placeholders, unitless durations and equality fail closed.
 
 These static checks do not prove backup recovery, host hardening, alert delivery, data residency, performance or application correctness.
