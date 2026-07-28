@@ -1,6 +1,6 @@
 # CMP Registry/Form PostgreSQL Capability Probes
 
-- Status: COMPLETE; awaiting Integration Owner merge and application composition
+- Status: MERGED_AND_COMPOSED
 - Date: 2026-07-28
 - Owner: `codex/cmp-registry-form-probes`
 - Branch: `codex/cmp-registry-form-probes`
@@ -95,7 +95,7 @@ Add module-owned, public, read-only PostgreSQL capability probes for the Applica
 - Compose each probe behind the existing application-owned bounded/non-overlapping dependency-probe lifecycle, cached readiness state, generation invalidation, and shutdown behavior used for Audit.
 - Replace the fixed-false Registry/Form query readiness entries only with the corresponding probe's current cached status. Do not derive either status from generic database health or another module's probe.
 - Keep future query execution independently fail closed; `available` is not an authorization decision or a guarantee that a later query will succeed.
-- Production runtime role grants remain unresolved. These probes observe grants but do not define, provision, or approve them, so their merge alone does not pass G3.
+- Migration `0000000013` now defines the reviewed runtime grants, and API composition gates both module statuses on the exact runtime-role probe. These results still do not pass G3 while File, Task consumer, and first-policy publication blockers remain.
 
 ## Independent Review Follow-up
 

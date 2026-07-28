@@ -1,5 +1,8 @@
 import { createTraceContext } from "@ai-crm/observability";
-import { createPostgresApplicationRegistryQueryService } from "@ai-crm/platform-app-registry";
+import {
+  createPostgresApplicationRegistryCapabilityProbe,
+  createPostgresApplicationRegistryQueryService,
+} from "@ai-crm/platform-app-registry";
 import { createAuditService, createPostgresAuditCapabilityProbe, createPostgresAuditStore } from "@ai-crm/platform-audit";
 import {
   AuthorizationUnavailableError,
@@ -8,7 +11,10 @@ import {
   type AuthorizationPolicyStore,
 } from "@ai-crm/platform-authorization";
 import { createOidcTokenVerifier, type TokenVerifier } from "@ai-crm/platform-auth-context";
-import { createPostgresFormSchemaQueryService } from "@ai-crm/platform-form-schema";
+import {
+  createPostgresFormSchemaCapabilityProbe,
+  createPostgresFormSchemaQueryService,
+} from "@ai-crm/platform-form-schema";
 import {
   createPostgresOrganizationService,
   type OrganizationCommandAuthorizer,
@@ -17,6 +23,7 @@ import {
 import {
   checkMigrationCompatibility,
   createDatabaseRuntime,
+  createPostgresRuntimeRoleCapabilityProbe,
   type DatabaseConfig,
   type DatabaseRuntime,
   type MigrationPool,
@@ -363,6 +370,9 @@ export async function createProductionApiPlatformBindings(
     { fieldPolicies: {} },
   );
   const auditCapability = createPostgresAuditCapabilityProbe(activeDatabase);
+  const runtimeRoleCapability = createPostgresRuntimeRoleCapabilityProbe(activeDatabase);
+  const applicationRegistryCapability = createPostgresApplicationRegistryCapabilityProbe(activeDatabase);
+  const formSchemaCapability = createPostgresFormSchemaCapabilityProbe(activeDatabase);
   const applicationRegistryQueries = createPostgresApplicationRegistryQueryService(activeDatabase, {
     authorize: (request) => authorizationTrace.run(request.traceId, () => authorization.check(
       request.subject,
@@ -380,53 +390,75 @@ export async function createProductionApiPlatformBindings(
     failClosedOrganizationAuthorizer,
   );
   const state = {
+    applicationRegistryCapabilityReady: false,
     auditCapabilityReady: false,
     authorizationPolicyReady: false,
     closed: false,
     databaseCompatible: false,
     databaseHealthy: false,
+    formSchemaCapabilityReady: false,
+    runtimeRoleCapabilityReady: false,
   };
   let probeController = new AbortController();
   let probeGeneration = 0;
   let probeTimer: NodeJS.Timeout | undefined;
-  let dependentProbeCompletion: Promise<void> | undefined;
+  type DependencyProbeName = "applicationRegistry" | "audit" | "authorizationPolicy" | "formSchema" | "runtimeRole";
+  const dependentProbeCompletions: Record<DependencyProbeName, Promise<void> | undefined> = {
+    applicationRegistry: undefined,
+    audit: undefined,
+    authorizationPolicy: undefined,
+    formSchema: undefined,
+    runtimeRole: undefined,
+  };
   const stopDatabaseProbes = (): void => {
     probeGeneration += 1;
     if (probeTimer !== undefined) clearTimeout(probeTimer);
     probeTimer = undefined;
     probeController.abort();
     state.databaseHealthy = false;
+    state.runtimeRoleCapabilityReady = false;
     state.auditCapabilityReady = false;
     state.authorizationPolicyReady = false;
+    state.applicationRegistryCapabilityReady = false;
+    state.formSchemaCapabilityReady = false;
+  };
+  const runDependencyProbe = async (
+    name: DependencyProbeName,
+    check: () => Promise<boolean>,
+    publish: (healthy: boolean) => void,
+    generation: number,
+    controller: AbortController,
+    signals: readonly AbortSignal[],
+  ): Promise<void> => {
+    if (probeIsObsolete(state, controller, generation, probeGeneration) ||
+      signals.some((signal) => signal.aborted) || dependentProbeCompletions[name] !== undefined) return;
+    const pending = check();
+    const completion = pending.then(() => undefined, () => undefined);
+    const trackedCompletion = completion.finally(() => {
+      if (dependentProbeCompletions[name] === trackedCompletion) dependentProbeCompletions[name] = undefined;
+    });
+    dependentProbeCompletions[name] = trackedCompletion;
+    const result = await boundedDependencyCheck(pending, configuration.databaseHealthProbe.timeoutMs, signals);
+    if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
+    publish(result.healthy);
   };
   const runDependentProbes = async (
     generation: number,
     controller: AbortController,
     signals: readonly AbortSignal[],
   ): Promise<void> => {
-    if (probeIsObsolete(state, controller, generation, probeGeneration) ||
-      signals.some((signal) => signal.aborted) || dependentProbeCompletion !== undefined) return;
-    const auditCheck = auditCapability.check().then(({ status }) => status === "available");
-    const policyCheck = hasCompleteCurrentPolicy(authorizationPersistence.store);
-    const auditResultPromise = boundedDependencyCheck(
-      auditCheck,
-      configuration.databaseHealthProbe.timeoutMs,
-      signals,
-    );
-    const policyResultPromise = boundedDependencyCheck(
-      policyCheck,
-      configuration.databaseHealthProbe.timeoutMs,
-      signals,
-    );
-    const completion = Promise.allSettled([auditCheck, policyCheck]).then(() => undefined);
-    const trackedCompletion = completion.finally(() => {
-      if (dependentProbeCompletion === trackedCompletion) dependentProbeCompletion = undefined;
-    });
-    dependentProbeCompletion = trackedCompletion;
-    const [auditResult, policyResult] = await Promise.all([auditResultPromise, policyResultPromise]);
-    if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
-    state.auditCapabilityReady = auditResult.healthy;
-    state.authorizationPolicyReady = policyResult.healthy;
+    await Promise.all([
+      runDependencyProbe("audit", () => auditCapability.check().then(({ status }) => status === "available"),
+        (healthy) => { state.auditCapabilityReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("authorizationPolicy", () => hasCompleteCurrentPolicy(authorizationPersistence.store),
+        (healthy) => { state.authorizationPolicyReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("runtimeRole", () => runtimeRoleCapability.check().then(({ status }) => status === "available"),
+        (healthy) => { state.runtimeRoleCapabilityReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("applicationRegistry", () => applicationRegistryCapability.check().then(({ status }) => status === "available"),
+        (healthy) => { state.applicationRegistryCapabilityReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("formSchema", () => formSchemaCapability.check().then(({ status }) => status === "available"),
+        (healthy) => { state.formSchemaCapabilityReady = healthy; }, generation, controller, signals),
+    ]);
   };
   const scheduleDatabaseProbe = (generation: number, controller: AbortController): void => {
     if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
@@ -443,6 +475,9 @@ export async function createProductionApiPlatformBindings(
         else {
           state.auditCapabilityReady = false;
           state.authorizationPolicyReady = false;
+          state.runtimeRoleCapabilityReady = false;
+          state.applicationRegistryCapabilityReady = false;
+          state.formSchemaCapabilityReady = false;
         }
         void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
       });
@@ -454,24 +489,35 @@ export async function createProductionApiPlatformBindings(
     probeController = new AbortController();
     const controller = probeController;
     const generation = probeGeneration;
-    const result = await boundedDatabaseHealthCheck(
-      activeDatabase,
-      configuration.databaseHealthProbe.timeoutMs,
-      [signal, controller.signal],
-    );
-    assertProductionStartActive(signal, state);
-    if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
-    state.databaseHealthy = result.healthy;
-    if (!result.healthy) {
-      state.auditCapabilityReady = false;
-      state.authorizationPolicyReady = false;
+    try {
+      const result = await boundedDatabaseHealthCheck(
+        activeDatabase,
+        configuration.databaseHealthProbe.timeoutMs,
+        [signal, controller.signal],
+      );
+      assertProductionStartActive(signal, state);
+      if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
+      state.databaseHealthy = result.healthy;
+      if (!result.healthy) {
+        state.auditCapabilityReady = false;
+        state.authorizationPolicyReady = false;
+        state.runtimeRoleCapabilityReady = false;
+        state.applicationRegistryCapabilityReady = false;
+        state.formSchemaCapabilityReady = false;
+        void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
+        return;
+      }
+      await runDependentProbes(generation, controller, [signal, controller.signal]);
+      assertProductionStartActive(signal, state);
+      if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
       void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
-      return;
+    } catch (error) {
+      if (probeController === controller && probeGeneration === generation) {
+        state.databaseCompatible = false;
+        stopDatabaseProbes();
+      }
+      throw error;
     }
-    await runDependentProbes(generation, controller, [signal, controller.signal]);
-    assertProductionStartActive(signal, state);
-    if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
-    void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
   };
   const sessionService = createPcBffSessionService({
     audit: authenticationAuditPort(audit),
@@ -535,11 +581,12 @@ export async function createProductionApiPlatformBindings(
     readiness: () => [
       { healthy: !state.closed && state.databaseCompatible && state.databaseHealthy, name: "application-database", required: true },
       { healthy: !state.closed && activeSessions.isReady(), name: "session-store", required: true },
-      { healthy: !state.closed && state.databaseHealthy && state.authorizationPolicyReady, name: "authorization-policy", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady, name: "database-runtime-role", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.authorizationPolicyReady, name: "authorization-policy", required: true },
       // This observes static Audit prerequisites; every actual append still fails closed independently.
-      { healthy: !state.closed && state.databaseHealthy && state.auditCapabilityReady, name: "authentication-audit", required: true },
-      { healthy: false, name: "application-registry-query", required: true },
-      { healthy: false, name: "form-schema-query", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.auditCapabilityReady, name: "authentication-audit", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.applicationRegistryCapabilityReady, name: "application-registry-query", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.formSchemaCapabilityReady, name: "form-schema-query", required: true },
       { healthy: false, name: "file-center-provider", required: true },
     ],
     sessions: { resolvePrincipal: sessionService.resolvePrincipal, sessionForMutation: sessionService.sessionForMutation },

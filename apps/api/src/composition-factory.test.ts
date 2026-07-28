@@ -101,6 +101,55 @@ function dependencies(compatible = true): {
   };
 }
 
+const runtimeRoleCapabilities = Object.freeze({
+  bypassrls_denied: true,
+  createdb_denied: true,
+  createrole_denied: true,
+  database_create_denied: true,
+  exact_runtime_role: true,
+  login_enabled: true,
+  public_schema_create_denied: true,
+  public_schema_usage_denied: true,
+  replication_denied: true,
+  role_membership_denied: true,
+  superuser_denied: true,
+  temporary_denied: true,
+});
+
+const auditCapabilities = Object.freeze({
+  advisory_lock_executable: true,
+  hash_function_executable: true,
+  operation_receipts_present: true,
+  operation_receipts_privileges: true,
+  records_present: true,
+  records_privileges: true,
+  schema_usage: true,
+  transaction_read_write: true,
+});
+
+const applicationRegistryCapabilities = Object.freeze({
+  applications_columns: true,
+  applications_present: true,
+  applications_select: true,
+  navigation_columns: true,
+  navigation_present: true,
+  navigation_select: true,
+  routes_columns: true,
+  routes_present: true,
+  routes_select: true,
+  schema_usage: true,
+});
+
+const formSchemaCapabilities = Object.freeze({
+  release_status_columns: true,
+  release_status_present: true,
+  release_status_select: true,
+  releases_columns: true,
+  releases_present: true,
+  releases_select: true,
+  schema_usage: true,
+});
+
 describe("production API platform binding factory", () => {
   it("checks migration compatibility, stays fail-closed for unresolved capabilities, and closes once", async () => {
     const fixture = dependencies();
@@ -110,6 +159,7 @@ describe("production API platform binding factory", () => {
     expect(bindings.readiness()).toEqual([
       { healthy: false, name: "application-database", required: true },
       { healthy: true, name: "session-store", required: true },
+      { healthy: false, name: "database-runtime-role", required: true },
       { healthy: false, name: "authorization-policy", required: true },
       { healthy: false, name: "authentication-audit", required: true },
       { healthy: false, name: "application-registry-query", required: true },
@@ -118,8 +168,8 @@ describe("production API platform binding factory", () => {
     ]);
     await bindings.databaseCompatibility.assertCompatible(signal);
     expect(bindings.readiness()[0]).toMatchObject({ healthy: true });
-    expect(bindings.readiness()[2]).toMatchObject({ healthy: false });
     expect(bindings.readiness()[3]).toMatchObject({ healthy: false });
+    expect(bindings.readiness()[4]).toMatchObject({ healthy: false });
     expect(bindings.authenticationCallbackUrl("/auth/pc/callback?code=value&state=state"))
       .toBe("https://api.example.test/auth/pc/callback?code=value&state=state");
     let callbackFailure: unknown;
@@ -160,19 +210,16 @@ describe("production API platform binding factory", () => {
     const contentDigest = createHash("sha256").update(canonical(snapshot)).digest("hex");
     fixture.execute.mockImplementation((sql: string) => {
       if (sql.includes("has_schema_privilege(current_user, 'audit'")) {
-        return Promise.resolve({
-          rowCount: 1,
-          rows: [{
-            advisory_lock_executable: true,
-            hash_function_executable: true,
-            operation_receipts_present: true,
-            operation_receipts_privileges: true,
-            records_present: true,
-            records_privileges: true,
-            schema_usage: true,
-            transaction_read_write: true,
-          }],
-        });
+        return Promise.resolve({ rowCount: 1, rows: [auditCapabilities] });
+      }
+      if (sql.includes("from pg_catalog.pg_roles role")) {
+        return Promise.resolve({ rowCount: 1, rows: [runtimeRoleCapabilities] });
+      }
+      if (sql.includes("to_regclass('app_registry.applications')")) {
+        return Promise.resolve({ rowCount: 1, rows: [applicationRegistryCapabilities] });
+      }
+      if (sql.includes("to_regclass('form_schema.releases')")) {
+        return Promise.resolve({ rowCount: 1, rows: [formSchemaCapabilities] });
       }
       if (sql.includes("authorization_core.current_policy")) {
         return Promise.resolve({ rowCount: 1, rows: [{ content_digest: contentDigest, contract_version: "authorization-policy.v1", version: snapshot.version }] });
@@ -187,8 +234,8 @@ describe("production API platform binding factory", () => {
     });
     const bindings = await createProductionApiPlatformBindings(fixture.value);
     await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
-    expect(bindings.readiness().slice(0, 4).every(({ healthy }) => healthy)).toBe(true);
-    expect(bindings.readiness().slice(4).every(({ healthy }) => !healthy)).toBe(true);
+    expect(bindings.readiness().slice(0, 7).every(({ healthy }) => healthy)).toBe(true);
+    expect(bindings.readiness().slice(7).every(({ healthy }) => !healthy)).toBe(true);
     const traceId = "abcdefabcdefabcdefabcdefabcdefab";
     await expect(bindings.authorizationTrace.run(traceId, () => bindings.authorization.check({
       activeAssignmentIds: [],
@@ -199,6 +246,36 @@ describe("production API platform binding factory", () => {
     expect(fixture.execute.mock.calls.some(([sql, values]) =>
       typeof sql === "string" && sql.startsWith("insert into authorization_core.decision_records") &&
       Array.isArray(values) && values.includes(traceId))).toBe(true);
+    await bindings.close?.();
+  });
+
+  it("keeps database-backed capabilities unavailable for a privileged or misconfigured connection role", async () => {
+    const fixture = dependencies();
+    fixture.execute.mockImplementation((sql: string) => {
+      if (sql.includes("from pg_catalog.pg_roles role")) {
+        return Promise.resolve({
+          rowCount: 1,
+          rows: [{ ...runtimeRoleCapabilities, exact_runtime_role: false }],
+        });
+      }
+      if (sql.includes("to_regclass('app_registry.applications')")) {
+        return Promise.resolve({ rowCount: 1, rows: [applicationRegistryCapabilities] });
+      }
+      if (sql.includes("to_regclass('form_schema.releases')")) {
+        return Promise.resolve({ rowCount: 1, rows: [formSchemaCapabilities] });
+      }
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    });
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+
+    expect(bindings.readiness()[2]).toMatchObject({ healthy: false, name: "database-runtime-role" });
+    expect(bindings.readiness()[5]).toMatchObject({ healthy: false, name: "application-registry-query" });
+    expect(bindings.readiness()[6]).toMatchObject({ healthy: false, name: "form-schema-query" });
+    expect(fixture.execute.mock.calls.some(([sql]) =>
+      typeof sql === "string" && sql.includes("to_regclass('app_registry.applications')"))).toBe(true);
+    expect(fixture.execute.mock.calls.some(([sql]) =>
+      typeof sql === "string" && sql.includes("to_regclass('form_schema.releases')"))).toBe(true);
     await bindings.close?.();
   });
 
@@ -394,6 +471,39 @@ describe("production API platform binding factory", () => {
     await bindings.close?.();
   });
 
+  it("invalidates readiness when startup is aborted after dependency probes begin", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = dependencies();
+      let auditStarted = false;
+      fixture.execute.mockImplementation((sql: string) => {
+        if (sql.includes("has_schema_privilege(current_user, 'audit'")) {
+          auditStarted = true;
+          return new Promise(() => undefined);
+        }
+        if (sql.includes("from pg_catalog.pg_roles role")) {
+          return Promise.resolve({ rowCount: 1, rows: [runtimeRoleCapabilities] });
+        }
+        return Promise.resolve({ rowCount: 0, rows: [] });
+      });
+      const bindings = await createProductionApiPlatformBindings(fixture.value);
+      const controller = new AbortController();
+      const checking = bindings.databaseCompatibility.assertCompatible(controller.signal);
+      await vi.waitFor(() => { expect(auditStarted).toBe(true); });
+      controller.abort();
+
+      await expect(checking).rejects.toThrow("api_start_cancelled");
+      expect(bindings.readiness().filter(({ name }) => name !== "session-store")
+        .every(({ healthy }) => !healthy)).toBe(true);
+      const healthCallsAtAbort = fixture.healthCheck.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs * 2);
+      expect(fixture.healthCheck).toHaveBeenCalledTimes(healthCallsAtAbort);
+      await bindings.close?.();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not publish a slow policy result after close", async () => {
     const fixture = dependencies();
     let resolvePolicy: ((value: { rowCount: number; rows: readonly unknown[] }) => void) | undefined;
@@ -430,21 +540,46 @@ describe("production API platform binding factory", () => {
     expect(policyCalls).toBe(callsBeforeClose);
   });
 
-  it("continues database health probes while an audit dependency query remains stuck", async () => {
+  it("continues database and independent module probes while an audit dependency query remains stuck", async () => {
     vi.useFakeTimers();
     try {
       const fixture = dependencies();
-      fixture.execute.mockImplementation((sql: string) => sql.includes("has_schema_privilege(current_user, 'audit'")
-        ? new Promise(() => undefined)
-        : Promise.resolve({ rowCount: 0, rows: [] }));
+      let registryProbeCalls = 0;
+      let auditProbeCalls = 0;
+      let resolveAudit: ((value: { readonly rowCount: number; readonly rows: readonly unknown[] }) => void) | undefined;
+      fixture.execute.mockImplementation((sql: string) => {
+        if (sql.includes("has_schema_privilege(current_user, 'audit'")) {
+          auditProbeCalls += 1;
+          return auditProbeCalls === 1
+            ? new Promise((resolve) => { resolveAudit = resolve; })
+            : Promise.resolve({ rowCount: 1, rows: [auditCapabilities] });
+        }
+        if (sql.includes("from pg_catalog.pg_roles role")) {
+          return Promise.resolve({ rowCount: 1, rows: [runtimeRoleCapabilities] });
+        }
+        if (sql.includes("to_regclass('app_registry.applications')")) {
+          registryProbeCalls += 1;
+          return Promise.resolve({ rowCount: 1, rows: [applicationRegistryCapabilities] });
+        }
+        return Promise.resolve({ rowCount: 0, rows: [] });
+      });
       const bindings = await createProductionApiPlatformBindings(fixture.value);
       const checking = bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
       await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.timeoutMs);
       await checking;
-      expect(bindings.readiness()[3]).toMatchObject({ healthy: false });
+      expect(bindings.readiness()[4]).toMatchObject({ healthy: false });
+      expect(bindings.readiness()[5]).toMatchObject({ healthy: true });
 
       await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs * 2);
       expect(fixture.healthCheck.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(registryProbeCalls).toBeGreaterThanOrEqual(3);
+      expect(auditProbeCalls).toBe(1);
+
+      resolveAudit?.({ rowCount: 0, rows: [] });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs);
+      expect(auditProbeCalls).toBe(2);
+      expect(bindings.readiness()[4]).toMatchObject({ healthy: true });
       await bindings.close?.();
     } finally {
       vi.useRealTimers();
@@ -468,7 +603,7 @@ describe("production API platform binding factory", () => {
     await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
     resolveFirstPolicy?.({ rowCount: 0, rows: [] });
     await expect(obsolete).rejects.toThrow("api_start_cancelled");
-    expect(bindings.readiness()[2]).toMatchObject({ healthy: false });
+    expect(bindings.readiness()[3]).toMatchObject({ healthy: false });
     await bindings.close?.();
   });
 

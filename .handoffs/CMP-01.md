@@ -75,12 +75,13 @@
 - ADR-0025 与 ADR-0026 已于 2026-07-28 被项目负责人接受；接受确认持久化与运行边界，不等同于策略数据或生产消费者启用。
 - Authorization 已实现迁移 `0000000012`、不可变策略版本/发布、原子当前策略指针、事务发布器和耐久幂等 Decision Recorder；没有 Permission、Role 或 Grant seed。
 - API 生产组合已接入 PostgreSQL Authorization Store/Recorder、Organization 只读 workforce 解析、PostgreSQL Audit 与真实认证审计 Adapter。组织写在数据库访问前失败关闭；无完整当前策略时 API 保持 Not Ready；没有 audit-owned 非写健康合同前 authentication-audit required Readiness 也保持 Not Ready。
-- Audit 已新增并组合只读能力前置探针；Registry/Form 已新增 PostgreSQL 查询 Facade，并以完整 Workforce Person、活动 Assignment 集、可选选择 Assignment 和同一 Trace 执行模块级动态/精确权限复核。生产运行角色权限矩阵尚未接受，因此 Registry/Form required Readiness 继续失败关闭，Audit 探针也不会绕过缺失 GRANT。
+- Audit 已新增并组合只读能力前置探针；Registry/Form 已新增 PostgreSQL 查询 Facade，并以完整 Workforce Person、活动 Assignment 集、可选选择 Assignment 和同一 Trace 执行模块级动态/精确权限复核。最小权限迁移 `0000000013`、数据库运行角色探针和 Registry/Form 模块能力探针已接入，错误或高权限连接角色、缺表/列/权限、超时和数据库失联均阻止相关 required Readiness。
+- Authorization 已新增受保护策略发布命令边界，显式要求当前 Workforce 授权、稳定操作幂等、管理审计和事务发布；未创建真实发布权限、Owner、Role/Grant/策略 seed 或生产写入口，首次策略 bootstrap 仍失败关闭。
 - Worker 已提供固定 `amqplib@2.0.1` 的文件式 AMQPS Adapter，覆盖 Confirm/Return、背压、ACK/NACK、固定 TTL 分层重试、DLQ、Prefetch/Concurrency、Readiness 和可中止 Drain/Close；生产 bootstrap 尚未接线，消费者保持禁用。
 
 ## 尚未完成
 
-- 生产 API Binding Factory 已闭合 PostgreSQL、Redis Session、OIDC、迁移检查、资源生命周期、Organization 只读解析、持久化 Authorization Policy/Decision 与认证 Audit；Registry/Form/File 的 internal-only HTTP 合同、受保护 Controller 和框架无关 Adapter 已组合。生产 Registry/Form 查询服务与 File storage/scanner Provider 尚未组合，三个 required Readiness 依赖保持失败关闭。
+- 生产 API Binding Factory 已闭合 PostgreSQL、Redis Session、OIDC、迁移检查、运行角色最小权限验证、资源生命周期、Organization 只读解析、持久化 Authorization Policy/Decision、认证 Audit，以及 Registry/Form 查询与模块能力 Readiness。File internal-only HTTP 合同和受保护 Controller/Adapter 已组合，但 storage/scanner Provider 尚未组合并保持 required Readiness 失败关闭。
 - Task/Notification 的 9 个 HTTP operation 已映射到 8 个业务中立平台权限；Registry/Form/File 新增 7 个 HTTP operation 与 6 个业务中立权限。未创建角色、Grant 或策略 seed。
 - AsyncAPI 与 ADR-0026 已确认固定 TTL 分层重试机制，具体 Adapter 已实现；Task projection 的 `maxAttempts`、`backoffSeconds`、`timeoutMs`、`prefetch`、`concurrency`、错误分类、容量和告警值仍未接受，因此生产消费显式禁用，Worker 生产组合继续失败关闭。
 - API 已组合文件式 PostgreSQL/Redis/OIDC/会话配置、只读迁移兼容检查、运行期数据库 Readiness 探测、授权/组织/认证审计与有界资源生命周期；没有当前完整策略时按设计保持 Not Ready，不以 seed 绕过。
@@ -89,14 +90,14 @@
 
 ## 验证
 
-- API：普通门 164 tests passed、5 integration tests skipped；三条平台 HTTP Adapter 64/64，Controller 真实 HTTP 路由、120 KiB 合法体与超 262144 字节拒绝均有回归；lint/typecheck/build/contracts 通过。
+- API：最终普通门 170 tests passed、5 integration tests skipped；Composition Factory 专项 21/21，三条平台 HTTP Adapter 64/64，Controller 真实 HTTP 路由、120 KiB 合法体与超 262144 字节拒绝均有回归；lint/typecheck/build/contracts 通过。
 - Worker：RabbitMQ Adapter 最新专项 20/20；NACK 后同 message ID 重试不会消费旧 Confirm 状态。生产消费者仍禁用。
-- Authorization：普通单元测试 34/34；隔离 PostgreSQL 17.5 集成 5/5；未知合同版本和 denied-decision policy authority 独立复核问题已关闭。
-- Database：普通门 23 tests passed、1 integration test skipped；隔离 PostgreSQL 运行全仓 11 条迁移及兼容检查 24/24 通过。
+- Authorization：受保护策略发布边界 48 tests passed、6 gated skipped；隔离 PostgreSQL 17.5 集成 5/5；未知合同版本、denied-decision policy authority 与发布审计重试复核问题已关闭。
+- Database：全局迁移 `0000000013` 已验证；隔离 PostgreSQL 17.5 数据库集成 31/31 通过，覆盖缺失运行角色恢复、精确权限矩阵和运行角色漂移失败关闭。
 - Platform HTTP contracts：权限/HTTP 专项 3/3、contracts 28/28、Repository 40/40；独立复审关闭 3 项 P2，无新增 finding。
 - Worker：89/89；通用生产组合聚焦 32/32；独立复审关闭 1 项 P1 与 2 项 P2，无新增 finding。
 - Lockfile 由单一 Integration Owner 更新 `amqplib@2.0.1` 与 Worker/authorization 的 `@ai-crm/database workspace:*` importer；`pnpm install --frozen-lockfile` 通过。最新串行完整 `pnpm check` 通过：Repository 40/40、Compose static、contracts generation/check，Turbo 140/140。
-- 本批次最终 `pnpm check` 再次通过：Repository 40/40、Compose static、contracts generation/check 与 Turbo 140/140；API 164 passed/5 skipped。
+- 本批次最终 `pnpm check` 再次通过：Repository 40/40、Compose static、contracts generation/check 与 Turbo 140/140；API 170 passed/5 skipped、Worker 90/90。首次完整运行遇到 Worker coverage 临时文件 `ENOENT`，Worker 独立复跑及随后完整复跑均通过。
 
 ## 独立 Review
 
@@ -114,6 +115,7 @@
 - API 授权/审计/组织组合独立审查关闭认证操作 ID、单逻辑操作 Trace、相同命令不确定提交重试及慢策略加载生命周期竞态；最终窄复核无残留 finding。
 - 平台 HTTP 独立 Review 发现生产查询未组合却可能 Ready、File 授权拒绝误报 503、Nest 默认 100 KiB Parser、Form GET Content-Type 误拒绝和入站 Trace 分裂；全部修复并由原 Reviewer 复审清零。Assignment 选择来源仍待契约评审，本批次未发明 Header。
 - Audit/Registry/Form 查询组合独立 Review Round 1 发现关闭后可能启动策略 SQL、卡死依赖冻结数据库探测、嵌套 accessor 仍可执行三项 P2；均已按复现路径修复并补回归，同一 Reviewer 复审关闭全部 finding，未发现新增问题。
+- 数据库最小权限、Registry/Form 模块探针和受保护策略发布边界均完成独立 Review 与原 Reviewer 复审。API 最终接线 Review 关闭启动取消状态残留、guard lint/type 和卡死探针恢复证明问题，无开放 P0-P3。
 
 ## 未解决问题
 
@@ -123,4 +125,4 @@
 - Worker Drain deadline 与 Compose `stop_grace_period` 的静态门已实现并通过；仍需真实生产组合和运行证据。
 - BFF previous encryption key 轮换已由代码与生产 Compose overlay 表达并通过静态门；密钥值仍只来自受限文件。
 - Worker 尚未向公共只读迁移兼容检查提供受控 Pool、完整迁移目录和独立应用 Schema SemVer；API 已独立使用 `AI_CRM_API_SCHEMA_VERSION`，不得改传 Release ID 或调用 `runMigrations`。
-- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。剩余关键门包括运行角色最小权限矩阵/前向迁移、真实策略发布、Registry/Form 模块能力探针、File Provider 决策与实现，以及 Task projection 精确运行值和消费者激活。
+- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。剩余关键门是首个真实策略的 bootstrap authority/Owner/权限/审批与管理审计接线、真实非空策略发布、File Provider 决策与实现，以及 Task projection 精确运行值和消费者激活。

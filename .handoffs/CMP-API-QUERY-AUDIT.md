@@ -56,9 +56,7 @@ Compose the audit-owned non-writing capability probe and the PostgreSQL Registry
 
 ## Remaining G3 Gates
 
-- Accept and implement the least-privilege database runtime-role permission matrix for every composed module.
-- Publish a reviewed non-empty production authorization policy through an authorized administrative path; no seed is added here.
-- Add module-owned Registry/Form capability probes before marking their required readiness healthy.
+- Approve the bootstrap authority, Owner/permission, review/emergency route, and management Audit Adapter needed to publish the first reviewed non-empty production authorization policy; no seed is added here.
 - Resolve and implement COS/ClamAV Provider details and file work sourcing.
 - Accept Task projection retry, timeout, prefetch, concurrency, capacity, and alert values before activating production consumers.
 
