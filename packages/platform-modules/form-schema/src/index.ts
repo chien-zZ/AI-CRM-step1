@@ -1,4 +1,5 @@
 export const packageId="@ai-crm/platform-form-schema" as const;
+export {createPostgresFormSchemaCapabilityProbe,type FormSchemaCapabilityProbe,type FormSchemaCapabilityStatus} from "./capability-probe.js";
 export {FormSchemaError,type FormSchemaErrorCode} from "./errors.js";
 export {createFormSchemaService} from "./service.js";
 export {createMemoryFormSchemaStore} from "./memory-store.js";

@@ -5,15 +5,16 @@ import { resolve } from "node:path";
 import { createDatabaseRuntime, runMigrations, type DatabaseRuntime } from "@ai-crm/database";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createFormSchemaService, createPostgresFormSchemaStore } from "./index.js";
+import { createFormSchemaService, createPostgresFormSchemaCapabilityProbe, createPostgresFormSchemaStore } from "./index.js";
 
 const urlFile = process.env.TEST_FORM_SCHEMA_DATABASE_URL_FILE;
 const suite = describe.skipIf(!urlFile);
 suite("PostgreSQL form schema", () => {
+  let connectionString = "";
   let runtime: DatabaseRuntime | undefined;
   beforeAll(async () => {
     if (!urlFile) throw new Error("TEST_FORM_SCHEMA_DATABASE_URL_FILE is required.");
-    const connectionString = (await readFile(resolve(urlFile), "utf8")).trim();
+    connectionString = (await readFile(resolve(urlFile), "utf8")).trim();
     await runMigrations(connectionString, resolve(import.meta.dirname, "../../../database/migrations"));
     await runMigrations(connectionString, resolve(import.meta.dirname, "../migrations"));
     runtime = createDatabaseRuntime({ applicationName: "plt_02_form_test", connectionString, connectionTimeoutMs: 5_000, idleTimeoutMs: 5_000, maxConnections: 6, statementTimeoutMs: 5_000 });
@@ -44,6 +45,27 @@ suite("PostgreSQL form schema", () => {
     expect(drafts.every((result) => result.draft.definitionId === definitionId)).toBe(true);
     const releases = await Promise.all([instance.publish({ ...meta(), definitionId, expectedRevision: 1 }), instance.publish({ ...meta(), definitionId, expectedRevision: 1 })]);
     expect(releases.map((result) => result.reference.releaseVersion).sort()).toEqual([1, 2]);
+  });
+
+  it("observes exact-release query columns and fails closed when the session loses SELECT", async () => {
+    if (!runtime) throw new Error("Form Schema runtime is unavailable.");
+    const role = `form_probe_${randomUUID().replaceAll("-", "")}`;
+    await runtime.execute(`create role "${role}" nologin`);
+    await runtime.execute(`grant usage on schema form_schema to "${role}"`);
+    await runtime.execute(`grant select on form_schema.releases, form_schema.release_status to "${role}"`);
+    const restricted = createDatabaseRuntime({ applicationName: "cmp_form_probe_test", connectionString, connectionTimeoutMs: 5_000, idleTimeoutMs: 5_000, maxConnections: 1, statementTimeoutMs: 5_000 });
+    try {
+      await restricted.execute(`set role "${role}"`);
+      const probe = createPostgresFormSchemaCapabilityProbe(restricted);
+      await expect(probe.check()).resolves.toEqual({ status: "available" });
+      await runtime.execute(`revoke select on form_schema.release_status from "${role}"`);
+      await expect(probe.check()).resolves.toEqual({ status: "unavailable" });
+    } finally {
+      await restricted.close();
+      await runtime.execute(`revoke all privileges on form_schema.releases, form_schema.release_status from "${role}"`);
+      await runtime.execute(`revoke usage on schema form_schema from "${role}"`);
+      await runtime.execute(`drop role "${role}"`);
+    }
   });
 });
 

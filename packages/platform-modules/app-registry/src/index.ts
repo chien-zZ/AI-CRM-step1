@@ -1,4 +1,5 @@
 export const packageId = "@ai-crm/platform-app-registry" as const;
+export { createPostgresApplicationRegistryCapabilityProbe, type ApplicationRegistryCapabilityProbe, type ApplicationRegistryCapabilityStatus } from "./capability-probe.js";
 export { AppRegistryError, type AppRegistryErrorCode } from "./errors.js";
 export { createMemoryApplicationRegistryStore } from "./memory-store.js";
 export { createPostgresApplicationRegistryStore } from "./postgres-store.js";
