@@ -5,7 +5,7 @@
   "description": "Transport-neutral internal command boundary. It does not define who may publish or expose a production write endpoint.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["actor", "contractVersion", "operationId", "publicationId", "publishedAt", "reason", "snapshot", "traceId"],
+  "required": ["actor", "auditOperationIds", "contractVersion", "operationId", "publicationId", "publishedAt", "reason", "snapshot", "traceId"],
   "properties": {
     "actor": {
       "type": "object",
@@ -26,6 +26,16 @@
         }
       }
     },
+    "auditOperationIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizationDenied", "authorizationFailed", "publicationFailed"],
+      "properties": {
+        "authorizationDenied": { "$ref": "#/$defs/uuid" },
+        "authorizationFailed": { "$ref": "#/$defs/uuid" },
+        "publicationFailed": { "$ref": "#/$defs/uuid" }
+      }
+    },
     "contractVersion": { "const": "authorization-policy.v1" },
     "operationId": { "$ref": "#/$defs/uuid" },
     "publicationId": { "$ref": "#/$defs/uuid" },
@@ -37,7 +47,7 @@
       "properties": { "code": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$" } }
     },
     "snapshot": { "$ref": "#/$defs/policySnapshot" },
-    "traceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+    "traceId": { "type": "string", "pattern": "^(?!0{32})[0-9a-f]{32}$" }
   },
   "$defs": {
     "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },

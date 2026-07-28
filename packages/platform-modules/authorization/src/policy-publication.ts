@@ -13,7 +13,7 @@ import type {
 } from "./types.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const TRACE_ID = /^[0-9a-f]{32}$/u;
+const TRACE_ID = /^(?!0{32})[0-9a-f]{32}$/u;
 const ACTOR_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,254}$/u;
 const REASON_CODE = /^[a-z][a-z0-9_]{0,63}$/u;
 const RESOURCE = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
@@ -72,6 +72,26 @@ function exactRecord(value: unknown, required: readonly string[], optional: read
   return result;
 }
 
+function bindMethod(port: unknown, name: string): (...args: never[]) => unknown {
+  if ((typeof port !== "object" || port === null) && typeof port !== "function") return invalid();
+  let owner: object | null = port;
+  while (owner !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(owner, name);
+    if (descriptor !== undefined) {
+      if (!("value" in descriptor)) return invalid();
+      const candidate: unknown = descriptor.value;
+      if (typeof candidate !== "function") return invalid();
+      // Reflect.apply supplies the explicit receiver without reading a possibly trapped candidate.bind property.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const bound: unknown = Reflect.apply(Function.prototype.bind, candidate, [port]);
+      if (typeof bound !== "function") return invalid();
+      return Object.freeze(bound) as (...args: never[]) => unknown;
+    }
+    owner = Object.getPrototypeOf(owner) as object | null;
+  }
+  return invalid();
+}
+
 const uuid = (value: unknown): string => typeof value === "string" && UUID.test(value) ? value.toLowerCase() : invalid();
 
 function subject(value: unknown): AuthorizationSubjectContext {
@@ -108,7 +128,8 @@ function permission(value: unknown): PermissionRequest {
 }
 
 function command(value: ProtectedPublishAuthorizationPolicyCommand): ProtectedPublishAuthorizationPolicyCommand {
-  const input = exactRecord(value, ["actor", "contractVersion", "operationId", "publicationId", "publishedAt", "reason", "snapshot", "traceId"]);
+  const input = exactRecord(value, ["actor", "auditOperationIds", "contractVersion", "operationId", "publicationId", "publishedAt", "reason", "snapshot", "traceId"]);
+  const auditOperationIds = exactRecord(input["auditOperationIds"], ["authorizationDenied", "authorizationFailed", "publicationFailed"]);
   const reason = exactRecord(input["reason"], ["code"]);
   const publishedAt = input["publishedAt"];
   const publishedDate = new Date(typeof publishedAt === "string" ? publishedAt : Number.NaN);
@@ -116,8 +137,15 @@ function command(value: ProtectedPublishAuthorizationPolicyCommand): ProtectedPu
     typeof publishedAt !== "string" || !TIMESTAMP.test(publishedAt) || Number.isNaN(publishedDate.getTime()) || publishedDate.toISOString() !== publishedAt ||
     typeof reason["code"] !== "string" || !REASON_CODE.test(reason["code"])) return invalid();
   const snapshot = canonicalizeAuthorizationPolicy(snapshotData(input["snapshot"]) as ProtectedPublishAuthorizationPolicyCommand["snapshot"]);
+  const operationId = uuid(input["operationId"]);
+  const normalizedAuditOperationIds = Object.freeze({
+    authorizationDenied: uuid(auditOperationIds["authorizationDenied"]),
+    authorizationFailed: uuid(auditOperationIds["authorizationFailed"]),
+    publicationFailed: uuid(auditOperationIds["publicationFailed"]),
+  });
+  if (new Set([operationId, ...Object.values(normalizedAuditOperationIds)]).size !== 4) return invalid();
   return Object.freeze({
-    actor: actor(input["actor"]), contractVersion: CONTRACT_VERSION, operationId: uuid(input["operationId"]),
+    actor: actor(input["actor"]), auditOperationIds: normalizedAuditOperationIds, contractVersion: CONTRACT_VERSION, operationId,
     publicationId: uuid(input["publicationId"]), publishedAt,
     reason: Object.freeze({ code: reason["code"] }), snapshot, traceId: input["traceId"],
   });
@@ -144,6 +172,7 @@ function allowedDecision(value: Readonly<AuthorizationDecision>): Readonly<Autho
 
 function auditRecord(
   input: ProtectedPublishAuthorizationPolicyCommand,
+  auditOperationId: string,
   stage: AuthorizationPolicyPublicationAuditRecord["stage"],
   result: AuthorizationPolicyPublicationAuditRecord["result"],
   authorizationDecisionId?: string,
@@ -156,9 +185,9 @@ function auditRecord(
       ...(input.actor.subject.selectedAssignmentId === undefined ? {} : { assignmentId: input.actor.subject.selectedAssignmentId }),
       workforcePersonId: input.actor.subject.workforcePersonId,
     }),
+    auditOperationId,
     ...(authorizationDecisionId === undefined ? {} : { authorizationDecisionId: authorizationDecisionId.toLowerCase() }),
-    idempotencyKey: `${input.operationId}:${stage}:${result}:${authorizationDecisionId?.toLowerCase() ?? "unavailable"}`,
-    operationId: input.operationId,
+    managementOperationId: input.operationId,
     policyVersion: input.snapshot.version,
     publicationId: input.publicationId,
     reason: input.reason,
@@ -168,24 +197,31 @@ function auditRecord(
   });
 }
 
-async function recordAudit(options: ProtectedAuthorizationPolicyPublisherOptions, record: AuthorizationPolicyPublicationAuditRecord): Promise<void> {
-  try { await options.audit.record(record); }
+async function recordAudit(recordMethod: ProtectedAuthorizationPolicyPublisherOptions["audit"]["record"], record: AuthorizationPolicyPublicationAuditRecord): Promise<void> {
+  try { await recordMethod(record); }
   catch { throw new AuthorizationUnavailableError(); }
 }
 
 export function createProtectedAuthorizationPolicyPublisher(
   input: ProtectedAuthorizationPolicyPublisherOptions,
 ): ProtectedAuthorizationPolicyPublisher {
-  const options = exactRecord(input, ["audit", "authorizer", "permission", "publisher"]);
-  if ((typeof options["audit"] !== "object" || options["audit"] === null) || typeof (options["audit"] as { record?: unknown }).record !== "function" ||
-    (typeof options["authorizer"] !== "object" || options["authorizer"] === null) || typeof (options["authorizer"] as { requireAllowed?: unknown }).requireAllowed !== "function" ||
-    (typeof options["publisher"] !== "object" || options["publisher"] === null) || typeof (options["publisher"] as { publish?: unknown }).publish !== "function") return invalid();
-  const configured = Object.freeze({
-    audit: options["audit"] as ProtectedAuthorizationPolicyPublisherOptions["audit"],
-    authorizer: options["authorizer"] as ProtectedAuthorizationPolicyPublisherOptions["authorizer"],
-    permission: permission(options["permission"]),
-    publisher: options["publisher"] as ProtectedAuthorizationPolicyPublisherOptions["publisher"],
-  });
+  let options: Record<string, unknown>;
+  try { options = exactRecord(input, ["audit", "authorizer", "permission", "publisher"]); }
+  catch { return invalid(); }
+  let configured: Readonly<{
+    audit: ProtectedAuthorizationPolicyPublisherOptions["audit"]["record"];
+    authorize: ProtectedAuthorizationPolicyPublisherOptions["authorizer"]["requireAllowed"];
+    permission: PermissionRequest;
+    publish: ProtectedAuthorizationPolicyPublisherOptions["publisher"]["publish"];
+  }>;
+  try {
+    configured = Object.freeze({
+      audit: bindMethod(options["audit"], "record") as ProtectedAuthorizationPolicyPublisherOptions["audit"]["record"],
+      authorize: bindMethod(options["authorizer"], "requireAllowed") as ProtectedAuthorizationPolicyPublisherOptions["authorizer"]["requireAllowed"],
+      permission: permission(options["permission"]),
+      publish: bindMethod(options["publisher"], "publish") as ProtectedAuthorizationPolicyPublisherOptions["publisher"]["publish"],
+    });
+  } catch { return invalid(); }
   return Object.freeze({
     async publish(inputCommand: ProtectedPublishAuthorizationPolicyCommand): Promise<AuthorizationPolicyPublication> {
       let validated: ProtectedPublishAuthorizationPolicyCommand;
@@ -195,26 +231,32 @@ export function createProtectedAuthorizationPolicyPublisher(
         return invalid();
       }
       let decision: Readonly<AuthorizationDecision>;
-      try { decision = allowedDecision(await configured.authorizer.requireAllowed(validated.actor.subject, configured.permission)); }
+      try {
+        decision = allowedDecision(await configured.authorize(
+          validated.actor.subject,
+          configured.permission,
+          Object.freeze({ managementOperationId: validated.operationId, traceId: validated.traceId }),
+        ));
+      }
       catch (error) {
         if (error instanceof AuthorizationDeniedError) {
           if (!UUID.test(error.decisionId)) {
-            await recordAudit(configured, auditRecord(validated, "authorization", "failed"));
+            await recordAudit(configured.audit, auditRecord(validated, validated.auditOperationIds.authorizationFailed, "authorization", "failed"));
             throw new AuthorizationUnavailableError();
           }
-          await recordAudit(configured, auditRecord(validated, "authorization", "denied", error.decisionId));
+          await recordAudit(configured.audit, auditRecord(validated, validated.auditOperationIds.authorizationDenied, "authorization", "denied", error.decisionId));
           throw error;
         }
-        await recordAudit(configured, auditRecord(validated, "authorization", "failed"));
+        await recordAudit(configured.audit, auditRecord(validated, validated.auditOperationIds.authorizationFailed, "authorization", "failed"));
         throw new AuthorizationUnavailableError();
       }
       try {
-        const published = await configured.publisher.publish(validated);
-        await recordAudit(configured, auditRecord(validated, "publication", "succeeded", decision.decisionId));
+        const published = await configured.publish(validated);
+        await recordAudit(configured.audit, auditRecord(validated, validated.operationId, "publication", "succeeded", decision.decisionId));
         return published;
       } catch (error) {
         if (error instanceof AuthorizationUnavailableError) throw error;
-        await recordAudit(configured, auditRecord(validated, "publication", "failed", decision.decisionId));
+        await recordAudit(configured.audit, auditRecord(validated, validated.auditOperationIds.publicationFailed, "publication", "failed", decision.decisionId));
         if (error instanceof AuthorizationPersistenceError) throw error;
         throw new AuthorizationUnavailableError();
       }

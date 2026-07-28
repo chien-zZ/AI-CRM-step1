@@ -130,6 +130,11 @@ export interface AuthorizationPolicyPublicationActor {
 
 export interface ProtectedPublishAuthorizationPolicyCommand extends PublishAuthorizationPolicyCommand {
   readonly actor: AuthorizationPolicyPublicationActor;
+  readonly auditOperationIds: {
+    readonly authorizationDenied: string;
+    readonly authorizationFailed: string;
+    readonly publicationFailed: string;
+  };
   readonly operationId: string;
   readonly reason: { readonly code: string };
   readonly traceId: string;
@@ -139,6 +144,10 @@ export interface AuthorizationPolicyPublicationAuthorizer {
   requireAllowed(
     subject: AuthorizationSubjectContext,
     request: PermissionRequest,
+    correlation: {
+      readonly managementOperationId: string;
+      readonly traceId: string;
+    },
   ): Promise<Readonly<AuthorizationDecision>>;
 }
 
@@ -150,9 +159,9 @@ export interface AuthorizationPolicyPublicationAuditRecord {
     readonly assignmentId?: string;
     readonly workforcePersonId: string;
   };
+  readonly auditOperationId: string;
   readonly authorizationDecisionId?: string;
-  readonly idempotencyKey: string;
-  readonly operationId: string;
+  readonly managementOperationId: string;
   readonly policyVersion: string;
   readonly publicationId: string;
   readonly reason: { readonly code: string };
@@ -161,7 +170,11 @@ export interface AuthorizationPolicyPublicationAuditRecord {
   readonly traceId: string;
 }
 
-/** Application composition adapts this required port to the separately owned management-audit capability. */
+/**
+ * Application composition adapts this required port to management audit.
+ * `auditOperationId` maps to Audit `trace.operationId`; the adapter must preserve Audit fingerprint semantics,
+ * where a retry's new authorization decision reference does not change the existing management fact.
+ */
 export interface AuthorizationPolicyPublicationAuditor {
   record(record: AuthorizationPolicyPublicationAuditRecord): Promise<void>;
 }

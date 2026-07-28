@@ -1,6 +1,6 @@
 # CMP-AUTH-POLICY-PUBLICATION Protected Policy Publication Boundary
 
-- Status: IMPLEMENTED AND SELF-REVIEWED; ready to merge, production activation blocked
+- Status: INDEPENDENT REVIEW FIXES IMPLEMENTED; awaiting reviewer recheck, production activation blocked
 - Owner: Authorization capability implementation
 - Branch: `codex/cmp-auth-policy-publication`
 - Allowed paths: `contracts/permissions/**`, `packages/platform-modules/authorization/**`, directly related documentation and this handoff
@@ -14,7 +14,7 @@
 
 ## Allowed Assumptions
 
-- A transport-neutral command boundary may require a stable authenticated actor reference, the complete current authorization subject, a stable operation ID, publication ID, management-audit ID, reason code, safe W3C Trace ID and the full immutable policy snapshot.
+- A transport-neutral command boundary may require a stable authenticated actor reference, the complete current authorization subject, a stable management operation ID, publication ID, distinct stable audit operation IDs for denial/failure facts, reason code, safe non-zero W3C Trace ID and the full immutable policy snapshot.
 - Application composition may inject the exact reviewed `PermissionRequest` after its Owner and declaration are accepted. The authorization package may require this injection without defining its eventual resource/action.
 - A required management-audit port may accept bounded, business-neutral publication facts and idempotently record attempted/denied/failed/succeeded outcomes.
 - The existing publication ID remains the persistence idempotency key. Retrying an identical command after an uncertain audit outcome must converge on the same publication and audit facts.
@@ -61,20 +61,22 @@
 ## Uncertain Success And Retry
 
 - Policy persistence commits before the separately owned management-audit success fact. If that audit write fails or its commit cannot be confirmed, the service returns `AUTHORIZATION_UNAVAILABLE` and must not claim rollback.
-- Retrying the identical command re-authorizes the current actor context and reuses the same publication ID. The PostgreSQL publisher returns the already committed identical result, while the audit adapter records the retry attempt under its authorization decision correlation.
+- The successful management fact always uses the stable command `operationId`. Authorization denial, authorization dependency failure and publication failure use three distinct stable audit operation IDs so a retryable failure fact cannot conflict with a later success.
+- Retrying the identical command re-authorizes the current actor context and reuses the same publication ID and success audit operation ID. The PostgreSQL publisher returns the already committed identical result; the Audit Store replays the same management fact because its fingerprint excludes the retry's new `authorizationDecisionId`.
+- The authorizer port receives the stable management operation ID and non-zero Trace ID. Each authorization decision remains its own durable authorization fact and correlates through that Trace; retry decisions do not mutate the immutable management-audit record.
 
 ## Implemented
 
 - Added `protected-policy-publication-command.v1.schema.json` with bounded actor/current workforce context, stable operation and publication IDs, reason, Trace reference and the complete non-empty v1 snapshot shape.
 - Added `createProtectedAuthorizationPolicyPublisher` and additive public ports/types. Construction fails closed without an authorizer, exact context-free permission request, management-audit adapter or transactional publisher.
-- Descriptor-safe command and authorization-decision snapshots reject accessors, sparse arrays, cycles, contradictory Assignment selection, malformed dates/IDs/Trace and widened objects before persistence.
+- Descriptor-safe command and authorization-decision snapshots reject accessors, sparse arrays, cycles, contradictory Assignment selection, malformed dates/IDs/non-zero Trace and widened objects before persistence.
 - Authorization denial/unavailability creates bounded management-audit semantics and never reaches the persistence publisher. Audit records minimize workforce data to the Workforce Person and explicitly selected Assignment.
 - Publication success/failure is management-audited. Success-audit uncertainty returns unavailable; an identical retry reuses the stable publication ID and converges through the existing PostgreSQL replay semantics.
 
 ## Self-review
 
 - Authorization: no built-in permission, Owner, role or bypass; every call performs fresh `requireAllowed` against the complete validated current subject. First-policy bootstrap remains explicitly blocked.
-- Idempotency: the existing stable publication ID remains the persistence idempotency key; operation ID and authorization-decision-correlated audit keys separate retry attempts without conflicting immutable audit facts.
+- Idempotency: the existing stable publication ID remains the persistence idempotency key; success uses the stable management operation ID, while denial and retryable failure facts use distinct stable audit operation IDs. New retry decision IDs never change an Audit Store fingerprint.
 - Transactions: unchanged PostgreSQL single-transaction version/history/current-pointer publication; audit remains a separate capability fact with documented uncertain-success behavior.
 - Migrations: not applicable; no physical data change and no migration or runtime grant was added.
 - Observability/audit: stable public errors only; no raw dependency error, policy body, Token, Claim, SQL or active Assignment set enters the audit record or technical telemetry.
@@ -84,7 +86,14 @@
 
 ## Verification
 
-- Authorization package: typecheck and lint passed; 43 tests passed and 6 environment-gated integration tests skipped.
+- Authorization package before independent review: typecheck and lint passed; 43 tests passed and 6 environment-gated integration tests skipped.
 - Contract source compilation/generation and repository contract checks passed.
 - `git diff --check` passed.
 - Full `pnpm check` passed: repository checks 40/40, Compose static gate, generated contract validation and Turbo 140/140.
+
+## Independent Review/Fix
+
+- P1 audit convergence: fixed. Audit identity no longer depends on a fresh authorization decision ID. Regression tests cover success-audit commit-then-throw, a retry with a new decision ID, and concurrent identical commands converging to one compatible successful Audit Store operation.
+- P1 Trace: fixed. Contract and runtime reject the all-zero W3C Trace ID before authorization, audit or publication.
+- P2 dependency mutation/accessors: fixed. Construction reads `audit.record`, `authorizer.requireAllowed` and `publisher.publish` through property descriptors, rejects accessors/proxy failures without executing getters, binds and freezes the methods, and ignores later dependency method replacement.
+- Post-fix focused verification: authorization typecheck, lint, build and contract checks passed; 48 tests passed and 6 environment-gated integration tests skipped.

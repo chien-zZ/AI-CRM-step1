@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,6 +22,11 @@ const command = (): ProtectedPublishAuthorizationPolicyCommand => ({
     actorType: "authenticated_subject",
     subject: { activeAssignmentIds: [assignmentId], selectedAssignmentId: assignmentId, workforcePersonId },
   },
+  auditOperationIds: {
+    authorizationDenied: "60000000-0000-4000-8000-000000000007",
+    authorizationFailed: "60000000-0000-4000-8000-000000000008",
+    publicationFailed: "60000000-0000-4000-8000-000000000009",
+  },
   contractVersion: "authorization-policy.v1",
   operationId: "60000000-0000-4000-8000-000000000005",
   publicationId: "60000000-0000-4000-8000-000000000006",
@@ -42,12 +48,24 @@ function fixture() {
 }
 
 describe("protected authorization policy publication", () => {
+  it("keeps the source contract aligned with stable audit IDs and non-zero Trace", async () => {
+    const schema = JSON.parse(await readFile(new URL("../../../../contracts/permissions/protected-policy-publication-command.v1.schema.json", import.meta.url), "utf8")) as {
+      properties: { traceId: { pattern: string } };
+      required: string[];
+    };
+    expect(schema.required).toContain("auditOperationIds");
+    const tracePattern = new RegExp(schema.properties.traceId.pattern, "u");
+    expect(tracePattern.test("0".repeat(32))).toBe(false);
+    expect(tracePattern.test(command().traceId)).toBe(true);
+  });
+
   it("authorizes the current workforce context before publishing and records management audit", async () => {
     const { auditRecords, options, service } = fixture();
     await expect(service.publish(command())).resolves.toMatchObject({ replayed: false, version: "synthetic-v1" });
     expect(options.authorizer.requireAllowed).toHaveBeenCalledWith(
       { activeAssignmentIds: [assignmentId], selectedAssignmentId: assignmentId, workforcePersonId },
       { action: "publish", resource: "synthetic.authorization-policy" },
+      { managementOperationId: command().operationId, traceId: command().traceId },
     );
     expect(options.publisher.publish).toHaveBeenCalledTimes(1);
     expect(auditRecords).toEqual([expect.objectContaining({
@@ -60,7 +78,8 @@ describe("protected authorization policy publication", () => {
       assignmentId, workforcePersonId,
     });
     expect(auditRecords[0]?.actor).not.toHaveProperty("subject");
-    expect(auditRecords[0]?.idempotencyKey).toBe(`${command().operationId}:publication:succeeded:${decisionId}`);
+    expect(auditRecords[0]?.auditOperationId).toBe(command().operationId);
+    expect(auditRecords[0]?.managementOperationId).toBe(command().operationId);
   });
 
   it("records an authorization denial and never reaches policy persistence", async () => {
@@ -69,6 +88,7 @@ describe("protected authorization policy publication", () => {
     await expect(service.publish(command())).rejects.toBeInstanceOf(AuthorizationDeniedError);
     expect(options.publisher.publish).not.toHaveBeenCalled();
     expect(auditRecords).toEqual([expect.objectContaining({ authorizationDecisionId: decisionId, result: "denied", stage: "authorization" })]);
+    expect(auditRecords[0]?.auditOperationId).toBe(command().auditOperationIds.authorizationDenied);
   });
 
   it("fails closed before persistence when authorization is unavailable", async () => {
@@ -77,6 +97,7 @@ describe("protected authorization policy publication", () => {
     await expect(service.publish(command())).rejects.toEqual(new AuthorizationUnavailableError());
     expect(options.publisher.publish).not.toHaveBeenCalled();
     expect(auditRecords).toEqual([expect.objectContaining({ result: "failed", stage: "authorization" })]);
+    expect(auditRecords[0]?.auditOperationId).toBe(command().auditOperationIds.authorizationFailed);
     expect(auditRecords[0]).not.toHaveProperty("authorizationDecisionId");
   });
 
@@ -118,6 +139,7 @@ describe("protected authorization policy publication", () => {
     options.publisher.publish.mockRejectedValueOnce(new AuthorizationPersistenceError("authorization_policy_conflict"));
     await expect(service.publish(command())).rejects.toMatchObject({ code: "authorization_policy_conflict" });
     expect(auditRecords).toEqual([expect.objectContaining({ authorizationDecisionId: decisionId, result: "failed", stage: "publication" })]);
+    expect(auditRecords[0]?.auditOperationId).toBe(command().auditOperationIds.publicationFailed);
   });
 
   it("returns unavailable when success audit cannot be confirmed and safely retries the same publication", async () => {
@@ -129,12 +151,105 @@ describe("protected authorization policy publication", () => {
     expect(options.publisher.publish).toHaveBeenCalledTimes(2);
   });
 
+  it("converges after audit commit-then-throw with a new authorization decision", async () => {
+    const stored = new Map<string, string>();
+    const attempts: AuthorizationPolicyPublicationAuditRecord[] = [];
+    let commitThenThrow = true;
+    const audit = {
+      record(record: AuthorizationPolicyPublicationAuditRecord): Promise<void> {
+        attempts.push(record);
+        const semantic = JSON.stringify({
+          action: record.action, actor: record.actor, managementOperationId: record.managementOperationId,
+          policyVersion: record.policyVersion, publicationId: record.publicationId, reason: record.reason,
+          result: record.result, stage: record.stage,
+        });
+        const prior = stored.get(record.auditOperationId);
+        if (prior !== undefined && prior !== semantic) return Promise.reject(new Error("audit_operation_conflict"));
+        stored.set(record.auditOperationId, semantic);
+        if (commitThenThrow) { commitThenThrow = false; return Promise.reject(new Error("commit outcome unavailable")); }
+        return Promise.resolve();
+      },
+    };
+    const firstDecisionId = "60000000-0000-4000-8000-000000000010";
+    const secondDecisionId = "60000000-0000-4000-8000-000000000011";
+    const authorizer = { requireAllowed: vi.fn()
+      .mockResolvedValueOnce({ allowed: true, decisionId: firstDecisionId, evaluatedAt: "2026-07-28T04:59:59.000Z", policyVersion: "current-v1", reason: "allowed" })
+      .mockResolvedValueOnce({ allowed: true, decisionId: secondDecisionId, evaluatedAt: "2026-07-28T05:00:01.000Z", policyVersion: "current-v1", reason: "allowed" }) };
+    const publisher = { publish: vi.fn()
+      .mockResolvedValueOnce({ contentDigest: "a".repeat(64), publicationId: command().publicationId, publishedAt: command().publishedAt, replayed: false, version: "synthetic-v1" })
+      .mockResolvedValueOnce({ contentDigest: "a".repeat(64), publicationId: command().publicationId, publishedAt: command().publishedAt, replayed: true, version: "synthetic-v1" }) };
+    const service = createProtectedAuthorizationPolicyPublisher({ audit, authorizer, permission: { action: "publish", resource: "synthetic.authorization-policy" }, publisher });
+    await expect(service.publish(command())).rejects.toBeInstanceOf(AuthorizationUnavailableError);
+    await expect(service.publish(command())).resolves.toMatchObject({ replayed: true });
+    expect(stored.size).toBe(1);
+    expect(attempts.map(({ auditOperationId }) => auditOperationId)).toEqual([command().operationId, command().operationId]);
+    expect(attempts.map(({ authorizationDecisionId }) => authorizationDecisionId)).toEqual([firstDecisionId, secondDecisionId]);
+  });
+
+  it("uses one compatible success audit fact for concurrent identical commands", async () => {
+    const stored = new Map<string, string>();
+    const audit = { record: vi.fn((record: AuthorizationPolicyPublicationAuditRecord) => {
+      const semantic = JSON.stringify({ actor: record.actor, policyVersion: record.policyVersion, publicationId: record.publicationId, reason: record.reason, result: record.result, stage: record.stage });
+      const prior = stored.get(record.auditOperationId);
+      if (prior !== undefined && prior !== semantic) return Promise.reject(new Error("audit_operation_conflict"));
+      stored.set(record.auditOperationId, semantic);
+      return Promise.resolve();
+    }) };
+    const authorizer = { requireAllowed: vi.fn()
+      .mockResolvedValueOnce({ allowed: true, decisionId: "60000000-0000-4000-8000-000000000010", evaluatedAt: "2026-07-28T04:59:59.000Z", policyVersion: "current-v1", reason: "allowed" })
+      .mockResolvedValueOnce({ allowed: true, decisionId: "60000000-0000-4000-8000-000000000011", evaluatedAt: "2026-07-28T04:59:59.000Z", policyVersion: "current-v1", reason: "allowed" }) };
+    const publisher = { publish: vi.fn(() => Promise.resolve({ contentDigest: "a".repeat(64), publicationId: command().publicationId, publishedAt: command().publishedAt, replayed: false, version: "synthetic-v1" })) };
+    const service = createProtectedAuthorizationPolicyPublisher({ audit, authorizer, permission: { action: "publish", resource: "synthetic.authorization-policy" }, publisher });
+    const results = await Promise.all([service.publish(command()), service.publish(command())]);
+    expect(results).toHaveLength(2);
+    expect(stored.size).toBe(1);
+    expect(audit.record).toHaveBeenCalledTimes(2);
+  });
+
   it("requires an exact permission and rejects incomplete composition", () => {
     const { options } = fixture();
     expect(() => createProtectedAuthorizationPolicyPublisher({ ...options, permission: { ...options.permission, resourceContext: { arbitrary: "value" } } }))
       .toThrowError("authorization_policy_invalid");
     expect(() => createProtectedAuthorizationPolicyPublisher({ ...options, authorizer: undefined } as never))
       .toThrowError("authorization_policy_invalid");
+  });
+
+  it("binds descriptor-safe dependency methods at construction", async () => {
+    let getterCalls = 0;
+    const { options } = fixture();
+    for (const [port, method] of [["audit", "record"], ["authorizer", "requireAllowed"], ["publisher", "publish"]] as const) {
+      const accessorDependency = {};
+      Object.defineProperty(accessorDependency, method, { get: () => { getterCalls += 1; return vi.fn(); } });
+      expect(() => createProtectedAuthorizationPolicyPublisher({ ...options, [port]: accessorDependency } as never))
+        .toThrowError("authorization_policy_invalid");
+    }
+    expect(getterCalls).toBe(0);
+    const throwingProxy = new Proxy({}, { getOwnPropertyDescriptor: () => { throw new Error("proxy trap"); } });
+    expect(() => createProtectedAuthorizationPolicyPublisher({ ...options, audit: throwingProxy } as never))
+      .toThrowError("authorization_policy_invalid");
+
+    const originalAudit = vi.fn(() => Promise.resolve());
+    const originalAuthorize = vi.fn(() => Promise.resolve({ allowed: true, decisionId, evaluatedAt: "2026-07-28T04:59:59.000Z", policyVersion: "current-v1", reason: "allowed" as const }));
+    const originalPublish = vi.fn(() => Promise.resolve({ contentDigest: "a".repeat(64), publicationId: command().publicationId, publishedAt: command().publishedAt, replayed: false, version: "synthetic-v1" }));
+    const audit = { record: originalAudit };
+    const authorizer = { requireAllowed: originalAuthorize };
+    const publisher = { publish: originalPublish };
+    const service = createProtectedAuthorizationPolicyPublisher({ audit, authorizer, permission: { action: "publish", resource: "synthetic.authorization-policy" }, publisher });
+    audit.record = vi.fn(() => Promise.reject(new Error("replacement audit")));
+    authorizer.requireAllowed = vi.fn(() => Promise.reject(new Error("replacement authorizer")));
+    publisher.publish = vi.fn(() => Promise.reject(new Error("replacement publisher")));
+    await expect(service.publish(command())).resolves.toMatchObject({ version: "synthetic-v1" });
+    expect(originalAudit).toHaveBeenCalledTimes(1);
+    expect(originalAuthorize).toHaveBeenCalledTimes(1);
+    expect(originalPublish).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an all-zero Trace ID and duplicate audit operation IDs before dependencies", async () => {
+    const { options, service } = fixture();
+    await expect(service.publish({ ...command(), traceId: "0".repeat(32) })).rejects.toMatchObject({ code: "authorization_policy_invalid" });
+    await expect(service.publish({ ...command(), auditOperationIds: { ...command().auditOperationIds, publicationFailed: command().operationId } }))
+      .rejects.toMatchObject({ code: "authorization_policy_invalid" });
+    expect(options.authorizer.requireAllowed).not.toHaveBeenCalled();
   });
 
   it("does not execute accessors returned by the authorization dependency", async () => {
