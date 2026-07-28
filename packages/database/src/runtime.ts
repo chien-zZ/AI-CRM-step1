@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { performance } from "node:perf_hooks";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Client, Pool, type ClientConfig } from "pg";
 import { validateDatabaseConfig, type DatabaseConfig } from "./config.js";
 
 export interface DatabaseHealth {
@@ -10,10 +10,11 @@ export interface DatabaseHealth {
 }
 
 export interface DatabaseRuntime {
+  readonly abortSignalSupport?: true;
   close(): Promise<void>;
-  execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<DatabaseQueryResult<Row>>;
+  execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[], signal?: AbortSignal): Promise<DatabaseQueryResult<Row>>;
   healthCheck(): Promise<DatabaseHealth>;
-  withTransaction<T>(work: () => Promise<T>): Promise<T>;
+  withTransaction<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
 export interface DatabaseQueryResult<Row = Record<string, unknown>> {
@@ -22,8 +23,16 @@ export interface DatabaseQueryResult<Row = Record<string, unknown>> {
 }
 
 interface RuntimeConnection {
+  readonly end?: () => Promise<void>;
+  readonly processID?: number;
   query(sql: string, values?: readonly unknown[]): Promise<{ readonly rowCount?: number | null; readonly rows?: readonly unknown[] }>;
-  release(): void;
+  release(destroy?: boolean): void;
+}
+
+function terminateConnection(connection: RuntimeConnection): void {
+  // PoolClient inherits Client.end at runtime although @types/pg omits it from PoolClient.
+  void connection.end?.().catch(() => undefined);
+  connection.release(true);
 }
 
 interface RuntimePool {
@@ -32,12 +41,27 @@ interface RuntimePool {
   query(sql: string, values?: readonly unknown[]): Promise<{ readonly rowCount?: number | null; readonly rows?: readonly unknown[] }>;
 }
 
+interface TransactionState {
+  readonly connection: RuntimeConnection;
+  cancellation?: Promise<void>;
+  destroyed: boolean;
+  destroy(): void;
+}
+
 export class PostgresRuntime implements DatabaseRuntime {
+  public readonly abortSignalSupport = true as const;
+  readonly #clientConfig: ClientConfig;
   readonly #pool: RuntimePool;
-  readonly #transaction = new AsyncLocalStorage<RuntimeConnection>();
+  readonly #transaction = new AsyncLocalStorage<TransactionState>();
 
   constructor(config: DatabaseConfig, pool?: RuntimePool) {
     const valid = validateDatabaseConfig(config);
+    this.#clientConfig = {
+      application_name: valid.applicationName,
+      connectionString: valid.connectionString,
+      connectionTimeoutMillis: valid.connectionTimeoutMs,
+      statement_timeout: valid.statementTimeoutMs,
+    };
     if (pool) {
       this.#pool = pool;
       return;
@@ -58,9 +82,68 @@ export class PostgresRuntime implements DatabaseRuntime {
     await this.#pool.end();
   }
 
-  async execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<DatabaseQueryResult<Row>> {
-    const result = await (this.#transaction.getStore() ?? this.#pool).query(sql, values);
-    return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
+  async #cancelAndTerminate(connection: RuntimeConnection): Promise<void> {
+    const processId = connection.processID;
+    if (!Number.isSafeInteger(processId) || (processId ?? 0) < 1) {
+      terminateConnection(connection);
+      return;
+    }
+    const canceller = new Client(this.#clientConfig);
+    try {
+      await canceller.connect();
+      const result = await canceller.query<{ cancelled: boolean }>("select pg_cancel_backend($1) cancelled", [processId]);
+      if (result.rows[0]?.cancelled !== true) throw new Error("database_backend_cancellation_rejected");
+    } finally {
+      await canceller.end().catch(() => undefined);
+      terminateConnection(connection);
+    }
+  }
+
+  async execute<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[], signal?: AbortSignal): Promise<DatabaseQueryResult<Row>> {
+    const transaction = this.#transaction.getStore();
+    if (transaction !== undefined) {
+      if (transaction.destroyed) throw abortError();
+      if (signal?.aborted === true) {
+        transaction.destroy();
+        signal.throwIfAborted();
+      }
+      const abort = (): void => { transaction.destroy(); };
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        const result = await transaction.connection.query(sql, values);
+        signal?.throwIfAborted();
+        return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
+      } finally {
+        signal?.removeEventListener("abort", abort);
+      }
+    }
+    signal?.throwIfAborted();
+    if (signal === undefined) {
+      const result = await this.#pool.query(sql, values);
+      return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
+    }
+    const connection = await this.#pool.connect();
+    if (signal.aborted) {
+      terminateConnection(connection);
+      throw abortError();
+    }
+    const released = new Set<RuntimeConnection>();
+    let cancellation: Promise<void> | undefined;
+    const abort = (): void => {
+      if (released.has(connection)) return;
+      released.add(connection);
+      cancellation = this.#cancelAndTerminate(connection);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      const result = await connection.query(sql, values);
+      signal.throwIfAborted();
+      return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
+    } finally {
+      signal.removeEventListener("abort", abort);
+      await cancellation;
+      if (!released.has(connection)) connection.release();
+    }
   }
 
   async healthCheck(): Promise<DatabaseHealth> {
@@ -73,21 +156,64 @@ export class PostgresRuntime implements DatabaseRuntime {
     }
   }
 
-  async withTransaction<T>(work: () => Promise<T>): Promise<T> {
-    if (this.#transaction.getStore()) return work();
+  async withTransaction<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const transaction = this.#transaction.getStore();
+    if (transaction !== undefined) {
+      if (transaction.destroyed) throw abortError();
+      if (signal?.aborted === true) {
+        transaction.destroy();
+        signal.throwIfAborted();
+      }
+      const abort = (): void => { transaction.destroy(); };
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        const result = await work();
+        signal?.throwIfAborted();
+        return result;
+      } finally {
+        signal?.removeEventListener("abort", abort);
+      }
+    }
+    signal?.throwIfAborted();
     const client = await this.#pool.connect();
+    const destroy = (): void => {
+      if (state.destroyed) return;
+      state.destroyed = true;
+      state.cancellation = this.#cancelAndTerminate(client);
+    };
+    const state: TransactionState = { connection: client, destroyed: false, destroy };
+    if (signal?.aborted === true) {
+      terminateConnection(client);
+      throw abortError();
+    }
+    signal?.addEventListener("abort", destroy, { once: true });
     try {
       await client.query("begin");
-      const result = await this.#transaction.run(client, work);
+      signal?.throwIfAborted();
+      const result = await this.#transaction.run(state, work);
+      signal?.throwIfAborted();
+      if (state.destroyed) {
+        await state.cancellation;
+        throw abortError();
+      }
       await client.query("commit");
       return result;
     } catch (error) {
-      await client.query("rollback");
+      if (!state.destroyed) {
+        try { await client.query("rollback"); }
+        catch { state.destroy(); }
+      }
       throw error;
     } finally {
-      client.release();
+      signal?.removeEventListener("abort", destroy);
+      await state.cancellation;
+      if (!state.destroyed) client.release();
     }
   }
+}
+
+function abortError(): Error {
+  return new DOMException("The database operation was aborted.", "AbortError");
 }
 
 export function createDatabaseRuntime(config: DatabaseConfig): DatabaseRuntime {

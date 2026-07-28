@@ -9,6 +9,7 @@ const base = await parseCompose("deploy/compose/compose.base.yml");
 const dev = await parseCompose("deploy/compose/compose.dev.yml");
 const test = await parseCompose("deploy/compose/compose.test.yml");
 const authTest = await parseCompose("deploy/compose/compose.auth-test.yml");
+const rabbitmqIntegration = await parseCompose("deploy/compose/compose.rabbitmq-integration.yml");
 const productionA = await parseCompose("deploy/compose/production/compose.host-a.yml");
 const productionB = await parseCompose("deploy/compose/production/compose.host-b.yml");
 const productionAPreviousKey = await parseCompose("deploy/compose/production/compose.host-a.bff-previous-key.yml");
@@ -16,6 +17,7 @@ const productionBPreviousKey = await parseCompose("deploy/compose/production/com
 const keycloakRealm = JSON.parse(await readFile(resolve(root, "deploy/keycloak/realm-dev.json"), "utf8"));
 const keycloakEntrypoint = await readFile(resolve(root, "deploy/compose/entrypoints/keycloak-entrypoint.sh"), "utf8");
 const secretBootstrap = await readFile(resolve(root, "scripts/bootstrap/compose-secrets.mjs"), "utf8");
+const rabbitmqFixtureBootstrap = await readFile(resolve(root, "scripts/bootstrap/rabbitmq-integration-fixture.mjs"), "utf8");
 const clientSecretRotation = await readFile(resolve(root, "scripts/bootstrap/rotate-keycloak-client-secret.mjs"), "utf8");
 const productionNginx = await readFile(resolve(root, "deploy/nginx/nginx.production.conf.template"), "utf8");
 const productionRedisEntrypoint = await readFile(resolve(root, "deploy/compose/production/redis-entrypoint.sh"), "utf8");
@@ -87,6 +89,33 @@ for (const [name, service] of Object.entries(authTest.services ?? {})) {
   for (const port of service.ports ?? []) {
     if (!String(port).startsWith("127.0.0.1:")) errors.push(`${name} publishes a non-loopback authentication test port.`);
   }
+}
+const rabbitmqIntegrationService = rabbitmqIntegration.services?.rabbitmq;
+if (rabbitmqIntegrationService?.image !== "rabbitmq:4.2.9-management" ||
+  rabbitmqIntegrationService?.ports?.length !== 1 ||
+  !String(rabbitmqIntegrationService.ports[0]).startsWith("127.0.0.1:${AI_CRM_TEST_RABBITMQ_TLS_PORT:?") ||
+  !rabbitmqIntegrationService?.healthcheck ||
+  !rabbitmqIntegrationService?.stop_grace_period ||
+  !rabbitmqIntegrationService?.deploy?.resources?.limits?.memory ||
+  !rabbitmqIntegrationService?.logging?.options?.["max-size"]) {
+  errors.push("RabbitMQ integration Compose must pin 4.2.9, publish only an explicit loopback TLS port, and retain lifecycle limits.");
+}
+const rabbitmqIntegrationMounts = rabbitmqIntegrationService?.volumes?.map(String) ?? [];
+if (rabbitmqIntegrationMounts.length !== 5 ||
+  rabbitmqIntegrationMounts.some((mount) => !mount.endsWith(":ro")) ||
+  rabbitmqIntegrationMounts.some((mount) => /(?:ca\.key|untrusted|_password|_username|\/vhost)(?::|$)/u.test(mount))) {
+  errors.push("RabbitMQ integration container must receive only its five required read-only TLS/configuration files.");
+}
+for (const requiredText of [
+  '"listeners.tcp = none"',
+  '"listeners.ssl.default = 5671"',
+  '"ssl_options.verify = verify_peer"',
+  'publisher: { name: "ai_crm_integration_publisher"',
+  'consumer: { name: "ai_crm_integration_consumer"',
+  'configure: "^$", write: "^ai\\\\.crm\\\\.events$", read: "^$"',
+  'configure: "^$", write: "^$", read: "^ai\\\\.crm\\\\.integration$"',
+]) {
+  if (!rabbitmqFixtureBootstrap.includes(requiredText)) errors.push(`RabbitMQ integration fixture is missing required fail-closed boundary: ${requiredText}`);
 }
 
 const productionDefinitions = [

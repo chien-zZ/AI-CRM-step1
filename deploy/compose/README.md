@@ -27,3 +27,11 @@ Delete an isolated test environment with `node scripts/bootstrap/cleanup-test-co
 `pnpm db:test:integration` runs the empty-database migration test on loopback port 55432 by default. It creates a system-temporary Secret directory and a unique `ai-crm-test-g1-postgres-<run-id>` project, then removes only that project and directory in its cleanup path. Set `AI_CRM_TEST_POSTGRES_PORT` to another unused loopback port when necessary.
 
 `pnpm compose:test:integration` likewise uses a unique `ai-crm-test-g1-compose-<run-id>` project, so concurrent runs cannot remove each other's containers, networks, or Volumes.
+
+## RabbitMQ TLS integration
+
+Run `node scripts/check/run-rabbitmq-integration.mjs` to validate RabbitMQ `4.2.9` against the repository-pinned `amqplib@2.0.1`. The runner requires Docker and OpenSSL, creates all certificates and credentials in a system-temporary directory, publishes only an automatically selected loopback AMQPS port, and removes its unique Compose project, Volume, network, and fixture directory in `finally` cleanup.
+
+The fixture disables plaintext AMQP, uses a private CA with hostname verification, creates only the isolated `ai-crm-integration` VHost, and supplies separate publisher and consumer users. Its definitions pre-create the synthetic exchange, queue, and binding so neither runtime user needs configure permission. The publisher can write only the test exchange and cannot read the queue; the consumer can read only the test queue and cannot publish.
+
+This is local/CI compatibility evidence, not production activation, capacity evidence, an image digest approval, or permission to reuse the generated credentials. Set `AI_CRM_TEST_RABBITMQ_TLS_PORT` only when CI reserves an explicit unused loopback port; otherwise the runner chooses a high ephemeral candidate and still fails closed on conflicts.

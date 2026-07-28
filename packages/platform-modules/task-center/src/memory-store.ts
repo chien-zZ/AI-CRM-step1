@@ -8,7 +8,8 @@ export class InMemoryTaskCenterStore implements TaskCenterStore {
   private readonly projections = new Map<string, TaskProjection>();
   private readonly events = new Map<string, string>();
   private readonly commands = new Map<string, { fingerprint: string; leaseExpiresAt?: Date; leaseToken?: string; result?: TaskCommandResult; status: "accepted" | "running" }>();
-  public apply(event: TaskLifecycleEvent): Promise<ProjectionApplyResult> {
+  public apply(event: TaskLifecycleEvent, signal?: AbortSignal): Promise<ProjectionApplyResult> {
+    signal?.throwIfAborted();
     const eventFingerprint = fingerprint(event);
     const seen = this.events.get(event.eventId);
     if (seen !== undefined) {

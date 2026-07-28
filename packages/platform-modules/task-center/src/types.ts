@@ -51,7 +51,7 @@ export interface ProjectionApplyResult { readonly status: "applied" | "duplicate
 export interface ReconciliationResult { readonly status: "applied" | "current" | "stale"; readonly projection: TaskProjection }
 
 export interface TaskCenterStore {
-  apply(event: TaskLifecycleEvent): Promise<ProjectionApplyResult>;
+  apply(event: TaskLifecycleEvent, signal?: AbortSignal): Promise<ProjectionApplyResult>;
   reconcile(event: TaskLifecycleEvent): Promise<ProjectionApplyResult>;
   get(key: TaskProjectionKey): Promise<TaskProjection | undefined>;
   list(input: { readonly status?: TaskProjectionStatus; readonly limit: number; readonly cursor?: string }): Promise<TaskPage>;
@@ -60,7 +60,7 @@ export interface TaskCenterStore {
   releaseCommand(input: { readonly idempotencyKey: string; readonly leaseToken: string }): Promise<void>;
 }
 export interface TaskCenter {
-  apply(event: TaskLifecycleEvent): Promise<ProjectionApplyResult>;
+  apply(event: TaskLifecycleEvent, signal?: AbortSignal): Promise<ProjectionApplyResult>;
   complete(command: CompleteTaskCommand): Promise<TaskCommandResult>;
   get(actor: TaskActor, key: TaskProjectionKey): Promise<TaskProjection>;
   list(query: TaskQuery): Promise<TaskPage>;

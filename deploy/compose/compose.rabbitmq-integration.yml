@@ -1,0 +1,33 @@
+name: ai-crm-rabbitmq-integration
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.2.9-management
+    hostname: rabbitmq.integration.test
+    environment:
+      RABBITMQ_CONFIG_FILE: /opt/ai-crm-rabbit-fixture/rabbitmq
+    ports:
+      - "127.0.0.1:${AI_CRM_TEST_RABBITMQ_TLS_PORT:?set an isolated RabbitMQ TLS test port}:5671"
+    volumes:
+      - "${AI_CRM_RABBITMQ_FIXTURE_DIR:?set the absolute temporary fixture directory}/rabbitmq.conf:/opt/ai-crm-rabbit-fixture/rabbitmq.conf:ro"
+      - "${AI_CRM_RABBITMQ_FIXTURE_DIR:?set the absolute temporary fixture directory}/definitions.json:/opt/ai-crm-rabbit-fixture/definitions.json:ro"
+      - "${AI_CRM_RABBITMQ_FIXTURE_DIR:?set the absolute temporary fixture directory}/ca.pem:/opt/ai-crm-rabbit-fixture/ca.pem:ro"
+      - "${AI_CRM_RABBITMQ_FIXTURE_DIR:?set the absolute temporary fixture directory}/server.pem:/opt/ai-crm-rabbit-fixture/server.pem:ro"
+      - "${AI_CRM_RABBITMQ_FIXTURE_DIR:?set the absolute temporary fixture directory}/server.key:/opt/ai-crm-rabbit-fixture/server.key:ro"
+    networks: [backend]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_port_listener, "5671"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 1G }
+
+networks:
+  backend: {}
