@@ -1,7 +1,7 @@
 asyncapi: 3.0.0
 info:
   title: AI-CRM RabbitMQ Topology
-  version: 0.2.0
+  version: 0.3.0
   description: >-
     Business-neutral, at-least-once RabbitMQ topology. Message payloads reference
     transport-neutral event or private Job contracts. Only reviewed consumers
@@ -49,6 +49,72 @@ channels:
     x-ai-crm-queue-arguments:
       x-dead-letter-exchange: ai-crm.platform.dead-letter.v1
       x-dead-letter-routing-key: task-center.projection-lifecycle.v1.dead
+  taskProjectionLifecycleRetryExchange:
+    address: task-center.projection-lifecycle.v1.retry
+    title: Task Center projection fixed-delay retry ingress
+    description: >-
+      Routes only the two reviewed fixed-delay retry layers. Arbitrary delay
+      values and direct publication back to the main queue are forbidden.
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: ai-crm.platform.retry.v1
+          type: direct
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.3.0
+  taskProjectionLifecycleRetry30Queue:
+    address: ai-crm.platform.task-center.projection.retry.30s.v1
+    title: Task Center projection 30 second retry delay
+    description: Fixed queue-level TTL delay; it has no consumer.
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: ai-crm.platform.task-center.projection.retry.30s.v1
+          durable: true
+          exclusive: false
+          autoDelete: false
+        bindingVersion: 0.3.0
+    x-ai-crm-bindings:
+      - exchange: ai-crm.platform.retry.v1
+        routingKey: task-center.projection-lifecycle.v1.retry.30s
+    x-ai-crm-queue-arguments:
+      x-message-ttl: 30000
+      x-dead-letter-exchange: ai-crm.platform.events.v1
+      x-dead-letter-routing-key: task-center.projection-lifecycle.v1
+    x-ai-crm-consumer-forbidden: true
+  taskProjectionLifecycleRetry300Queue:
+    address: ai-crm.platform.task-center.projection.retry.300s.v1
+    title: Task Center projection 300 second retry delay
+    description: Fixed queue-level TTL delay; it has no consumer.
+    messages:
+      taskProjectionLifecycleV1:
+        $ref: '#/components/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: ai-crm.platform.task-center.projection.retry.300s.v1
+          durable: true
+          exclusive: false
+          autoDelete: false
+        bindingVersion: 0.3.0
+    x-ai-crm-bindings:
+      - exchange: ai-crm.platform.retry.v1
+        routingKey: task-center.projection-lifecycle.v1.retry.300s
+    x-ai-crm-queue-arguments:
+      x-message-ttl: 300000
+      x-dead-letter-exchange: ai-crm.platform.events.v1
+      x-dead-letter-routing-key: task-center.projection-lifecycle.v1
+    x-ai-crm-consumer-forbidden: true
   taskProjectionLifecycleDeadLetterExchange:
     address: task-center.projection-lifecycle.v1.dead
     title: Task Center projection terminal failure isolation
@@ -105,6 +171,21 @@ operations:
         deliveryMode: 2
         bindingVersion: 0.3.0
     x-ai-crm-publisher-confirm: required
+  publishTaskProjectionLifecycleRetry:
+    action: send
+    channel:
+      $ref: '#/channels/taskProjectionLifecycleRetryExchange'
+    messages:
+      - $ref: '#/channels/taskProjectionLifecycleRetryExchange/messages/taskProjectionLifecycleV1'
+    bindings:
+      amqp:
+        mandatory: true
+        deliveryMode: 2
+        bindingVersion: 0.3.0
+    x-ai-crm-publisher-confirm: required-before-original-ack
+    x-ai-crm-routing-keys:
+      - task-center.projection-lifecycle.v1.retry.30s
+      - task-center.projection-lifecycle.v1.retry.300s
   consumeTaskProjectionLifecycle:
     action: receive
     channel:
@@ -120,15 +201,45 @@ operations:
     x-ai-crm-activation:
       enabled: false
       blockedBy:
-        - reviewed-event-runtime-policy-values
-        - reviewed-rabbitmq-delay-mechanism
+        - real-rabbitmq-tls-integration-matrix
+        - least-privilege-vhost-and-secret-evidence
+        - inbox-retry-dlq-recovery-evidence
+        - alert-owner-and-runbook-evidence
     x-ai-crm-failure-handling:
       immediateRequeue: false
       retryPublishConfirmBeforeAck: true
-      retryBudgetSource: reviewed-event-runtime-policy
-      retryRoute: unresolved
+      retryBudgetSource: taskProjectionLifecyclePolicyV1
+      retryRoute:
+        exchange: ai-crm.platform.retry.v1
+        layers:
+          - attempt: 2
+            delaySeconds: 30
+            routingKey: task-center.projection-lifecycle.v1.retry.30s
+          - attempt: 3
+            delaySeconds: 300
+            routingKey: task-center.projection-lifecycle.v1.retry.300s
       terminalRoute: task-center.projection-lifecycle.v1.dead
       exhaustedRoute: task-center.projection-lifecycle.v1.dead
+    x-ai-crm-runtime-policy:
+      id: taskProjectionLifecyclePolicyV1
+      owner: platform.task-center
+      handler: task-center.postgres-projection-apply.v1
+      maxAttempts: 3
+      backoffSeconds: [30, 300]
+      timeoutMs: 10000
+      prefetch: 2
+      concurrency: 1
+      retryableErrors:
+        - code: TASK_STORAGE_UNAVAILABLE
+          retryableFlagRequired: true
+        - code: eventing_storage_unavailable
+          retryableFlagRequired: true
+        - code: eventing_conflict
+          retryableFlagRequired: true
+        - code: eventing_handler_timeout
+          retryableFlagRequired: true
+      unknownErrorDisposition: terminal
+      policyVersion: 1
 components:
   messages:
     organizationChangeV1:
@@ -275,8 +386,9 @@ x-ai-crm-topology-policy:
     eventPolicySource: reviewed-event-runtime-policy
     jobPolicySource: payload.policy
     retryPublishConfirmBeforeAck: true
-    delayMechanism: unresolved
-    consumerActivationBeforeResolution: forbidden
+    delayMechanism: fixed-queue-level-ttl-with-dlx
+    arbitraryOrPerMessageTtl: forbidden
+    consumerActivationBeforeEvidence: forbidden
   deliveryAttempt:
     header: x-ai-crm-delivery-attempt
     initialPublicationValue: 1

@@ -119,10 +119,10 @@
 
 ## 未解决问题
 
-- RabbitMQ concrete adapter、文件式 AMQPS/TLS/VHost 配置与固定 TTL 分层延迟机制已实现；Task projection 的精确重试/超时/流控、错误分类、容量和告警值尚未接受，合同禁止在此之前启用消费者。
+- RabbitMQ concrete adapter、文件式 AMQPS/TLS/VHost 配置与固定 TTL 分层延迟机制已实现；Task projection 的精确重试/超时/流控、错误分类和首版告警下限已由 ADR-0027/AsyncAPI 接受并在 Worker 中密封。真实 TLS/最小权限/恢复/告警证据和可中止 Task 投影持久化边界未完成，生产消费仍禁用。
 - Production Compose 已向两台 API 挂载专用 `api_postgres_url`，并声明 Schema 版本、迁移根、JWKS 与生命周期预算；不可变 API 镜像是否包含完整迁移目录仍需制品门证明。
 - Worker 生产代码已定义文件式 PostgreSQL 与 Rabbit TLS 配置，但 Production Compose 尚未挂载相应 Secret；在消费激活合同解决前不把资源组合解释为消费者 Ready。
 - Worker Drain deadline 与 Compose `stop_grace_period` 的静态门已实现并通过；仍需真实生产组合和运行证据。
 - BFF previous encryption key 轮换已由代码与生产 Compose overlay 表达并通过静态门；密钥值仍只来自受限文件。
 - Worker 尚未向公共只读迁移兼容检查提供受控 Pool、完整迁移目录和独立应用 Schema SemVer；API 已独立使用 `AI_CRM_API_SCHEMA_VERSION`，不得改传 Release ID 或调用 `runMigrations`。
-- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。剩余关键门是首个真实策略的 bootstrap authority/Owner/权限/审批与管理审计接线、真实非空策略发布、File Provider 决策与实现，以及 Task projection 精确运行值和消费者激活。
+- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。剩余关键门是首个真实策略的 bootstrap authority/Owner/权限/审批与管理审计接线、真实非空策略发布、File Provider 决策与实现，以及 Worker 真实环境证据、可中止投影持久化和消费者激活。

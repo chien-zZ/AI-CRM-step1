@@ -24,27 +24,72 @@ test("resolves document-relative Event and Job schemas from the AsyncAPI source 
   assert.equal(references.every((reference) => !reference.startsWith("contracts/")), true);
 });
 
-test("blocks unsafe retry activation and defines normative delivery attempts", () => {
+test("contracts the reviewed Task projection policy while blocking activation without environment evidence", () => {
   assert.deepEqual(Object.keys(topology.operations).sort(), [
     "consumeTaskProjectionLifecycle",
     "publishTaskProjectionLifecycle",
+    "publishTaskProjectionLifecycleRetry",
   ]);
-  assert.equal(topology.channels.taskProjectionLifecycleRetryExchange, undefined);
-  assert.equal(topology.channels.taskProjectionLifecycleRetryQueue, undefined);
+  const policy = topology.operations.consumeTaskProjectionLifecycle["x-ai-crm-runtime-policy"];
+  assert.deepEqual(policy, {
+    id: "taskProjectionLifecyclePolicyV1",
+    owner: "platform.task-center",
+    handler: "task-center.postgres-projection-apply.v1",
+    maxAttempts: 3,
+    backoffSeconds: [30, 300],
+    timeoutMs: 10000,
+    prefetch: 2,
+    concurrency: 1,
+    retryableErrors: [
+      { code: "TASK_STORAGE_UNAVAILABLE", retryableFlagRequired: true },
+      { code: "eventing_storage_unavailable", retryableFlagRequired: true },
+      { code: "eventing_conflict", retryableFlagRequired: true },
+      { code: "eventing_handler_timeout", retryableFlagRequired: true },
+    ],
+    unknownErrorDisposition: "terminal",
+    policyVersion: 1,
+  });
   assert.deepEqual(
     topology.operations.consumeTaskProjectionLifecycle["x-ai-crm-activation"],
     {
       enabled: false,
       blockedBy: [
-        "reviewed-event-runtime-policy-values",
-        "reviewed-rabbitmq-delay-mechanism",
+        "real-rabbitmq-tls-integration-matrix",
+        "least-privilege-vhost-and-secret-evidence",
+        "inbox-retry-dlq-recovery-evidence",
+        "alert-owner-and-runbook-evidence",
       ],
     },
   );
-  assert.equal(
-    topology.operations.consumeTaskProjectionLifecycle["x-ai-crm-failure-handling"].retryRoute,
-    "unresolved",
+  assert.deepEqual(
+    topology.operations.publishTaskProjectionLifecycleRetry["x-ai-crm-routing-keys"],
+    [
+      "task-center.projection-lifecycle.v1.retry.30s",
+      "task-center.projection-lifecycle.v1.retry.300s",
+    ],
   );
+  assert.equal(
+    topology.channels.taskProjectionLifecycleRetryExchange.bindings.amqp.exchange.name,
+    "ai-crm.platform.retry.v1",
+  );
+  assert.deepEqual(
+    topology.operations.consumeTaskProjectionLifecycle["x-ai-crm-failure-handling"].retryRoute,
+    {
+      exchange: "ai-crm.platform.retry.v1",
+      layers: [
+        { attempt: 2, delaySeconds: 30, routingKey: "task-center.projection-lifecycle.v1.retry.30s" },
+        { attempt: 3, delaySeconds: 300, routingKey: "task-center.projection-lifecycle.v1.retry.300s" },
+      ],
+    },
+  );
+  const delays = [
+    topology.channels.taskProjectionLifecycleRetry30Queue,
+    topology.channels.taskProjectionLifecycleRetry300Queue,
+  ];
+  assert.deepEqual(delays.map((channel) => channel["x-ai-crm-queue-arguments"]["x-message-ttl"]), [30000, 300000]);
+  assert.equal(delays.every((channel) => channel["x-ai-crm-consumer-forbidden"] === true), true);
+  assert.equal(delays.every((channel) => channel["x-ai-crm-queue-arguments"]["x-dead-letter-exchange"] === "ai-crm.platform.events.v1"), true);
+  assert.equal(topology["x-ai-crm-topology-policy"].retryPolicy.delayMechanism, "fixed-queue-level-ttl-with-dlx");
   assert.deepEqual(topology["x-ai-crm-topology-policy"].deliveryAttempt, {
     header: "x-ai-crm-delivery-attempt",
     initialPublicationValue: 1,
