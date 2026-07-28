@@ -13,16 +13,43 @@ function invalid(): never {
   throw new FormSchemaError("form_invalid_input");
 }
 
+function exactObject(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid();
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) invalid();
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Object.values(descriptors).some((descriptor) =>
+    descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable)) invalid();
+  const keys = Object.keys(descriptors);
+  if (required.some((key) => !Object.hasOwn(descriptors, key)) ||
+    keys.some((key) => !required.includes(key) && !optional.includes(key))) invalid();
+  return Object.fromEntries(Object.entries(descriptors).map(([key, descriptor]) => [key, descriptor.value]));
+}
+
+function exactArray(value: unknown, maximumLength: number): readonly unknown[] {
+  if (!Array.isArray(value) || value.length > maximumLength) invalid();
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const items: unknown[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable) invalid();
+    items.push(descriptor.value);
+  }
+  if (Object.keys(descriptors).some((key) => key !== "length" && !/^(?:0|[1-9][0-9]*)$/u.test(key))) invalid();
+  return items;
+}
+
 function queryContext(value: FormQueryContext): FormQueryContext {
-  const normalizedActor = actor(value.actor);
+  const raw = exactObject(value, ["actor", "subject", "traceId"]);
+  const subject = exactObject(raw.subject, ["activeAssignmentIds", "workforcePersonId"], ["selectedAssignmentId"]);
+  const normalizedActor = actor(exactObject(raw.actor, ["actorId", "actorType"], ["assignmentId"]));
   if (normalizedActor.actorType !== "authenticated_subject" ||
-    !Array.isArray(value.subject.activeAssignmentIds) ||
-    value.subject.activeAssignmentIds.length > 128) invalid();
-  const activeAssignmentIds = value.subject.activeAssignmentIds.map(uuid);
+    !Array.isArray(subject.activeAssignmentIds)) invalid();
+  const activeAssignmentIds = exactArray(subject.activeAssignmentIds, 128).map(uuid);
   if (new Set(activeAssignmentIds).size !== activeAssignmentIds.length) invalid();
-  const selectedAssignmentId = value.subject.selectedAssignmentId === undefined
+  const selectedAssignmentId = subject.selectedAssignmentId === undefined
     ? undefined
-    : uuid(value.subject.selectedAssignmentId);
+    : uuid(subject.selectedAssignmentId);
   if (selectedAssignmentId !== undefined && !activeAssignmentIds.includes(selectedAssignmentId)) invalid();
   if (normalizedActor.assignmentId !== selectedAssignmentId) invalid();
   return Object.freeze({
@@ -30,9 +57,9 @@ function queryContext(value: FormQueryContext): FormQueryContext {
     subject: Object.freeze({
       activeAssignmentIds: Object.freeze([...activeAssignmentIds].sort()),
       ...(selectedAssignmentId === undefined ? {} : { selectedAssignmentId }),
-      workforcePersonId: uuid(value.subject.workforcePersonId),
+      workforcePersonId: uuid(subject.workforcePersonId),
     }),
-    traceId: trace(value.traceId),
+    traceId: trace(raw.traceId),
   });
 }
 
@@ -79,23 +106,25 @@ export function createPostgresFormSchemaQueryService(
   };
   return Object.freeze({
     async getRelease(input: Parameters<FormSchemaQueryService["getRelease"]>[0]) {
-      const context = queryContext(input.context);
-      const definitionId = identifier(input.definitionId);
-      const releaseVersion = positiveVersion(input.releaseVersion);
+      const raw = exactObject(input, ["context", "definitionId", "releaseVersion"]);
+      const context = queryContext(raw.context as FormQueryContext);
+      const definitionId = identifier(raw.definitionId);
+      const releaseVersion = positiveVersion(raw.releaseVersion);
       await authorize(context, "read", definitionId, releaseVersion);
       const release = await find(definitionId, releaseVersion);
       if (release === undefined) throw new FormSchemaError("form_not_found");
       return release;
     },
     async validateSubmission(input: Parameters<FormSchemaQueryService["validateSubmission"]>[0]): Promise<FormValidationResult> {
-      const context = queryContext(input.context);
-      const definitionId = identifier(input.definitionId);
-      const releaseVersion = positiveVersion(input.releaseVersion);
+      const raw = exactObject(input, ["context", "data", "definitionId", "releaseVersion"]);
+      const context = queryContext(raw.context as FormQueryContext);
+      const definitionId = identifier(raw.definitionId);
+      const releaseVersion = positiveVersion(raw.releaseVersion);
       await authorize(context, "validate", definitionId, releaseVersion);
       const release = await find(definitionId, releaseVersion);
       if (release === undefined) throw new FormSchemaError("form_not_found");
       const validate = compileSchema(release.jsonSchema);
-      const valid = validate(input.data);
+      const valid = validate(raw.data);
       return {
         errors: safeErrors(validate.errors),
         reference: { contentDigest: release.contentDigest, definitionId: release.definitionId, releaseVersion: release.releaseVersion, version: 1 },

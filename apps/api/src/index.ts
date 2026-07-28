@@ -203,7 +203,12 @@ function registryAuthorizationFailure(error: unknown): PlatformHttpResponse {
 class ApplicationRegistryController {
   constructor(@Inject(API_COMPOSITION) private readonly composition: ApiComposition) {}
 
-  private async context(request: Request, permission: PermissionRequest): Promise<Readonly<Record<string, string>>> {
+  private async context(request: Request, permission: PermissionRequest): Promise<Readonly<{
+    readonly activeAssignmentIds: readonly string[];
+    readonly actorId: string;
+    readonly traceId: string;
+    readonly workforcePersonId: string;
+  }>> {
     const credential = credentialFromRequest(request);
     if (credential === undefined) throw new BrowserSessionFailure("authentication_session_invalid");
     const traceId = extractTraceContext({ traceparent: platformHeader(request, "traceparent", 512) }).traceId;
@@ -214,6 +219,7 @@ class ApplicationRegistryController {
       traceId,
     });
     return Object.freeze({
+      activeAssignmentIds: Object.freeze(authorized.workforce.assignments.map((assignment) => assignment.assignmentId)),
       actorId: stableActorId(authorized),
       traceId,
       workforcePersonId: authorized.workforce.workforcePersonId,

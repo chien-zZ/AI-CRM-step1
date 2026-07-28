@@ -1,11 +1,13 @@
 import {
   AppRegistryError,
-  type ApplicationRegistryService,
+  type ApplicationRegistryQueryService,
   type RegisteredDeepLink,
   type RegistryActor,
+  type RegistryQueryContext,
 } from "@ai-crm/platform-app-registry";
 
 export interface AuthenticatedApplicationRegistryHttpContext {
+  readonly activeAssignmentIds: readonly string[];
   readonly actorId: string;
   readonly assignmentId?: string;
   readonly traceId: string;
@@ -56,30 +58,50 @@ function exactObject(
     : undefined;
 }
 
-function authenticatedMetadata(value: unknown): {
-  readonly actor: RegistryActor;
-  readonly traceId: string;
-} {
+function assignmentIds(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value) || value.length > 128) return undefined;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const result: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined ||
+      !descriptor.enumerable || typeof descriptor.value !== "string" || !UUID.test(descriptor.value)) return undefined;
+    result.push(descriptor.value.toLowerCase());
+  }
+  if (Object.keys(descriptors).some((key) => key !== "length" && !/^(?:0|[1-9][0-9]*)$/u.test(key)) ||
+    new Set(result).size !== result.length) return undefined;
+  return Object.freeze(result.sort());
+}
+
+function authenticatedMetadata(value: unknown): RegistryQueryContext {
   const context = exactObject(
     value,
-    ["actorId", "traceId", "workforcePersonId"],
+    ["activeAssignmentIds", "actorId", "traceId", "workforcePersonId"],
     ["assignmentId"],
   );
+  const activeAssignmentIds = context === undefined ? undefined : assignmentIds(context.activeAssignmentIds);
   if (context === undefined ||
     typeof context.actorId !== "string" || !REFERENCE.test(context.actorId) ||
     typeof context.workforcePersonId !== "string" || !UUID.test(context.workforcePersonId) ||
     typeof context.traceId !== "string" || !TRACE_ID.test(context.traceId) ||
+    activeAssignmentIds === undefined ||
     (context.assignmentId !== undefined &&
       (typeof context.assignmentId !== "string" || !UUID.test(context.assignmentId)))) {
     throw new InvalidAuthenticatedContext();
   }
+  const assignmentId = context.assignmentId === undefined ? undefined : context.assignmentId.toLowerCase();
+  if (assignmentId !== undefined && !activeAssignmentIds.includes(assignmentId)) throw new InvalidAuthenticatedContext();
+  const actor: RegistryActor = Object.freeze({
+    actorId: context.actorId,
+    actorType: "authenticated_subject",
+    ...(assignmentId === undefined ? {} : { assignmentId }),
+    workforcePersonId: context.workforcePersonId.toLowerCase(),
+  });
   return {
-    actor: Object.freeze({
-      actorId: context.actorId,
-      actorType: "authenticated_subject",
-      ...(context.assignmentId === undefined
-        ? {}
-        : { assignmentId: context.assignmentId.toLowerCase() }),
+    actor,
+    subject: Object.freeze({
+      activeAssignmentIds,
+      ...(assignmentId === undefined ? {} : { selectedAssignmentId: assignmentId }),
       workforcePersonId: context.workforcePersonId.toLowerCase(),
     }),
     traceId: context.traceId,
@@ -139,7 +161,7 @@ function errorResponse(error: unknown, traceId?: string): Readonly<ApplicationRe
 }
 
 export function createApplicationRegistryHttpAdapter(
-  service: Pick<ApplicationRegistryService, "loadRegistry" | "resolveDeepLink">,
+  service: ApplicationRegistryQueryService,
 ): Readonly<ApplicationRegistryHttpAdapter> {
   return Object.freeze({
     async loadRegistry(context: unknown): Promise<Readonly<ApplicationRegistryHttpResponse>> {
@@ -147,7 +169,7 @@ export function createApplicationRegistryHttpAdapter(
       try {
         const metadata = authenticatedMetadata(context);
         traceId = metadata.traceId;
-        const snapshot = await service.loadRegistry({ actor: metadata.actor, audience: "internal" });
+        const snapshot = await service.loadRegistry({ audience: "internal", context: metadata });
         return Object.freeze({
           body: snapshot as unknown as Readonly<Record<string, unknown>>,
           headers: headers(traceId),
@@ -166,8 +188,8 @@ export function createApplicationRegistryHttpAdapter(
         const link = deepLink(body);
         if (link === undefined) throw new AppRegistryError("app_registry_invalid_input");
         const resolved = await service.resolveDeepLink({
-          actor: metadata.actor,
           audience: "internal",
+          context: metadata,
           link,
         });
         return Object.freeze({

@@ -1,5 +1,5 @@
 import { AuthorizationDeniedError, AuthorizationUnavailableError, type PermissionRequest } from "@ai-crm/platform-authorization";
-import { FormSchemaError, type FormActor, type FormSchemaService } from "@ai-crm/platform-form-schema";
+import { FormSchemaError, type FormActor, type FormQueryContext, type FormSchemaQueryService } from "@ai-crm/platform-form-schema";
 
 import { BrowserSessionFailure } from "../auth/errors.js";
 
@@ -35,7 +35,7 @@ export interface FormSchemaHttpAdapter {
 
 export interface FormSchemaHttpAdapterOptions {
   readonly authorize: (input: FormSchemaHttpAuthorizationInput) => Promise<Readonly<FormSchemaHttpAuthorizedContext>>;
-  readonly service: Pick<FormSchemaService, "getRelease" | "validateSubmission">;
+  readonly service: FormSchemaQueryService;
 }
 
 export interface FormSchemaHttpAuthorizationInput {
@@ -48,6 +48,7 @@ export interface FormSchemaHttpAuthorizationInput {
 
 /** Trusted output of the BFF session, organization, and static HTTP-permission chain. */
 export interface FormSchemaHttpAuthorizedContext {
+  readonly activeAssignmentIds: readonly string[];
   readonly actorId: string;
   readonly assignmentId?: string;
   readonly traceId: string;
@@ -144,13 +145,54 @@ function validationData(request: FormSchemaHttpRequest): unknown {
   return data;
 }
 
-function actor(context: Readonly<FormSchemaHttpAuthorizedContext>): FormActor {
-  if (!ACTOR_ID.test(context.actorId) || !UUID.test(context.workforcePersonId) || !TRACE_ID.test(context.traceId) ||
-      (context.assignmentId !== undefined && !UUID.test(context.assignmentId))) throw new Error("form_http_authorized_context_invalid");
-  return Object.freeze({
+function assignmentIds(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value) || value.length > 128) return undefined;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const result: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined ||
+      !descriptor.enumerable || typeof descriptor.value !== "string" || !UUID.test(descriptor.value)) return undefined;
+    result.push(descriptor.value.toLowerCase());
+  }
+  if (Object.keys(descriptors).some((key) => key !== "length" && !/^(?:0|[1-9][0-9]*)$/u.test(key)) ||
+    new Set(result).size !== result.length) return undefined;
+  return Object.freeze(result.sort());
+}
+
+function queryContext(value: unknown): FormQueryContext {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("form_http_authorized_context_invalid");
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const required = ["activeAssignmentIds", "actorId", "traceId", "workforcePersonId"];
+  const optional = ["assignmentId"];
+  const keys = Object.keys(descriptors);
+  if (Object.values(descriptors).some((descriptor) => descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable) ||
+      required.some((key) => !Object.hasOwn(descriptors, key)) ||
+      keys.some((key) => !required.includes(key) && !optional.includes(key))) throw new Error("form_http_authorized_context_invalid");
+  const context = Object.fromEntries(Object.entries(descriptors).map(([key, descriptor]) => [key, descriptor.value])) as Record<string, unknown>;
+  const activeAssignmentIds = assignmentIds(context.activeAssignmentIds);
+  if (typeof context.actorId !== "string" || !ACTOR_ID.test(context.actorId) ||
+      typeof context.workforcePersonId !== "string" || !UUID.test(context.workforcePersonId) ||
+      typeof context.traceId !== "string" || !TRACE_ID.test(context.traceId) ||
+      activeAssignmentIds === undefined ||
+      (context.assignmentId !== undefined && (typeof context.assignmentId !== "string" || !UUID.test(context.assignmentId)))) {
+    throw new Error("form_http_authorized_context_invalid");
+  }
+  const assignmentId = context.assignmentId === undefined ? undefined : context.assignmentId.toLowerCase();
+  if (assignmentId !== undefined && !activeAssignmentIds.includes(assignmentId)) throw new Error("form_http_authorized_context_invalid");
+  const moduleActor: FormActor = Object.freeze({
     actorId: context.actorId,
     actorType: "authenticated_subject",
-    ...(context.assignmentId === undefined ? {} : { assignmentId: context.assignmentId.toLowerCase() }),
+    ...(assignmentId === undefined ? {} : { assignmentId }),
+  });
+  return Object.freeze({
+    actor: moduleActor,
+    subject: Object.freeze({
+      activeAssignmentIds,
+      ...(assignmentId === undefined ? {} : { selectedAssignmentId: assignmentId }),
+      workforcePersonId: context.workforcePersonId.toLowerCase(),
+    }),
+    traceId: context.traceId,
   });
 }
 
@@ -207,11 +249,11 @@ export function createFormSchemaHttpAdapter(options: FormSchemaHttpAdapterOption
           ...(request.selectedAssignmentId === undefined ? {} : { selectedAssignmentId: request.selectedAssignmentId }),
           ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
         });
-        const moduleActor = actor(context);
+        const moduleContext = queryContext(context);
         traceId = context.traceId;
         const result = parsedRoute.operation === "read"
-          ? await options.service.getRelease({ actor: moduleActor, definitionId: parsedRoute.definitionId, releaseVersion: parsedRoute.releaseVersion })
-          : await options.service.validateSubmission({ actor: moduleActor, data, definitionId: parsedRoute.definitionId, releaseVersion: parsedRoute.releaseVersion });
+          ? await options.service.getRelease({ context: moduleContext, definitionId: parsedRoute.definitionId, releaseVersion: parsedRoute.releaseVersion })
+          : await options.service.validateSubmission({ context: moduleContext, data, definitionId: parsedRoute.definitionId, releaseVersion: parsedRoute.releaseVersion });
         return success(result, traceId);
       } catch (error) {
         return response(mapped(error), traceId);

@@ -39,4 +39,47 @@ describe("createPostgresApplicationRegistryQueryService", () => {
     const service = createPostgresApplicationRegistryQueryService(runtime(), { authorize: () => Promise.reject(new Error("private policy detail")) });
     await expect(service.loadRegistry({ audience: "internal", context: context() })).rejects.toMatchObject({ code: "app_registry_unavailable", retryable: true });
   });
+
+  it("rejects accessor-backed request context without invoking it", async () => {
+    let reads = 0;
+    const stable = context();
+    const changing = Object.defineProperty({ subject: stable.subject, traceId: stable.traceId }, "actor", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return reads === 1 ? stable.actor : { actorId: "changed", actorType: "system" };
+      },
+    }) as RegistryQueryContext;
+    const service = createPostgresApplicationRegistryQueryService(runtime(), {
+      authorize: () => Promise.resolve({ allowed: true, decisionId: "30000000-0000-4000-8000-000000000001" }),
+    });
+
+    await expect(service.loadRegistry({ audience: "internal", context: changing })).rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    expect(reads).toBe(0);
+  });
+
+  it("rejects nested actor, assignment, and link accessors without invoking them", async () => {
+    const db = runtime();
+    const service = createPostgresApplicationRegistryQueryService(db, { authorize: vi.fn() });
+    let reads = 0;
+    const actor = Object.defineProperty({ actorType: "authenticated_subject", assignmentId: assignment, workforcePersonId: person }, "actorId", {
+      enumerable: true, get: () => { reads += 1; return "subject:synthetic"; },
+    });
+    await expect(service.loadRegistry({ audience: "internal", context: { ...context(), actor } as RegistryQueryContext }))
+      .rejects.toMatchObject({ code: "app_registry_invalid_input" });
+
+    const assignments = [assignment];
+    Object.defineProperty(assignments, "0", { enumerable: true, get: () => { reads += 1; return assignment; } });
+    await expect(service.loadRegistry({ audience: "internal", context: { ...context(), subject: { ...context().subject, activeAssignmentIds: assignments } } }))
+      .rejects.toMatchObject({ code: "app_registry_invalid_input" });
+
+    const link = Object.defineProperty({ applicationId: "platform.synthetic", resourceReference: "synthetic:1", source: "task", version: 1 }, "routeId", {
+      enumerable: true, get: () => { reads += 1; return "platform.synthetic.route"; },
+    });
+    await expect(service.resolveDeepLink({ audience: "internal", context: context(), link: link as never }))
+      .rejects.toMatchObject({ code: "app_registry_invalid_input" });
+    expect(reads).toBe(0);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(db.execute).not.toHaveBeenCalled();
+  });
 });

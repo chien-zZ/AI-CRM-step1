@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { AuthorizationDeniedError, AuthorizationUnavailableError } from "@ai-crm/platform-authorization";
-import { FormSchemaError, type FormSchemaService } from "@ai-crm/platform-form-schema";
+import { FormSchemaError, type FormSchemaQueryService } from "@ai-crm/platform-form-schema";
 import { describe, expect, it, vi } from "vitest";
 
 import { BrowserSessionFailure } from "../auth/errors.js";
@@ -16,16 +16,17 @@ const release = Object.freeze({
 
 function fixture() {
   const calls: string[] = [];
+  const workforcePersonId = randomUUID();
   const authorize = vi.fn(() => {
     calls.push("authorize");
-    return Promise.resolve({ actorId: "subject.synthetic", assignmentId, traceId, workforcePersonId: randomUUID() });
+    return Promise.resolve({ activeAssignmentIds: [assignmentId], actorId: "subject.synthetic", assignmentId, traceId, workforcePersonId });
   });
-  const getRelease = vi.fn<FormSchemaService["getRelease"]>(() => { calls.push("service"); return Promise.resolve(release); });
-  const validateSubmission = vi.fn<FormSchemaService["validateSubmission"]>((input) => {
+  const getRelease = vi.fn<FormSchemaQueryService["getRelease"]>(() => { calls.push("service"); return Promise.resolve(release); });
+  const validateSubmission = vi.fn<FormSchemaQueryService["validateSubmission"]>((input) => {
     calls.push("service");
     return Promise.resolve({ errors: [], reference: { contentDigest: release.contentDigest, definitionId: release.definitionId, releaseVersion: release.releaseVersion, version: 1 }, valid: input.data !== null });
   });
-  return { adapter: createFormSchemaHttpAdapter({ authorize, service: { getRelease, validateSubmission } }), authorize, calls, getRelease, validateSubmission };
+  return { adapter: createFormSchemaHttpAdapter({ authorize, service: { getRelease, validateSubmission } }), authorize, calls, getRelease, validateSubmission, workforcePersonId };
 }
 
 function request(overrides: Partial<FormSchemaHttpRequest> = {}): FormSchemaHttpRequest {
@@ -39,7 +40,15 @@ describe("createFormSchemaHttpAdapter", () => {
 
     expect(result).toMatchObject({ body: release, headers: { "Cache-Control": "no-store", "Content-Type": "application/json", "X-Trace-Id": traceId }, status: 200 });
     expect(target.authorize).toHaveBeenCalledWith({ at: "2026-07-28T00:00:00.000Z", credential: "opaque-session", permission: { action: "read", resource: "platform.form-schema.form-release" }, selectedAssignmentId: assignmentId });
-    expect(target.getRelease).toHaveBeenCalledWith({ actor: { actorId: "subject.synthetic", actorType: "authenticated_subject", assignmentId }, definitionId: "platform.synthetic", releaseVersion: 2 });
+    expect(target.getRelease).toHaveBeenCalledWith({
+      context: {
+        actor: { actorId: "subject.synthetic", actorType: "authenticated_subject", assignmentId },
+        subject: { activeAssignmentIds: [assignmentId], selectedAssignmentId: assignmentId, workforcePersonId: target.workforcePersonId },
+        traceId,
+      },
+      definitionId: "platform.synthetic",
+      releaseVersion: 2,
+    });
   });
 
   it("ignores a Content-Type header on a bodyless GET", async () => {
@@ -127,9 +136,30 @@ describe("createFormSchemaHttpAdapter", () => {
 
   it("fails closed on malformed trusted actor or trace context", async () => {
     const target = fixture();
-    target.authorize.mockResolvedValueOnce({ actorId: "client supplied actor", assignmentId, traceId: "bad", workforcePersonId: randomUUID() });
+    target.authorize.mockResolvedValueOnce({ activeAssignmentIds: [assignmentId], actorId: "client supplied actor", assignmentId, traceId: "bad", workforcePersonId: randomUUID() });
     const result = await target.adapter.handle(request());
     expect(result).toMatchObject({ body: { code: "form_unavailable" }, status: 503 });
+    expect(target.getRelease).not.toHaveBeenCalled();
+  });
+
+  it("rejects an accessor-backed Assignment set without invoking it", async () => {
+    const target = fixture();
+    let reads = 0;
+    const assignments = [assignmentId];
+    Object.defineProperty(assignments, "0", {
+      enumerable: true,
+      get: () => { reads += 1; return assignmentId; },
+    });
+    target.authorize.mockResolvedValueOnce({
+      activeAssignmentIds: assignments,
+      actorId: "subject.synthetic",
+      assignmentId,
+      traceId,
+      workforcePersonId: target.workforcePersonId,
+    });
+
+    await expect(target.adapter.handle(request())).resolves.toMatchObject({ status: 503 });
+    expect(reads).toBe(0);
     expect(target.getRelease).not.toHaveBeenCalled();
   });
 

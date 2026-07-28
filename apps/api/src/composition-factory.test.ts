@@ -159,6 +159,21 @@ describe("production API platform binding factory", () => {
     };
     const contentDigest = createHash("sha256").update(canonical(snapshot)).digest("hex");
     fixture.execute.mockImplementation((sql: string) => {
+      if (sql.includes("has_schema_privilege(current_user, 'audit'")) {
+        return Promise.resolve({
+          rowCount: 1,
+          rows: [{
+            advisory_lock_executable: true,
+            hash_function_executable: true,
+            operation_receipts_present: true,
+            operation_receipts_privileges: true,
+            records_present: true,
+            records_privileges: true,
+            schema_usage: true,
+            transaction_read_write: true,
+          }],
+        });
+      }
       if (sql.includes("authorization_core.current_policy")) {
         return Promise.resolve({ rowCount: 1, rows: [{ content_digest: contentDigest, contract_version: "authorization-policy.v1", version: snapshot.version }] });
       }
@@ -172,8 +187,8 @@ describe("production API platform binding factory", () => {
     });
     const bindings = await createProductionApiPlatformBindings(fixture.value);
     await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
-    expect(bindings.readiness().slice(0, 3).every(({ healthy }) => healthy)).toBe(true);
-    expect(bindings.readiness().slice(3).every(({ healthy }) => !healthy)).toBe(true);
+    expect(bindings.readiness().slice(0, 4).every(({ healthy }) => healthy)).toBe(true);
+    expect(bindings.readiness().slice(4).every(({ healthy }) => !healthy)).toBe(true);
     const traceId = "abcdefabcdefabcdefabcdefabcdefab";
     await expect(bindings.authorizationTrace.run(traceId, () => bindings.authorization.check({
       activeAssignmentIds: [],
@@ -392,6 +407,48 @@ describe("production API platform binding factory", () => {
     resolvePolicy?.({ rowCount: 0, rows: [] });
     await expect(checking).rejects.toThrow("api_start_cancelled");
     expect(bindings.readiness().every(({ healthy }) => !healthy)).toBe(true);
+  });
+
+  it("does not start a new policy query after an audit probe is aborted", async () => {
+    const fixture = dependencies();
+    let auditStarted = false;
+    let policyCalls = 0;
+    fixture.execute.mockImplementation((sql: string) => {
+      if (sql.includes("has_schema_privilege(current_user, 'audit'")) {
+        auditStarted = true;
+        return new Promise(() => undefined);
+      }
+      if (sql.includes("authorization_core.current_policy")) policyCalls += 1;
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    });
+    const bindings = await createProductionApiPlatformBindings(fixture.value);
+    const checking = bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+    await vi.waitFor(() => { expect(auditStarted).toBe(true); });
+    const callsBeforeClose = policyCalls;
+    await bindings.close?.();
+    await expect(checking).rejects.toThrow("api_start_cancelled");
+    expect(policyCalls).toBe(callsBeforeClose);
+  });
+
+  it("continues database health probes while an audit dependency query remains stuck", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = dependencies();
+      fixture.execute.mockImplementation((sql: string) => sql.includes("has_schema_privilege(current_user, 'audit'")
+        ? new Promise(() => undefined)
+        : Promise.resolve({ rowCount: 0, rows: [] }));
+      const bindings = await createProductionApiPlatformBindings(fixture.value);
+      const checking = bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.timeoutMs);
+      await checking;
+      expect(bindings.readiness()[3]).toMatchObject({ healthy: false });
+
+      await vi.advanceTimersByTimeAsync(configuration.databaseHealthProbe.intervalMs * 2);
+      expect(fixture.healthCheck.mock.calls.length).toBeGreaterThanOrEqual(3);
+      await bindings.close?.();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not publish a slow policy result from an obsolete probe generation", async () => {

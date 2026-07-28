@@ -1,5 +1,6 @@
 import { createTraceContext } from "@ai-crm/observability";
-import { createAuditService, createPostgresAuditStore } from "@ai-crm/platform-audit";
+import { createPostgresApplicationRegistryQueryService } from "@ai-crm/platform-app-registry";
+import { createAuditService, createPostgresAuditCapabilityProbe, createPostgresAuditStore } from "@ai-crm/platform-audit";
 import {
   AuthorizationUnavailableError,
   createAuthorizationService,
@@ -7,6 +8,7 @@ import {
   type AuthorizationPolicyStore,
 } from "@ai-crm/platform-authorization";
 import { createOidcTokenVerifier, type TokenVerifier } from "@ai-crm/platform-auth-context";
+import { createPostgresFormSchemaQueryService } from "@ai-crm/platform-form-schema";
 import {
   createPostgresOrganizationService,
   type OrganizationCommandAuthorizer,
@@ -254,6 +256,38 @@ function boundedDatabaseHealthCheck(
   });
 }
 
+function boundedDependencyCheck(
+  check: Promise<boolean>,
+  timeoutMs: number,
+  signals: readonly AbortSignal[],
+): Promise<Readonly<{ readonly completion: Promise<void>; readonly healthy: boolean }>> {
+  const completion = check.then(() => undefined, () => undefined);
+  if (signals.some((signal) => signal.aborted)) {
+    return Promise.resolve(Object.freeze({ completion, healthy: false }));
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (healthy: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const signal of signals) signal.removeEventListener("abort", aborted);
+      resolve(Object.freeze({ completion, healthy }));
+    };
+    const aborted = (): void => { finish(false); };
+    const timer = setTimeout(() => { finish(false); }, timeoutMs);
+    timer.unref();
+    for (const signal of signals) {
+      if (signal.aborted) {
+        finish(false);
+        return;
+      }
+      signal.addEventListener("abort", aborted, { once: true });
+    }
+    void check.then(finish, () => { finish(false); });
+  });
+}
+
 function startupAborted(signal: AbortSignal): boolean {
   return signal.aborted;
 }
@@ -328,21 +362,71 @@ export async function createProductionApiPlatformBindings(
     { authorize: () => Promise.reject(new Error("audit_read_authorization_unavailable")) },
     { fieldPolicies: {} },
   );
+  const auditCapability = createPostgresAuditCapabilityProbe(activeDatabase);
+  const applicationRegistryQueries = createPostgresApplicationRegistryQueryService(activeDatabase, {
+    authorize: (request) => authorizationTrace.run(request.traceId, () => authorization.check(
+      request.subject,
+      { action: request.permission.action, resource: request.permission.resource },
+    )),
+  });
+  const formQueries = createPostgresFormSchemaQueryService(activeDatabase, {
+    authorize: (request) => authorizationTrace.run(request.traceId, () => authorization.check(
+      request.subject,
+      { action: request.permission.action, resource: request.permission.resource },
+    )),
+  });
   const organization = createPostgresOrganizationService(
     organizationRuntime(activeDatabase),
     failClosedOrganizationAuthorizer,
   );
-  const state = { authorizationPolicyReady: false, closed: false, databaseCompatible: false, databaseHealthy: false };
+  const state = {
+    auditCapabilityReady: false,
+    authorizationPolicyReady: false,
+    closed: false,
+    databaseCompatible: false,
+    databaseHealthy: false,
+  };
   let probeController = new AbortController();
   let probeGeneration = 0;
   let probeTimer: NodeJS.Timeout | undefined;
+  let dependentProbeCompletion: Promise<void> | undefined;
   const stopDatabaseProbes = (): void => {
     probeGeneration += 1;
     if (probeTimer !== undefined) clearTimeout(probeTimer);
     probeTimer = undefined;
     probeController.abort();
     state.databaseHealthy = false;
+    state.auditCapabilityReady = false;
     state.authorizationPolicyReady = false;
+  };
+  const runDependentProbes = async (
+    generation: number,
+    controller: AbortController,
+    signals: readonly AbortSignal[],
+  ): Promise<void> => {
+    if (probeIsObsolete(state, controller, generation, probeGeneration) ||
+      signals.some((signal) => signal.aborted) || dependentProbeCompletion !== undefined) return;
+    const auditCheck = auditCapability.check().then(({ status }) => status === "available");
+    const policyCheck = hasCompleteCurrentPolicy(authorizationPersistence.store);
+    const auditResultPromise = boundedDependencyCheck(
+      auditCheck,
+      configuration.databaseHealthProbe.timeoutMs,
+      signals,
+    );
+    const policyResultPromise = boundedDependencyCheck(
+      policyCheck,
+      configuration.databaseHealthProbe.timeoutMs,
+      signals,
+    );
+    const completion = Promise.allSettled([auditCheck, policyCheck]).then(() => undefined);
+    const trackedCompletion = completion.finally(() => {
+      if (dependentProbeCompletion === trackedCompletion) dependentProbeCompletion = undefined;
+    });
+    dependentProbeCompletion = trackedCompletion;
+    const [auditResult, policyResult] = await Promise.all([auditResultPromise, policyResultPromise]);
+    if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
+    state.auditCapabilityReady = auditResult.healthy;
+    state.authorizationPolicyReady = policyResult.healthy;
   };
   const scheduleDatabaseProbe = (generation: number, controller: AbortController): void => {
     if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
@@ -355,14 +439,12 @@ export async function createProductionApiPlatformBindings(
       ).then((result) => {
         if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
         state.databaseHealthy = result.healthy;
-        void result.completion.then(async () => {
-          if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
-          const policyReady = result.healthy &&
-            await hasCompleteCurrentPolicy(authorizationPersistence.store);
-          if (probeIsObsolete(state, controller, generation, probeGeneration)) return;
-          state.authorizationPolicyReady = policyReady;
-          scheduleDatabaseProbe(generation, controller);
-        });
+        if (result.healthy) void runDependentProbes(generation, controller, [controller.signal]);
+        else {
+          state.auditCapabilityReady = false;
+          state.authorizationPolicyReady = false;
+        }
+        void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
       });
     }, configuration.databaseHealthProbe.intervalMs);
     probeTimer.unref();
@@ -380,11 +462,15 @@ export async function createProductionApiPlatformBindings(
     assertProductionStartActive(signal, state);
     if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
     state.databaseHealthy = result.healthy;
-    const policyReady = result.healthy &&
-      await hasCompleteCurrentPolicy(authorizationPersistence.store);
+    if (!result.healthy) {
+      state.auditCapabilityReady = false;
+      state.authorizationPolicyReady = false;
+      void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
+      return;
+    }
+    await runDependentProbes(generation, controller, [signal, controller.signal]);
     assertProductionStartActive(signal, state);
     if (probeIsObsolete(state, controller, generation, probeGeneration)) throw new Error("api_start_cancelled");
-    state.authorizationPolicyReady = policyReady;
     void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
   };
   const sessionService = createPcBffSessionService({
@@ -441,12 +527,17 @@ export async function createProductionApiPlatformBindings(
       },
     },
     organization,
+    queries: {
+      ...unavailable.queries,
+      applicationRegistry: applicationRegistryQueries,
+      forms: formQueries,
+    },
     readiness: () => [
       { healthy: !state.closed && state.databaseCompatible && state.databaseHealthy, name: "application-database", required: true },
       { healthy: !state.closed && activeSessions.isReady(), name: "session-store", required: true },
       { healthy: !state.closed && state.databaseHealthy && state.authorizationPolicyReady, name: "authorization-policy", required: true },
-      // Generic database health cannot prove the Audit repository is writable without creating a false audit fact.
-      { healthy: false, name: "authentication-audit", required: true },
+      // This observes static Audit prerequisites; every actual append still fails closed independently.
+      { healthy: !state.closed && state.databaseHealthy && state.auditCapabilityReady, name: "authentication-audit", required: true },
       { healthy: false, name: "application-registry-query", required: true },
       { healthy: false, name: "form-schema-query", required: true },
       { healthy: false, name: "file-center-provider", required: true },

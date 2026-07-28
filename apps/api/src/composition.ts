@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { createTraceContext, extractTraceContext, type HealthDependency } from "@ai-crm/observability";
 import type { AuthenticatedPrincipal } from "@ai-crm/platform-auth-context";
-import type { ApplicationRegistryService } from "@ai-crm/platform-app-registry";
+import type { ApplicationRegistryQueryService } from "@ai-crm/platform-app-registry";
 import type { AuditService } from "@ai-crm/platform-audit";
 import type {
   AuthorizationDecision,
@@ -10,7 +10,7 @@ import type {
   PermissionRequest,
 } from "@ai-crm/platform-authorization";
 import type { FileCenterService } from "@ai-crm/platform-file-center";
-import type { FormSchemaService } from "@ai-crm/platform-form-schema";
+import type { FormSchemaQueryService } from "@ai-crm/platform-form-schema";
 import type { NotificationCenter } from "@ai-crm/platform-notifications";
 import type { OrganizationServiceApi, WorkforceContext } from "@ai-crm/platform-organization";
 import type { TaskCenter } from "@ai-crm/platform-task-center";
@@ -50,9 +50,9 @@ export interface AuthorizedOperationContext {
 }
 
 export interface ApiQueryBindings {
-  readonly applicationRegistry: Pick<ApplicationRegistryService, "loadRegistry" | "resolveDeepLink">;
+  readonly applicationRegistry: ApplicationRegistryQueryService;
   readonly fileCenter: Pick<FileCenterService, "authorizeDownload" | "completeUpload" | "createUploadSession">;
-  readonly forms: Pick<FormSchemaService, "getRelease" | "validateSubmission">;
+  readonly forms: FormSchemaQueryService;
   readonly notifications: Pick<NotificationCenter, "get" | "list" | "unreadCount">;
   readonly tasks: Pick<TaskCenter, "get" | "list">;
 }
@@ -146,8 +146,8 @@ export function createApiPlatformComposition(bindings: ApiPlatformBindings): Rea
   requireFunction(bindings.queries.fileCenter.authorizeDownload, "file_authorize_download");
   requireFunction(bindings.queries.fileCenter.completeUpload, "file_complete_upload");
   requireFunction(bindings.queries.fileCenter.createUploadSession, "file_create_upload_session");
-  requireFunction(bindings.queries.forms.getRelease, "form_get_release");
-  requireFunction(bindings.queries.forms.validateSubmission, "form_validate_submission");
+  requireMethod(bindings.queries.forms, "getRelease", "form_get_release");
+  requireMethod(bindings.queries.forms, "validateSubmission", "form_validate_submission");
   requireFunction(bindings.queries.notifications.get, "notification_get");
   requireFunction(bindings.queries.notifications.list, "notification_list");
   requireFunction(bindings.queries.notifications.unreadCount, "notification_unread_count");
@@ -180,6 +180,7 @@ export function createApiPlatformComposition(bindings: ApiPlatformBindings): Rea
       const traceId = extractTraceContext({ traceparent: input.traceparent }).traceId;
       const context = await authorize({ ...input, traceId });
       return Object.freeze({
+        activeAssignmentIds: context.workforce.assignments.map((assignment) => assignment.assignmentId),
         actorId: actorId(context),
         traceId,
         workforcePersonId: context.workforce.workforcePersonId,

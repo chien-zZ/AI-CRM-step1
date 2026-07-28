@@ -39,4 +39,42 @@ describe("createPostgresFormSchemaQueryService", () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(invalidDb.execute).not.toHaveBeenCalled();
   });
+
+  it("rejects accessor-backed request context without invoking it", async () => {
+    let reads = 0;
+    const context = Object.defineProperty({ subject: requestContext.subject, traceId: requestContext.traceId }, "actor", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return requestContext.actor;
+      },
+    }) as FormQueryContext;
+    const db = runtime();
+    const service = createPostgresFormSchemaQueryService(db, { authorize: vi.fn() });
+
+    await expect(service.getRelease({ context, definitionId: "platform.synthetic.form", releaseVersion: 1 }))
+      .rejects.toMatchObject({ code: "form_invalid_input" });
+    expect(reads).toBe(0);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("rejects nested actor and assignment accessors without invoking them", async () => {
+    const db = runtime();
+    const service = createPostgresFormSchemaQueryService(db, { authorize: vi.fn() });
+    let reads = 0;
+    const actor = Object.defineProperty({ actorType: "authenticated_subject", assignmentId: assignment }, "actorId", {
+      enumerable: true, get: () => { reads += 1; return "subject:synthetic"; },
+    });
+    await expect(service.getRelease({ context: { ...requestContext, actor } as FormQueryContext, definitionId: "platform.synthetic.form", releaseVersion: 1 }))
+      .rejects.toMatchObject({ code: "form_invalid_input" });
+
+    const assignments = [assignment];
+    Object.defineProperty(assignments, "0", { enumerable: true, get: () => { reads += 1; return assignment; } });
+    await expect(service.getRelease({ context: { ...requestContext, subject: { ...requestContext.subject, activeAssignmentIds: assignments } }, definitionId: "platform.synthetic.form", releaseVersion: 1 }))
+      .rejects.toMatchObject({ code: "form_invalid_input" });
+    expect(reads).toBe(0);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(db.execute).not.toHaveBeenCalled();
+  });
 });

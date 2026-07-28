@@ -1,13 +1,13 @@
 import {
   AppRegistryError,
-  type ApplicationRegistryService,
-  type RegistryActor,
+  type ApplicationRegistryQueryService,
 } from "@ai-crm/platform-app-registry";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApplicationRegistryHttpAdapter } from "./application-registry-http.js";
 
 const context = Object.freeze({
+  activeAssignmentIds: Object.freeze(["11111111-1111-4111-8111-111111111111"]),
   actorId: "subject.synthetic",
   assignmentId: "11111111-1111-4111-8111-111111111111",
   traceId: "1234567890abcdef1234567890abcdef",
@@ -30,8 +30,8 @@ const resolved = Object.freeze({
 
 function fixture() {
   const service = {
-    loadRegistry: vi.fn<ApplicationRegistryService["loadRegistry"]>(() => Promise.resolve(snapshot)),
-    resolveDeepLink: vi.fn<ApplicationRegistryService["resolveDeepLink"]>(() => Promise.resolve(resolved)),
+    loadRegistry: vi.fn<ApplicationRegistryQueryService["loadRegistry"]>(() => Promise.resolve(snapshot)),
+    resolveDeepLink: vi.fn<ApplicationRegistryQueryService["resolveDeepLink"]>(() => Promise.resolve(resolved)),
   };
   return { adapter: createApplicationRegistryHttpAdapter(service), service };
 }
@@ -50,13 +50,21 @@ describe("createApplicationRegistryHttpAdapter", () => {
       status: 200,
     });
     expect(service.loadRegistry).toHaveBeenCalledWith({
-      actor: {
-        actorId: context.actorId,
-        actorType: "authenticated_subject",
-        assignmentId: context.assignmentId,
-        workforcePersonId: context.workforcePersonId,
-      } satisfies RegistryActor,
       audience: "internal",
+      context: {
+        actor: {
+          actorId: context.actorId,
+          actorType: "authenticated_subject",
+          assignmentId: context.assignmentId,
+          workforcePersonId: context.workforcePersonId,
+        },
+        subject: {
+          activeAssignmentIds: context.activeAssignmentIds,
+          selectedAssignmentId: context.assignmentId,
+          workforcePersonId: context.workforcePersonId,
+        },
+        traceId: context.traceId,
+      },
     });
   });
 
@@ -65,7 +73,7 @@ describe("createApplicationRegistryHttpAdapter", () => {
 
     await expect(adapter.resolveDeepLink(context, link)).resolves.toMatchObject({ body: resolved, status: 200 });
     const request = service.resolveDeepLink.mock.calls[0]?.[0];
-    expect(request?.actor).toMatchObject({ actorId: context.actorId, actorType: "authenticated_subject" });
+    expect(request?.context.actor).toMatchObject({ actorId: context.actorId, actorType: "authenticated_subject" });
     expect(request?.audience).toBe("internal");
     expect(request?.link).toEqual(link);
   });
@@ -100,6 +108,20 @@ describe("createApplicationRegistryHttpAdapter", () => {
       body: { code: "app_registry_unauthorized" },
       status: 401,
     });
+    expect(service.loadRegistry).not.toHaveBeenCalled();
+  });
+
+  it("rejects an accessor-backed Assignment set without invoking it", async () => {
+    const { adapter, service } = fixture();
+    let reads = 0;
+    const assignments = [context.assignmentId];
+    Object.defineProperty(assignments, "0", {
+      enumerable: true,
+      get: () => { reads += 1; return context.assignmentId; },
+    });
+
+    await expect(adapter.loadRegistry({ ...context, activeAssignmentIds: assignments })).resolves.toMatchObject({ status: 401 });
+    expect(reads).toBe(0);
     expect(service.loadRegistry).not.toHaveBeenCalled();
   });
 

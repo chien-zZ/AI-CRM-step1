@@ -75,6 +75,7 @@
 - ADR-0025 与 ADR-0026 已于 2026-07-28 被项目负责人接受；接受确认持久化与运行边界，不等同于策略数据或生产消费者启用。
 - Authorization 已实现迁移 `0000000012`、不可变策略版本/发布、原子当前策略指针、事务发布器和耐久幂等 Decision Recorder；没有 Permission、Role 或 Grant seed。
 - API 生产组合已接入 PostgreSQL Authorization Store/Recorder、Organization 只读 workforce 解析、PostgreSQL Audit 与真实认证审计 Adapter。组织写在数据库访问前失败关闭；无完整当前策略时 API 保持 Not Ready；没有 audit-owned 非写健康合同前 authentication-audit required Readiness 也保持 Not Ready。
+- Audit 已新增并组合只读能力前置探针；Registry/Form 已新增 PostgreSQL 查询 Facade，并以完整 Workforce Person、活动 Assignment 集、可选选择 Assignment 和同一 Trace 执行模块级动态/精确权限复核。生产运行角色权限矩阵尚未接受，因此 Registry/Form required Readiness 继续失败关闭，Audit 探针也不会绕过缺失 GRANT。
 - Worker 已提供固定 `amqplib@2.0.1` 的文件式 AMQPS Adapter，覆盖 Confirm/Return、背压、ACK/NACK、固定 TTL 分层重试、DLQ、Prefetch/Concurrency、Readiness 和可中止 Drain/Close；生产 bootstrap 尚未接线，消费者保持禁用。
 
 ## 尚未完成
@@ -112,6 +113,7 @@
 - RabbitMQ Adapter 独立审查关闭 `0440` Secret 权限、逐发布 Return 关联、重试 Channel 故障、Drain/Close 错误传播、元数据边界、拓扑防御复制和消息类型长度问题；最终复审无残留 finding。
 - API 授权/审计/组织组合独立审查关闭认证操作 ID、单逻辑操作 Trace、相同命令不确定提交重试及慢策略加载生命周期竞态；最终窄复核无残留 finding。
 - 平台 HTTP 独立 Review 发现生产查询未组合却可能 Ready、File 授权拒绝误报 503、Nest 默认 100 KiB Parser、Form GET Content-Type 误拒绝和入站 Trace 分裂；全部修复并由原 Reviewer 复审清零。Assignment 选择来源仍待契约评审，本批次未发明 Header。
+- Audit/Registry/Form 查询组合独立 Review Round 1 发现关闭后可能启动策略 SQL、卡死依赖冻结数据库探测、嵌套 accessor 仍可执行三项 P2；均已按复现路径修复并补回归，同一 Reviewer 复审关闭全部 finding，未发现新增问题。
 
 ## 未解决问题
 
@@ -121,4 +123,4 @@
 - Worker Drain deadline 与 Compose `stop_grace_period` 的静态门已实现并通过；仍需真实生产组合和运行证据。
 - BFF previous encryption key 轮换已由代码与生产 Compose overlay 表达并通过静态门；密钥值仍只来自受限文件。
 - Worker 尚未向公共只读迁移兼容检查提供受控 Pool、完整迁移目录和独立应用 Schema SemVer；API 已独立使用 `AI_CRM_API_SCHEMA_VERSION`，不得改传 Release ID 或调用 `runMigrations`。
-- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。
+- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。剩余关键门包括运行角色最小权限矩阵/前向迁移、真实策略发布、Registry/Form 模块能力探针、File Provider 决策与实现，以及 Task projection 精确运行值和消费者激活。
