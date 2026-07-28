@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createDatabaseRuntime, runMigrations, type DatabaseRuntime } from "@ai-crm/database";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createFormSchemaService, createPostgresFormSchemaCapabilityProbe, createPostgresFormSchemaStore } from "./index.js";
+import { createFormSchemaService, createPostgresFormSchemaCapabilityProbe, createPostgresFormSchemaQueryService, createPostgresFormSchemaStore } from "./index.js";
 
 const urlFile = process.env.TEST_FORM_SCHEMA_DATABASE_URL_FILE;
 const suite = describe.skipIf(!urlFile);
@@ -47,22 +47,40 @@ suite("PostgreSQL form schema", () => {
     expect(releases.map((result) => result.reference.releaseVersion).sort()).toEqual([1, 2]);
   });
 
-  it("observes exact-release query columns and fails closed when the session loses SELECT", async () => {
+  it("keeps the probe aligned with exact-release queries under least-privilege column grants", async () => {
     if (!runtime) throw new Error("Form Schema runtime is unavailable.");
+    const definitionId = `platform.probe.${randomUUID().replaceAll("-", "")}`;
+    const instance = service(runtime);
+    await instance.saveDraft({ ...meta(), definitionId, expectedRevision: 0, jsonSchema, ownerModule: "platform.synthetic", uiSchema });
+    const published = await instance.publish({ ...meta(), definitionId, expectedRevision: 1 });
+    await runtime.execute("alter table form_schema.releases add column capability_probe_extra text");
     const role = `form_probe_${randomUUID().replaceAll("-", "")}`;
     await runtime.execute(`create role "${role}" nologin`);
     await runtime.execute(`grant usage on schema form_schema to "${role}"`);
-    await runtime.execute(`grant select on form_schema.releases, form_schema.release_status to "${role}"`);
+    await runtime.execute(`grant select (definition_id,release_version,owner_module,content_digest,json_schema,ui_schema,published_at) on form_schema.releases to "${role}"`);
+    await runtime.execute(`grant select (definition_id,release_version,active) on form_schema.release_status to "${role}"`);
     const restricted = createDatabaseRuntime({ applicationName: "cmp_form_probe_test", connectionString, connectionTimeoutMs: 5_000, idleTimeoutMs: 5_000, maxConnections: 1, statementTimeoutMs: 5_000 });
     try {
       await restricted.execute(`set role "${role}"`);
       const probe = createPostgresFormSchemaCapabilityProbe(restricted);
+      const query = createPostgresFormSchemaQueryService(restricted, {
+        authorize: () => Promise.resolve({ allowed: true, decisionId: randomUUID() }),
+      });
+      const selectedAssignmentId = randomUUID();
+      const context = {
+        actor: { actorId: "subject:synthetic", actorType: "authenticated_subject" as const, assignmentId: selectedAssignmentId },
+        subject: { activeAssignmentIds: [selectedAssignmentId], selectedAssignmentId, workforcePersonId: randomUUID() },
+        traceId: "1234567890abcdef1234567890abcdef",
+      };
       await expect(probe.check()).resolves.toEqual({ status: "available" });
-      await runtime.execute(`revoke select on form_schema.release_status from "${role}"`);
+      await expect(query.getRelease({ context, definitionId, releaseVersion: published.reference.releaseVersion })).resolves.toMatchObject({ definitionId });
+      await runtime.execute(`revoke select (active) on form_schema.release_status from "${role}"`);
       await expect(probe.check()).resolves.toEqual({ status: "unavailable" });
+      await expect(query.getRelease({ context, definitionId, releaseVersion: published.reference.releaseVersion })).rejects.toBeDefined();
     } finally {
       await restricted.close();
-      await runtime.execute(`revoke all privileges on form_schema.releases, form_schema.release_status from "${role}"`);
+      await runtime.execute(`revoke select (definition_id,release_version,owner_module,content_digest,json_schema,ui_schema,published_at) on form_schema.releases from "${role}"`);
+      await runtime.execute(`revoke select (definition_id,release_version,active) on form_schema.release_status from "${role}"`);
       await runtime.execute(`revoke usage on schema form_schema from "${role}"`);
       await runtime.execute(`drop role "${role}"`);
     }

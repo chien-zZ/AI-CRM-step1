@@ -96,3 +96,10 @@ Add module-owned, public, read-only PostgreSQL capability probes for the Applica
 - Replace the fixed-false Registry/Form query readiness entries only with the corresponding probe's current cached status. Do not derive either status from generic database health or another module's probe.
 - Keep future query execution independently fail closed; `available` is not an authorization decision or a guarantee that a later query will succeed.
 - Production runtime role grants remain unresolved. These probes observe grants but do not define, provision, or approve them, so their merge alone does not pass G3.
+
+## Independent Review Follow-up
+
+- Finding P2: the probes checked column-level `SELECT`, but Registry Store reads still used `SELECT *` and the Form exact-release read still used `r.*`. A future additive column could therefore expand the real query's privilege dependency without changing the probe and make `available` disagree with production execution.
+- Fix: all Registry reads used by the query facade now project the exact application, route, and navigation columns explicitly. The Form exact-release join now projects the exact release and status columns explicitly.
+- Regression evidence: PostgreSQL integration roles receive only the probe-declared column grants. Each disposable schema also receives an additional column that is deliberately not granted. Both probes and the real Registry/Form query services succeed without that unrelated column, then both fail closed after one required column grant is revoked.
+- Review scope remains unchanged: no application composition, migration, production grant, contract, lockfile, or business data model was modified.

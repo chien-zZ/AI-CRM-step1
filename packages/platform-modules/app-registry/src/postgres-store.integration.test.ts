@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createDatabaseRuntime, runMigrations, type DatabaseRuntime } from "@ai-crm/database";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createPostgresApplicationRegistryCapabilityProbe } from "./index.js";
+import { createPostgresApplicationRegistryCapabilityProbe, createPostgresApplicationRegistryQueryService } from "./index.js";
 import { createPostgresApplicationRegistryStore } from "./postgres-store.js";
 import { createApplicationRegistryService } from "./service.js";
 
@@ -63,22 +63,45 @@ suite("PostgreSQL application registry", () => {
     await expect(runtime.execute("insert into app_registry.navigation (navigation_id,application_id,route_id,parent_navigation_id,enabled,display_order) values ($1,$2,$3,$1,true,1)", [navigationId, applicationId, routeId])).rejects.toMatchObject({ code: "23514" });
   });
 
-  it("observes the production query columns and fails closed when the session loses SELECT", async () => {
+  it("keeps the probe aligned with real queries under least-privilege column grants", async () => {
     if (!runtime) throw new Error("Application Registry runtime is unavailable.");
+    const suffix = randomUUID().replaceAll("-", "");
+    const applicationId = `platform.probe.${suffix}`;
+    const routeId = `platform.probe.route.${suffix}`;
+    await runtime.execute("insert into app_registry.applications (application_id,audience,enabled,permission_code) values ($1,'internal',true,$2)", [applicationId, "platform.probe:read"]);
+    await runtime.execute("insert into app_registry.routes (route_id,application_id,path,enabled,permission_code,deep_link_sources) values ($1,$2,'/platform/probe',true,$3,array['task']::text[])", [routeId, applicationId, "platform.probe.route:read"]);
+    await runtime.execute("alter table app_registry.applications add column capability_probe_extra text");
     const role = `registry_probe_${randomUUID().replaceAll("-", "")}`;
     await runtime.execute(`create role "${role}" nologin`);
     await runtime.execute(`grant usage on schema app_registry to "${role}"`);
-    await runtime.execute(`grant select on app_registry.applications, app_registry.routes, app_registry.navigation to "${role}"`);
+    await runtime.execute(`grant select (application_id,audience,enabled,permission_code) on app_registry.applications to "${role}"`);
+    await runtime.execute(`grant select (route_id,application_id,path,enabled,permission_code,deep_link_sources) on app_registry.routes to "${role}"`);
+    await runtime.execute(`grant select (navigation_id,application_id,route_id,parent_navigation_id,enabled,display_order) on app_registry.navigation to "${role}"`);
     const restricted = createDatabaseRuntime({ applicationName: "cmp_registry_probe_test", connectionString, connectionTimeoutMs: 5_000, idleTimeoutMs: 5_000, maxConnections: 1, statementTimeoutMs: 5_000 });
     try {
       await restricted.execute(`set role "${role}"`);
       const probe = createPostgresApplicationRegistryCapabilityProbe(restricted);
+      const query = createPostgresApplicationRegistryQueryService(restricted, {
+        authorize: () => Promise.resolve({ allowed: true, decisionId: randomUUID() }),
+      });
+      const workforcePersonId = randomUUID();
+      const selectedAssignmentId = randomUUID();
+      const context = {
+        actor: { actorId: "subject:synthetic", actorType: "authenticated_subject" as const, assignmentId: selectedAssignmentId, workforcePersonId },
+        subject: { activeAssignmentIds: [selectedAssignmentId], selectedAssignmentId, workforcePersonId },
+        traceId: "1234567890abcdef1234567890abcdef",
+      };
       await expect(probe.check()).resolves.toEqual({ status: "available" });
-      await runtime.execute(`revoke select on app_registry.routes from "${role}"`);
+      const snapshot = await query.loadRegistry({ audience: "internal", context });
+      expect(snapshot.applications.some((application) => application.applicationId === applicationId)).toBe(true);
+      await runtime.execute(`revoke select (path) on app_registry.routes from "${role}"`);
       await expect(probe.check()).resolves.toEqual({ status: "unavailable" });
+      await expect(query.loadRegistry({ audience: "internal", context })).rejects.toBeDefined();
     } finally {
       await restricted.close();
-      await runtime.execute(`revoke all privileges on app_registry.applications, app_registry.routes, app_registry.navigation from "${role}"`);
+      await runtime.execute(`revoke select (application_id,audience,enabled,permission_code) on app_registry.applications from "${role}"`);
+      await runtime.execute(`revoke select (route_id,application_id,path,enabled,permission_code,deep_link_sources) on app_registry.routes from "${role}"`);
+      await runtime.execute(`revoke select (navigation_id,application_id,route_id,parent_navigation_id,enabled,display_order) on app_registry.navigation from "${role}"`);
       await runtime.execute(`revoke usage on schema app_registry from "${role}"`);
       await runtime.execute(`drop role "${role}"`);
     }

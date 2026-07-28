@@ -40,7 +40,7 @@ export function createPostgresFormSchemaStore(runtime: FormPersistenceRuntime): 
       return result.rows[0] === undefined ? undefined : draft(result.rows[0]);
     },
     findRelease: async (definitionId, releaseVersion) => {
-      const result = await runtime.execute<ReleaseRow>("select r.*,s.active from form_schema.releases r join form_schema.release_status s using(definition_id,release_version) where r.definition_id=$1 and r.release_version=$2", [definitionId, releaseVersion]);
+      const result = await runtime.execute<ReleaseRow>("select r.definition_id,r.release_version,r.owner_module,r.content_digest,r.json_schema,r.ui_schema,r.published_at,s.active from form_schema.releases r join form_schema.release_status s using(definition_id,release_version) where r.definition_id=$1 and r.release_version=$2", [definitionId, releaseVersion]);
       return result.rows[0] === undefined ? undefined : release(result.rows[0]);
     },
     saveDraft: (input) => transaction(async () => {

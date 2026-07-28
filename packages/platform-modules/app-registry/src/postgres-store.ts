@@ -33,25 +33,25 @@ class PostgresApplicationRegistryStore implements ApplicationRegistryStore {
     });
   }
   async findApplication(id: string): Promise<RegisteredApplication | undefined> {
-    const result = await this.runtime.execute<ApplicationRow>("select * from app_registry.applications where application_id = $1", [id]);
+    const result = await this.runtime.execute<ApplicationRow>("select application_id,audience,enabled,permission_code from app_registry.applications where application_id = $1", [id]);
     return result.rows[0] === undefined ? undefined : application(result.rows[0]);
   }
   async findRoute(id: string): Promise<RegisteredRoute | undefined> {
-    const result = await this.runtime.execute<RouteRow>("select * from app_registry.routes where route_id = $1", [id]);
+    const result = await this.runtime.execute<RouteRow>("select route_id,application_id,path,enabled,permission_code,deep_link_sources from app_registry.routes where route_id = $1", [id]);
     return result.rows[0] === undefined ? undefined : route(result.rows[0]);
   }
   async listApplications(audience: RegistryAudience): Promise<readonly RegisteredApplication[]> {
-    const result = await this.runtime.execute<ApplicationRow>("select * from app_registry.applications where audience = $1 order by application_id", [audience]);
+    const result = await this.runtime.execute<ApplicationRow>("select application_id,audience,enabled,permission_code from app_registry.applications where audience = $1 order by application_id", [audience]);
     return result.rows.map(application);
   }
   async listNavigation(ids: readonly string[]): Promise<readonly RegisteredNavigation[]> {
     if (ids.length === 0) return [];
-    const result = await this.runtime.execute<NavigationRow>("select * from app_registry.navigation where application_id = any($1::text[]) order by display_order,navigation_id", [ids]);
+    const result = await this.runtime.execute<NavigationRow>("select navigation_id,application_id,route_id,parent_navigation_id,enabled,display_order from app_registry.navigation where application_id = any($1::text[]) order by display_order,navigation_id", [ids]);
     return result.rows.map(navigation);
   }
   async listRoutes(ids: readonly string[]): Promise<readonly RegisteredRoute[]> {
     if (ids.length === 0) return [];
-    const result = await this.runtime.execute<RouteRow>("select * from app_registry.routes where application_id = any($1::text[]) order by route_id", [ids]);
+    const result = await this.runtime.execute<RouteRow>("select route_id,application_id,path,enabled,permission_code,deep_link_sources from app_registry.routes where application_id = any($1::text[]) order by route_id", [ids]);
     return result.rows.map(route);
   }
 }
