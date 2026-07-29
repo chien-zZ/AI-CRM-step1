@@ -1,43 +1,54 @@
 import {
   checkMigrationCompatibility,
   createDatabaseRuntime,
+  createPostgresWorkerRuntimeRoleCapabilityProbe,
   type DatabaseConfig,
   type DatabaseRuntime,
   type MigrationPool,
 } from "@ai-crm/database";
 import {
+  createEventingCore,
+  createOutboxPublisher,
+  createPostgresEventingStore,
+  createRabbitConfirmTransport,
+} from "@ai-crm/platform-eventing-outbox";
+import { createPostgresTaskCenterStore } from "@ai-crm/platform-task-center";
+import {
   createAmqplibPublisherAdapter,
-  createAmqplibResourceRuntime,
+  createAmqplibConsumerAdapter,
+  type AbortableRabbitConsumerAdapter,
   type RabbitPublisherAdapter,
-  type RabbitResourceRuntime,
 } from "./rabbit-adapter.js";
+import { createTaskProjectionConsumerHandler } from "./task-projection-composition.js";
+import { taskProjectionRabbitTopology, taskProjectionRuntimePolicy } from "./task-projection-policy.js";
+import { createOutboxPublisherLoopHandler } from "./handlers.js";
 import { loadProductionWorkerConfiguration, type ProductionWorkerConfiguration } from "./production-config.js";
-import type { WorkerDependency } from "./index.js";
-
-export const taskProjectionConsumerPolicyUnavailable = "task_projection_consumer_policy_unavailable" as const;
+import type { WorkerDependency, WorkerHandler } from "./index.js";
 
 export interface ProductionWorkerResources {
   readonly assertDatabaseCompatible: (signal: AbortSignal) => Promise<void>;
-  readonly assertTaskProjectionConsumerPolicyAvailable: () => never;
   readonly close: () => Promise<void>;
+  readonly handlers: readonly WorkerHandler[];
   readonly readiness: () => readonly WorkerDependency[];
 }
 
 export interface ProductionWorkerResourceDependencies {
   readonly checkCompatibility: typeof checkMigrationCompatibility;
-  readonly createConsumerResource: (configuration: ProductionWorkerConfiguration["rabbit"]["consumer"], signal: AbortSignal) => Promise<RabbitResourceRuntime>;
+  readonly createConsumerResource: (configuration: ProductionWorkerConfiguration["rabbit"]["consumer"], signal: AbortSignal) => Promise<AbortableRabbitConsumerAdapter>;
   readonly createDatabase: (configuration: DatabaseConfig) => DatabaseRuntime;
   readonly createPublisherResource: (configuration: ProductionWorkerConfiguration["rabbit"]["publisher"], signal: AbortSignal) => Promise<RabbitPublisherAdapter>;
+  readonly createRuntimeRoleProbe: typeof createPostgresWorkerRuntimeRoleCapabilityProbe;
   readonly loadConfiguration: () => Promise<Readonly<ProductionWorkerConfiguration>>;
 }
 
 const productionDependencies: ProductionWorkerResourceDependencies = Object.freeze({
   checkCompatibility: checkMigrationCompatibility,
   createConsumerResource: (configuration: ProductionWorkerConfiguration["rabbit"]["consumer"], signal: AbortSignal) =>
-    createAmqplibResourceRuntime(configuration, undefined, signal),
+    createAmqplibConsumerAdapter(configuration, [taskProjectionRabbitTopology], taskProjectionRuntimePolicy, undefined, signal),
   createDatabase: createDatabaseRuntime,
   createPublisherResource: (configuration: ProductionWorkerConfiguration["rabbit"]["publisher"], signal: AbortSignal) =>
     createAmqplibPublisherAdapter(configuration, undefined, signal),
+  createRuntimeRoleProbe: createPostgresWorkerRuntimeRoleCapabilityProbe,
   loadConfiguration: loadProductionWorkerConfiguration,
 });
 
@@ -108,8 +119,9 @@ async function waitForCloseOperation(
   ]).finally(() => { if (timer !== undefined) clearTimeout(timer); });
 }
 
-async function acquireRabbit<T extends { readonly close: (signal?: AbortSignal) => Promise<void> }>(
+async function acquireRabbit<T>(
   acquireResource: (signal: AbortSignal) => Promise<T>,
+  closeResource: (resource: T, signal: AbortSignal) => Promise<void>,
   timeoutMs: number,
   signal: AbortSignal,
 ): Promise<T> {
@@ -128,7 +140,7 @@ async function acquireRabbit<T extends { readonly close: (signal?: AbortSignal) 
       const controller = new AbortController();
       const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
       timer.unref();
-      try { await resource.close(controller.signal); } catch { /* No owner remains to report telemetry safely. */ }
+      try { await closeResource(resource, controller.signal); } catch { /* No owner remains to report telemetry safely. */ }
       finally { clearTimeout(timer); }
     }, () => undefined);
     throw error;
@@ -166,24 +178,51 @@ export async function createProductionWorkerResources(
   if (startupAborted(signal)) throw new Error("worker_start_cancelled");
   const configuration = await dependencies.loadConfiguration();
   if (startupAborted(signal)) throw new Error("worker_start_cancelled");
+  if (!configuration.taskProjectionConsumerEnabled) throw new Error("worker_task_projection_activation_required");
   const database = dependencies.createDatabase(configuration.database);
+  const eventingStore = createPostgresEventingStore(database);
+  const eventing = createEventingCore(eventingStore);
+  const taskStore = createPostgresTaskCenterStore(database);
+  const runtimeRoleProbe = dependencies.createRuntimeRoleProbe(database);
   let publisher: RabbitPublisherAdapter | undefined;
-  let consumer: RabbitResourceRuntime | undefined;
+  let consumer: AbortableRabbitConsumerAdapter | undefined;
+  let handlers: readonly WorkerHandler[] | undefined;
   try {
     publisher = await acquireRabbit(
       (acquisitionSignal) => dependencies.createPublisherResource(configuration.rabbit.publisher, acquisitionSignal),
+      (resource, closeSignal) => resource.close(closeSignal),
       configuration.rabbit.acquisitionTimeoutMs,
       signal,
     );
     consumer = await acquireRabbit(
       (acquisitionSignal) => dependencies.createConsumerResource(configuration.rabbit.consumer, acquisitionSignal),
+      (resource, closeSignal) => resource.drain(closeSignal),
       configuration.rabbit.acquisitionTimeoutMs,
       signal,
     );
     if (startupAborted(signal)) throw new Error("worker_start_cancelled");
+    const transport = await createRabbitConfirmTransport(publisher.channel, Object.freeze({
+      exchange: taskProjectionRabbitTopology.exchange,
+      exchangeType: taskProjectionRabbitTopology.exchangeType,
+      routes: Object.freeze([Object.freeze({
+        messageKind: "event" as const,
+        messageType: "task-center.projection-lifecycle.v1",
+        messageVersion: 1,
+        routingKey: taskProjectionRabbitTopology.routingKey,
+      })]),
+    }));
+    const outboxPublisher = createOutboxPublisher(eventingStore, transport, configuration.outbox);
+    handlers = Object.freeze([
+      createOutboxPublisherLoopHandler(outboxPublisher, configuration.outbox.intervalMs),
+      createTaskProjectionConsumerHandler(eventing, consumer, {
+        apply: (event, activeSignal) => taskStore.apply(event, activeSignal),
+      }),
+    ]);
   } catch (error) {
     const acquiredPublisher = publisher;
+    const acquiredConsumer = consumer;
     const acquired = [
+      ...(acquiredConsumer === undefined ? [] : [{ close: () => acquiredConsumer.drain() }]),
       ...(acquiredPublisher === undefined ? [] : [{ close: () => acquiredPublisher.close() }]),
       { close: () => database.close() },
     ];
@@ -193,14 +232,14 @@ export async function createProductionWorkerResources(
   }
   const activePublisher = publisher;
   const activeConsumer = consumer;
-  const state = { closed: false, databaseCompatible: false, databaseHealthy: false };
+  const state = { closed: false, databaseCompatible: false, databaseHealthy: false, runtimeRoleReady: false };
   let probeController = new AbortController();
   let probeGeneration = 0;
   let probeTimer: NodeJS.Timeout | undefined;
   let closeConfirmed = false;
   let closeOperation: Promise<readonly PromiseSettledResult<void>[]> | undefined;
   let closeTargets: Array<() => Promise<void>> = [
-    () => activeConsumer.close(),
+    () => activeConsumer.drain(),
     () => activePublisher.close(),
     () => database.close(),
   ];
@@ -211,6 +250,7 @@ export async function createProductionWorkerResources(
     if (probeTimer !== undefined) clearTimeout(probeTimer);
     probeTimer = undefined;
     state.databaseHealthy = false;
+    state.runtimeRoleReady = false;
   };
   const obsolete = (controller: AbortController, generation: number): boolean =>
     state.closed || controller.signal.aborted || generation !== probeGeneration;
@@ -234,7 +274,12 @@ export async function createProductionWorkerResources(
     async assertDatabaseCompatible(activeSignal: AbortSignal) {
       assertActive(activeSignal);
       state.databaseCompatible = false;
+      state.runtimeRoleReady = false;
       const generation = ++probeGeneration;
+      const runtimeRole = await runtimeRoleProbe.check();
+      assertActive(activeSignal);
+      if (runtimeRole.status !== "available") throw new Error("worker_database_runtime_role_unavailable");
+      state.runtimeRoleReady = true;
       const compatibility = dependencies.checkCompatibility(
         migrationPool(database),
         configuration.migrations,
@@ -260,9 +305,7 @@ export async function createProductionWorkerResources(
       void probe.completion.then(() => { scheduleProbe(controller, generation); });
       if (!probe.healthy) throw new Error("worker_database_unavailable");
     },
-    assertTaskProjectionConsumerPolicyAvailable() {
-      throw new Error(taskProjectionConsumerPolicyUnavailable);
-    },
+    handlers,
     async close() {
       if (closeConfirmed) return;
       if (!state.closed) {
@@ -287,9 +330,9 @@ export async function createProductionWorkerResources(
     },
     readiness: () => Object.freeze([
       { healthy: !state.closed && state.databaseCompatible && state.databaseHealthy, name: "application-database", required: true },
+      { healthy: !state.closed && state.runtimeRoleReady, name: "database-runtime-role", required: true },
       { healthy: !state.closed && activePublisher.healthy(), name: "rabbitmq-publisher", required: true },
-      { healthy: !state.closed && activeConsumer.healthy(), name: "rabbitmq-consumer-control", required: true },
-      { healthy: false, name: taskProjectionConsumerPolicyUnavailable, required: true },
+      { healthy: !state.closed && activeConsumer.healthy(), name: "task-projection-consumer", required: true },
     ]),
   });
 }

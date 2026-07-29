@@ -6,6 +6,7 @@ import { runMigrations } from "./migrations.js";
 
 const migrationUrlFile = process.env.TEST_DATABASE_MIGRATION_URL_FILE;
 const runtimePasswordFile = process.env.TEST_DATABASE_RUNTIME_PASSWORD_FILE;
+const workerRuntimePasswordFile = process.env.TEST_DATABASE_WORKER_RUNTIME_PASSWORD_FILE;
 
 const moduleNames = [
   "organization",
@@ -29,22 +30,23 @@ function expectDatabaseDenial(error: unknown): void {
   expect(error).toMatchObject({ code: "42501" });
 }
 
-async function assertRuntimeRoleExists(connectionString: string): Promise<void> {
+async function assertRuntimeRolesExist(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString, max: 1 });
   try {
-    await expect(pool.query("select rolname from pg_catalog.pg_roles where rolname='ai_crm_runtime'"))
-      .resolves.toMatchObject({ rows: [{ rolname: "ai_crm_runtime" }] });
+    await expect(pool.query("select rolname from pg_catalog.pg_roles where rolname in ('ai_crm_runtime','ai_crm_worker_runtime') order by rolname"))
+      .resolves.toMatchObject({ rows: [{ rolname: "ai_crm_runtime" }, { rolname: "ai_crm_worker_runtime" }] });
   } finally {
     await pool.end();
   }
 }
 
-describe.skipIf(!migrationUrlFile || !runtimePasswordFile)("PostgreSQL runtime grants", () => {
-  it("allows only the SQL paths composed into the production API", async () => {
-    if (!migrationUrlFile || !runtimePasswordFile) throw new Error("Runtime grant integration inputs are required.");
+describe.skipIf(!migrationUrlFile || !runtimePasswordFile || !workerRuntimePasswordFile)("PostgreSQL runtime grants", () => {
+  it("allows only the SQL paths composed into the production API and Task projection Worker", async () => {
+    if (!migrationUrlFile || !runtimePasswordFile || !workerRuntimePasswordFile) throw new Error("Runtime grant integration inputs are required.");
     const migrationConnectionString = (await readFile(resolve(migrationUrlFile), "utf8")).trim();
     const runtimePassword = (await readFile(resolve(runtimePasswordFile), "utf8")).trim();
-    await assertRuntimeRoleExists(migrationConnectionString);
+    const workerRuntimePassword = (await readFile(resolve(workerRuntimePasswordFile), "utf8")).trim();
+    await assertRuntimeRolesExist(migrationConnectionString);
     await runMigrations(migrationConnectionString, directories);
 
     const runtimeUrl = new URL(migrationConnectionString);
@@ -52,6 +54,10 @@ describe.skipIf(!migrationUrlFile || !runtimePasswordFile)("PostgreSQL runtime g
     runtimeUrl.password = runtimePassword;
     const migration = new Pool({ connectionString: migrationConnectionString, max: 1 });
     const runtime = new Pool({ connectionString: runtimeUrl.href, max: 1 });
+    const workerUrl = new URL(migrationConnectionString);
+    workerUrl.username = "ai_crm_worker_runtime";
+    workerUrl.password = workerRuntimePassword;
+    const worker = new Pool({ connectionString: workerUrl.href, max: 1 });
     try {
       const policyVersion = "runtime-grants-policy-v1";
       const digest = "a".repeat(64);
@@ -70,7 +76,7 @@ describe.skipIf(!migrationUrlFile || !runtimePasswordFile)("PostgreSQL runtime g
       );
 
       await expect(runtime.query("select version from ai_crm_migrations.applied_migrations order by version desc limit 1"))
-        .resolves.toMatchObject({ rows: [{ version: "0000000013" }] });
+        .resolves.toMatchObject({ rows: [{ version: "0000000014" }] });
       await expect(runtime.query(
         "select has_database_privilege(current_user,current_database(),'CONNECT') as connect,has_database_privilege(current_user,current_database(),'TEMP') as temporary,has_schema_privilege(current_user,'public','USAGE') as public_usage,has_function_privilege(current_user,'pg_catalog.hashtextextended(text,bigint)','EXECUTE') as hash_execute,has_function_privilege(current_user,'pg_catalog.pg_advisory_xact_lock(bigint)','EXECUTE') as lock_execute",
       )).resolves.toMatchObject({
@@ -88,12 +94,86 @@ describe.skipIf(!migrationUrlFile || !runtimePasswordFile)("PostgreSQL runtime g
         "app_registry.routes",
         "form_schema.releases",
         "form_schema.release_status",
+        "file_center.files",
+        "file_center.content_versions",
+        "platform_notifications.in_app_notifications",
+        "platform_task_center.task_projections",
       ]) {
         await expect(runtime.query(`select * from ${relation} limit 0`)).resolves.toMatchObject({ rowCount: 0 });
       }
       await expect(runtime.query(
         "select c.version from authorization_core.current_policy c join authorization_core.policy_versions v on v.version=c.version join authorization_core.policy_publications p on p.publication_id=c.publication_id where c.singleton=true",
       )).resolves.toMatchObject({ rows: [{ version: policyVersion }] });
+
+      for (const [relation, privileges] of [
+        ["file_center.files", ["SELECT", "INSERT"]],
+        ["file_center.content_versions", ["SELECT", "INSERT", "UPDATE"]],
+        ["file_center.upload_sessions", ["SELECT", "INSERT", "UPDATE"]],
+        ["file_center.operation_receipts", ["SELECT", "INSERT", "UPDATE"]],
+        ["file_center.resource_links", ["SELECT"]],
+        ["file_center.outbox_events", ["INSERT"]],
+        ["platform_notifications.in_app_notifications", ["SELECT"]],
+        ["platform_task_center.task_projections", ["SELECT"]],
+      ] as const) {
+        for (const privilege of privileges) {
+          await expect(runtime.query("select has_table_privilege(current_user,$1,$2) as allowed", [relation, privilege]))
+            .resolves.toMatchObject({ rows: [{ allowed: true }] });
+        }
+      }
+      for (const [relation, privilege] of [
+        ["file_center.files", "UPDATE"],
+        ["file_center.resource_links", "INSERT"],
+        ["file_center.outbox_events", "SELECT"],
+        ["platform_notifications.in_app_notifications", "INSERT"],
+        ["platform_task_center.task_projections", "UPDATE"],
+      ] as const) {
+        await expect(runtime.query("select has_table_privilege(current_user,$1,$2) as allowed", [relation, privilege]))
+          .resolves.toMatchObject({ rows: [{ allowed: false }] });
+      }
+
+      for (const relation of [
+        "ai_crm_migrations.applied_migrations",
+        "platform_eventing.inbox_receipts",
+        "platform_eventing.outbox_messages",
+        "platform_task_center.task_projections",
+        "platform_task_center.projection_events",
+      ]) {
+        await expect(worker.query(`select * from ${relation} limit 0`)).resolves.toMatchObject({ rowCount: 0 });
+      }
+      await expect(worker.query(
+        "select has_database_privilege(current_user,current_database(),'CONNECT') as connect,has_database_privilege(current_user,current_database(),'TEMP') as temporary,has_schema_privilege(current_user,'public','USAGE') as public_usage",
+      )).resolves.toMatchObject({ rows: [{ connect: true, public_usage: false, temporary: false }] });
+      for (const [relation, privileges] of [
+        ["ai_crm_migrations.applied_migrations", ["SELECT"]],
+        ["platform_eventing.inbox_receipts", ["SELECT", "INSERT"]],
+        ["platform_eventing.isolations", ["INSERT"]],
+        ["platform_eventing.outbox_messages", ["SELECT", "UPDATE"]],
+        ["platform_task_center.task_projections", ["SELECT", "INSERT", "UPDATE"]],
+        ["platform_task_center.projection_events", ["SELECT", "INSERT"]],
+      ] as const) {
+        for (const privilege of privileges) {
+          await expect(worker.query(
+            "select has_table_privilege(current_user,$1,$2) as allowed",
+            [relation, privilege],
+          )).resolves.toMatchObject({ rows: [{ allowed: true }] });
+        }
+      }
+      for (const [relation, privilege] of [
+        ["platform_eventing.inbox_receipts", "UPDATE"],
+        ["platform_eventing.isolations", "SELECT"],
+        ["platform_eventing.outbox_messages", "INSERT"],
+        ["platform_task_center.projection_events", "UPDATE"],
+      ] as const) {
+        await expect(worker.query(
+          "select has_table_privilege(current_user,$1,$2) as allowed",
+          [relation, privilege],
+        )).resolves.toMatchObject({ rows: [{ allowed: false }] });
+      }
+      await expect(worker.query("select * from organization.workforce_people limit 0"))
+        .rejects.toMatchObject({ code: "42501" });
+      await worker.query("insert into platform_eventing.isolations(isolation_id,message_id,consumer,payload_sha256,reason_code,attempt_count,isolated_at) values($1,$2,'platform.task-center.projection.v1',$3,'terminal',1,now())", [
+        "81000000-0000-4000-8000-000000000014", "82000000-0000-4000-8000-000000000014", "d".repeat(64),
+      ]);
 
       const decisionId = "20000000-0000-4000-8000-000000000013";
       await expect(runtime.query(
@@ -127,15 +207,15 @@ describe.skipIf(!migrationUrlFile || !runtimePasswordFile)("PostgreSQL runtime g
         auditClient.release();
       }
     } finally {
-      await Promise.all([runtime.end(), migration.end()]);
+      await Promise.all([runtime.end(), worker.end(), migration.end()]);
     }
   });
 
   it("denies cross-schema access, runtime DDL, and unauthorized writes", async () => {
-    if (!migrationUrlFile || !runtimePasswordFile) throw new Error("Runtime grant integration inputs are required.");
+    if (!migrationUrlFile || !runtimePasswordFile || !workerRuntimePasswordFile) throw new Error("Runtime grant integration inputs are required.");
     const migrationConnectionString = (await readFile(resolve(migrationUrlFile), "utf8")).trim();
     const runtimePassword = (await readFile(resolve(runtimePasswordFile), "utf8")).trim();
-    await assertRuntimeRoleExists(migrationConnectionString);
+    await assertRuntimeRolesExist(migrationConnectionString);
     await runMigrations(migrationConnectionString, directories);
     const runtimeUrl = new URL(migrationConnectionString);
     runtimeUrl.username = "ai_crm_runtime";
@@ -153,10 +233,11 @@ describe.skipIf(!migrationUrlFile || !runtimePasswordFile)("PostgreSQL runtime g
       );
       for (const sql of [
         "select * from business_configuration.dictionary_releases limit 0",
-        "select * from file_center.files limit 0",
-        "select * from platform_eventing.outbox_messages limit 0",
+        "select * from platform_eventing.inbox_receipts limit 0",
+        "select * from platform_eventing.job_requests limit 0",
         "select * from platform_notifications.notification_intents limit 0",
-        "select * from platform_task_center.task_projections limit 0",
+        "select * from platform_task_center.projection_events limit 0",
+        "select * from platform_task_center.task_commands limit 0",
         "select * from organization.workforce_people limit 0",
         "insert into organization.workforce_people(workforce_person_id,recorded_at) values('50000000-0000-4000-8000-000000000013',now())",
         "update app_registry.applications set enabled=false",

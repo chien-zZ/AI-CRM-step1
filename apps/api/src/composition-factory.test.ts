@@ -20,6 +20,13 @@ const configuration: ProductionApiConfiguration = {
     statementTimeoutMs: 15_000,
   },
   databaseHealthProbe: { intervalMs: 1_000, timeoutMs: 100 },
+  fileCenter: {
+    cos: { bucket: "synthetic-test-1250000000", region: "ap-test", secretId: "synthetic-id", secretKey: "synthetic-key", timeoutMs: 1_000 },
+    downloadGrantTtlMs: 60_000,
+    maximumScanBytes: 1_024,
+    maximumUploadBytes: 1_024,
+    uploadSessionTtlMs: 300_000,
+  },
   migrations: ["/app/packages/database/migrations"],
   oidcVerifier: {
     audience: "ai-crm-api",
@@ -84,6 +91,7 @@ function dependencies(compatible = true): {
         isReady: () => true,
       })),
       createDatabase: vi.fn(() => ({
+        abortSignalSupport: true as const,
         close: closeDatabase,
         execute,
         healthCheck,
@@ -164,6 +172,8 @@ describe("production API platform binding factory", () => {
       { healthy: false, name: "authentication-audit", required: true },
       { healthy: false, name: "application-registry-query", required: true },
       { healthy: false, name: "form-schema-query", required: true },
+      { healthy: false, name: "task-query", required: true },
+      { healthy: false, name: "notification-query", required: true },
       { healthy: false, name: "file-center-provider", required: true },
     ]);
     await bindings.databaseCompatibility.assertCompatible(signal);
@@ -195,8 +205,16 @@ describe("production API platform binding factory", () => {
         subject: { kind: "workforce_person" as const, workforcePersonId: "44444444-4444-4444-8444-444444444444" },
         validFrom: "2026-01-01T00:00:00.000Z",
       }],
-      permissions: [{ action: "read", code: "synthetic.record:read", resource: "synthetic.record", scopeDimensions: [] }],
-      roles: [{ permissions: [{ permissionCode: "synthetic.record:read", scope: { terms: [{ kind: "all" as const }], version: 1 as const } }], roleId: "55555555-5555-4555-8555-555555555555" }],
+      permissions: [
+        { action: "list", code: "platform.notifications.in-app-notification:list", resource: "platform.notifications.in-app-notification", scopeDimensions: [] },
+        { action: "list", code: "platform.task-center.task-projection:list", resource: "platform.task-center.task-projection", scopeDimensions: [] },
+        { action: "read", code: "synthetic.record:read", resource: "synthetic.record", scopeDimensions: [] },
+      ],
+      roles: [{ permissions: [
+        { permissionCode: "platform.notifications.in-app-notification:list", scope: { terms: [{ kind: "all" as const }], version: 1 as const } },
+        { permissionCode: "platform.task-center.task-projection:list", scope: { terms: [{ kind: "all" as const }], version: 1 as const } },
+        { permissionCode: "synthetic.record:read", scope: { terms: [{ kind: "all" as const }], version: 1 as const } },
+      ], roleId: "55555555-5555-4555-8555-555555555555" }],
       version: "baseline-v1",
     };
     const canonical = (value: unknown): string => {
@@ -234,8 +252,8 @@ describe("production API platform binding factory", () => {
     });
     const bindings = await createProductionApiPlatformBindings(fixture.value);
     await bindings.databaseCompatibility.assertCompatible(new AbortController().signal);
-    expect(bindings.readiness().slice(0, 7).every(({ healthy }) => healthy)).toBe(true);
-    expect(bindings.readiness().slice(7).every(({ healthy }) => !healthy)).toBe(true);
+    expect(bindings.readiness().slice(0, 9).every(({ healthy }) => healthy)).toBe(true);
+    expect(bindings.readiness().slice(9).every(({ healthy }) => !healthy)).toBe(true);
     const traceId = "abcdefabcdefabcdefabcdefabcdefab";
     await expect(bindings.authorizationTrace.run(traceId, () => bindings.authorization.check({
       activeAssignmentIds: [],
@@ -246,6 +264,28 @@ describe("production API platform binding factory", () => {
     expect(fixture.execute.mock.calls.some(([sql, values]) =>
       typeof sql === "string" && sql.startsWith("insert into authorization_core.decision_records") &&
       Array.isArray(values) && values.includes(traceId))).toBe(true);
+    const actor = { principalId: "44444444-4444-4444-8444-444444444444" };
+    await expect(bindings.queries.tasks.list({ actor, limit: 1 })).resolves.toEqual({ items: [] });
+    await expect(bindings.queries.notifications.list({ actor, limit: 1 })).resolves.toEqual({ items: [] });
+    await expect(bindings.queries.tasks.get(actor, { sourceTaskId: "task.synthetic", sourceType: "workflow" }))
+      .rejects.toMatchObject({ code: "TASK_AUTHORIZATION_FAILED" });
+    expect(fixture.execute.mock.calls.some(([sql]) => typeof sql === "string" && sql.includes("platform_task_center.task_projections"))).toBe(true);
+    expect(fixture.execute.mock.calls.some(([sql]) => typeof sql === "string" && sql.includes("platform_notifications.in_app_notifications"))).toBe(true);
+    expect(fixture.execute.mock.calls.some(([sql, values]) => typeof sql === "string" && sql.startsWith("insert into audit.records") &&
+      Array.isArray(values) && values.includes("task.task_list"))).toBe(true);
+    expect(fixture.execute.mock.calls.some(([sql, values]) => typeof sql === "string" && sql.startsWith("insert into audit.records") &&
+      Array.isArray(values) && values.includes("notification.notification_list"))).toBe(true);
+    const recordedSqlCalls = fixture.execute.mock.calls as unknown as ReadonlyArray<readonly [string, readonly unknown[] | undefined]>;
+    const queryAuditCalls = recordedSqlCalls.filter(([sql, values]) =>
+      sql.startsWith("insert into audit.records") && Array.isArray(values) &&
+      (values.includes("task.task_list") || values.includes("notification.notification_list")));
+    for (const [, auditValues] of queryAuditCalls) {
+      if (!Array.isArray(auditValues)) throw new Error("query audit values missing");
+      const decisionCall = recordedSqlCalls.find(([sql, decisionValues]) =>
+        sql.startsWith("insert into authorization_core.decision_records") && Array.isArray(decisionValues) &&
+        decisionValues[0] === auditValues[13]);
+      expect(decisionCall?.[1]?.[12]).toBe(auditValues[12]);
+    }
     await bindings.close?.();
   });
 

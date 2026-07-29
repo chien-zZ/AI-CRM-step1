@@ -104,6 +104,12 @@ export interface AuthorizationPersistenceRuntime {
 
 export interface PublishAuthorizationPolicyCommand {
   readonly contractVersion: string;
+  /**
+   * Optimistic publication precondition. `null` means that no policy may already
+   * be current; a version requires that exact current version. Omitting the
+   * field preserves the legacy unconditional publication behavior.
+   */
+  readonly expectedPreviousVersion?: string | null;
   readonly publicationId: string;
   readonly publishedAt: string;
   readonly snapshot: AuthorizationPolicySnapshot;

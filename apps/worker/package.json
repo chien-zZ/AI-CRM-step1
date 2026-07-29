@@ -26,6 +26,7 @@
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
     "amqplib": "2.0.1",
+    "cos-nodejs-sdk-v5": "2.15.4",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   }

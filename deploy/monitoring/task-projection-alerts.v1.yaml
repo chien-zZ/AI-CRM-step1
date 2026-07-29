@@ -1,0 +1,30 @@
+apiVersion: ai-crm.platform/v1
+kind: WorkerAlertPolicy
+metadata:
+  name: task-projection-consumer-v1
+  owner: platform.task-center
+spec:
+  dimensions:
+    service: ai-crm.worker
+    consumer: platform.task-center.projection.v1
+  rules:
+    - id: task-projection-dlq-new-message
+      signal: rabbitmq_dead_letter_messages_added
+      threshold: 1
+      windowSeconds: 0
+      severity: critical
+    - id: task-projection-not-ready
+      signal: worker_required_responsibility_ready
+      comparison: equals
+      threshold: 0
+      windowSeconds: 120
+      severity: critical
+    - id: task-projection-oldest-message
+      signal: rabbitmq_oldest_ready_message_seconds
+      comparison: greater_than
+      threshold: 300
+      windowSeconds: 300
+      severity: warning
+  runbook: docs/04-工程手册/Task投影消费者生产运行手册.md
+  payloadInspection: forbidden
+  automaticDlqReplay: forbidden

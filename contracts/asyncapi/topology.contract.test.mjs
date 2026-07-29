@@ -24,7 +24,7 @@ test("resolves document-relative Event and Job schemas from the AsyncAPI source 
   assert.equal(references.every((reference) => !reference.startsWith("contracts/")), true);
 });
 
-test("contracts the reviewed Task projection policy while blocking activation without environment evidence", () => {
+test("contracts the reviewed Task projection policy while blocking release activation without trusted evidence", () => {
   assert.deepEqual(Object.keys(topology.operations).sort(), [
     "consumeTaskProjectionLifecycle",
     "publishTaskProjectionLifecycle",
@@ -54,10 +54,10 @@ test("contracts the reviewed Task projection policy while blocking activation wi
     {
       enabled: false,
       blockedBy: [
-        "real-rabbitmq-tls-integration-matrix",
-        "least-privilege-vhost-and-secret-evidence",
-        "inbox-retry-dlq-recovery-evidence",
-        "alert-owner-and-runbook-evidence",
+        "trusted-production-rabbitmq-tls-and-image-evidence",
+        "least-privilege-vhost-secret-rotation-evidence",
+        "inbox-retry-dlq-recovery-and-drain-evidence",
+        "deployed-alert-owner-and-runbook-evidence",
       ],
     },
   );

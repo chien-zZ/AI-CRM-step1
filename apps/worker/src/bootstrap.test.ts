@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { bootstrapWorker } from "./bootstrap.js";
 import { defaultWorkerHealthFile, type WorkerRuntimeConfiguration } from "./runtime-config.js";
-import { taskProjectionConsumerPolicyUnavailable, type ProductionWorkerResources } from "./production-composition.js";
+import type { ProductionWorkerResources } from "./production-composition.js";
 
 const productionConfiguration: Readonly<WorkerRuntimeConfiguration> = Object.freeze({
   drainTimeoutMs: 100,
@@ -16,15 +16,14 @@ const productionConfiguration: Readonly<WorkerRuntimeConfiguration> = Object.fre
 });
 
 describe("production Worker bootstrap gate", () => {
-  it("validates generic resources, then exits non-zero and closes them for the unavailable Task policy", async () => {
+  it("validates resources, registers the production handler, and fails closed when it terminates", async () => {
     const close = vi.fn(() => Promise.resolve());
     const assertDatabaseCompatible = vi.fn(() => Promise.resolve());
-    const assertTaskProjectionConsumerPolicyAvailable = vi.fn(() => { throw new Error(taskProjectionConsumerPolicyUnavailable); });
     const resources: ProductionWorkerResources = {
       assertDatabaseCompatible,
-      assertTaskProjectionConsumerPolicyAvailable,
       close,
-      readiness: () => [{ healthy: false, name: taskProjectionConsumerPolicyUnavailable, required: true }],
+      handlers: [{ name: "eventing.rabbit-inbox", ready: () => undefined, run: () => Promise.reject(new Error("synthetic consumer failure")) }],
+      readiness: () => [{ healthy: true, name: "task-projection-consumer", required: true }],
     };
     const productionResourceFactory = vi.fn(() => Promise.resolve(resources));
     await expect(bootstrapWorker({
@@ -34,16 +33,17 @@ describe("production Worker bootstrap gate", () => {
     })).resolves.toBe(1);
     expect(productionResourceFactory).toHaveBeenCalledOnce();
     expect(assertDatabaseCompatible).toHaveBeenCalledOnce();
-    expect(assertTaskProjectionConsumerPolicyAvailable).toHaveBeenCalledOnce();
-    expect(close).toHaveBeenCalledOnce();
+    // Application shutdown owns the first close; the outer bootstrap catch
+    // retries the idempotent production close boundary before returning 1.
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the non-zero outcome when failure cleanup itself cannot be proven", async () => {
     const log = vi.fn();
     const resources: ProductionWorkerResources = {
       assertDatabaseCompatible: () => Promise.resolve(),
-      assertTaskProjectionConsumerPolicyAvailable: () => { throw new Error(taskProjectionConsumerPolicyUnavailable); },
       close: () => Promise.reject(new Error("synthetic close failure")),
+      handlers: [{ name: "eventing.rabbit-inbox", ready: () => undefined, run: () => Promise.reject(new Error("synthetic consumer failure")) }],
       readiness: () => [],
     };
     await expect(bootstrapWorker({

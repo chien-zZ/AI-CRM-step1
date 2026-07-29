@@ -37,6 +37,7 @@ const environment = {
   TEST_DATABASE_MIGRATION_URL_FILE: resolve(secretDirectory, "migration_url"),
   TEST_DATABASE_MISSING_ROLE_URL_FILE: resolve(secretDirectory, "missing_role_url"),
   TEST_DATABASE_RUNTIME_PASSWORD_FILE: resolve(secretDirectory, "postgres_app_password"),
+  TEST_DATABASE_WORKER_RUNTIME_PASSWORD_FILE: resolve(secretDirectory, "postgres_worker_password"),
 };
 
 function run(command, args) {

@@ -173,7 +173,13 @@ for (const [host, definition] of [["host-a", productionA], ["host-b", production
   }
   const api = definition.services?.api;
   if (!api?.secrets?.includes("api_postgres_url") ||
+    !api.secrets.includes("api_cos_secret_id") ||
+    !api.secrets.includes("api_cos_secret_key") ||
     api.environment?.AI_CRM_POSTGRES_URL_FILE !== "/run/secrets/api_postgres_url" ||
+    api.environment?.AI_CRM_COS_SECRET_ID_FILE !== "/run/secrets/api_cos_secret_id" ||
+    api.environment?.AI_CRM_COS_SECRET_KEY_FILE !== "/run/secrets/api_cos_secret_key" ||
+    typeof api.environment?.AI_CRM_COS_BUCKET !== "string" ||
+    typeof api.environment?.AI_CRM_COS_REGION !== "string" ||
     api.environment?.AI_CRM_MIGRATIONS_ROOT !== "/app" ||
     typeof api.environment?.AI_CRM_API_SCHEMA_VERSION !== "string" ||
     typeof api.environment?.AI_CRM_KEYCLOAK_JWKS_URI !== "string" ||
@@ -196,14 +202,31 @@ if (worker?.environment?.AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS !== "${AI_CRM_WORKE
   worker?.stop_grace_period !== "${AI_CRM_WORKER_STOP_GRACE_PERIOD:?required}") {
   errors.push("host-b/worker must require explicit drain seconds and stop grace duration for rendered numeric verification.");
 }
+for (const name of ["worker_postgres_url", "rabbitmq_ca_certificate", "rabbitmq_publisher_username", "rabbitmq_publisher_password", "rabbitmq_consumer_username", "rabbitmq_consumer_password"]) {
+  if (!worker?.secrets?.includes(name)) errors.push(`host-b/worker must mount ${name} as an individual Secret.`);
+}
+for (const name of ["AI_CRM_WORKER_OUTBOX_BATCH_SIZE", "AI_CRM_WORKER_OUTBOX_CLAIM_LEASE_SECONDS", "AI_CRM_WORKER_OUTBOX_MAX_ATTEMPTS", "AI_CRM_WORKER_OUTBOX_BACKOFF_SECONDS", "AI_CRM_WORKER_OUTBOX_INTERVAL_MS"]) {
+  if (typeof worker?.environment?.[name] !== "string" || !worker.environment[name].startsWith(`\${${name}:?`)) {
+    errors.push(`host-b/worker must require reviewed release input ${name}.`);
+  }
+}
+if (worker?.environment?.AI_CRM_WORKER_TASK_PROJECTION_CONSUMER_ENABLED !== "${AI_CRM_WORKER_TASK_PROJECTION_CONSUMER_ENABLED:?explicit reviewed activation is required}" ||
+  worker?.environment?.AI_CRM_RABBIT_TLS !== "true" ||
+  worker?.environment?.AI_CRM_RABBIT_PORT !== "5671") {
+  errors.push("host-b/worker must require explicit reviewed Task projection activation and use AMQPS.");
+}
 if (!productionNginx.includes("access_log /dev/stdout safe_technical") ||
   /log_format[^;]*\$(?:request(?:\s|['"])|request_uri|args|remote_addr)/u.test(productionNginx)) {
   errors.push("Production Nginx access logs must exclude URL/query/IP content and use bounded technical fields.");
 }
-for (const [name, entrypoint] of [["Redis", productionRedisEntrypoint], ["RabbitMQ", productionRabbitEntrypoint]]) {
-  if (!entrypoint.includes('${#password}') || !entrypoint.includes("*[!A-Za-z0-9_-]*") || entrypoint.includes("console.log")) {
-    errors.push(`${name} production entrypoint must validate its Secret without emitting it.`);
-  }
+if (!productionRedisEntrypoint.includes('${#password}') || !productionRedisEntrypoint.includes("*[!A-Za-z0-9_-]*") || productionRedisEntrypoint.includes("console.log")) {
+  errors.push("Redis production entrypoint must validate its Secret without emitting it.");
+}
+for (const requiredText of ["listeners.tcp = none", "listeners.ssl.default = 5671", "ssl_options.verify = verify_peer", "rabbitmq_publisher_username", "rabbitmq_consumer_username", '"configure":"^ai-crm\\\\.platform']) {
+  if (!productionRabbitEntrypoint.includes(requiredText)) errors.push(`RabbitMQ production entrypoint is missing the reviewed TLS/least-privilege boundary: ${requiredText}`);
+}
+if (!productionRabbitEntrypoint.includes('"read":"^ai-crm\\\\.platform\\\\.task-center\\\\.projection\\\\.v1$"')) {
+  errors.push("RabbitMQ production consumer may read only the reviewed main Task projection queue, never retry or DLQ queues.");
 }
 if (productionKeycloakEntrypoint.includes("start-dev") || productionKeycloakEntrypoint.includes("realm-dev") ||
   !productionKeycloakEntrypoint.includes("/run/secrets/postgres_keycloak_password")) {

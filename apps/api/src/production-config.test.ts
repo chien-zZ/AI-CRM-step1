@@ -6,6 +6,8 @@ import { loadProductionApiConfiguration } from "./production-config.js";
 
 const secrets: Readonly<Record<string, string>> = {
   "/run/secrets/client": "c".repeat(43),
+  "/run/secrets/cos-id": "synthetic-cos-id",
+  "/run/secrets/cos-key": "synthetic-cos-key",
   "/run/secrets/database": "postgresql://api:secret@database:5432/ai_crm",
   "/run/secrets/encryption": Buffer.alloc(32, 7).toString("base64url"),
   "/run/secrets/index": Buffer.alloc(32, 9).toString("base64url"),
@@ -24,6 +26,15 @@ const secretFilePolicy = {
 } as const;
 const env: NodeJS.ProcessEnv = {
   AI_CRM_API_SCHEMA_VERSION: "0.0.0",
+  AI_CRM_COS_BUCKET: "synthetic-test-1250000000",
+  AI_CRM_COS_REGION: "ap-test",
+  AI_CRM_COS_SECRET_ID_FILE: "/run/secrets/cos-id",
+  AI_CRM_COS_SECRET_KEY_FILE: "/run/secrets/cos-key",
+  AI_CRM_COS_TIMEOUT_MS: "10000",
+  AI_CRM_FILE_DOWNLOAD_GRANT_TTL_MS: "60000",
+  AI_CRM_FILE_MAXIMUM_SCAN_BYTES: "1048576",
+  AI_CRM_FILE_MAXIMUM_UPLOAD_BYTES: "1048576",
+  AI_CRM_FILE_UPLOAD_SESSION_TTL_MS: "300000",
   AI_CRM_KEYCLOAK_ISSUER: "http://127.0.0.1:8080/realms/ai-crm-dev",
   AI_CRM_KEYCLOAK_JWKS_URI: "http://127.0.0.1:8080/realms/ai-crm-dev/protocol/openid-connect/certs",
   AI_CRM_MIGRATIONS_ROOT: "C:\\app",
@@ -53,6 +64,7 @@ describe("production API configuration", () => {
     expect(result.database).toMatchObject({ applicationName: "ai_crm_api", maxConnections: 10 });
     expect(result.databaseHealthProbe).toEqual({ intervalMs: 10_000, timeoutMs: 2_000 });
     expect(result.database.connectionString).toBe(secrets["/run/secrets/database"]);
+    expect(result.fileCenter).toMatchObject({ maximumUploadBytes: 1_048_576, cos: { bucket: "synthetic-test-1250000000", secretId: "synthetic-cos-id" } });
     expect(result.migrations).toHaveLength(11);
     expect(result.migrations.some((path) => path.replaceAll("\\", "/")
       .endsWith("packages/platform-modules/authorization/migrations")))

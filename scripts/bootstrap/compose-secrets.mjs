@@ -18,6 +18,7 @@ const names = [
   "postgres_admin_password",
   "postgres_migration_password",
   "postgres_app_password",
+  "postgres_worker_password",
   "postgres_keycloak_password",
   "postgres_flowable_password",
   "keycloak_bootstrap_password",

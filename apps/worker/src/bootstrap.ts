@@ -38,10 +38,6 @@ export async function bootstrapWorker(options: WorkerBootstrapOptions = {}): Pro
           config.drainTimeoutMs,
         );
         await productionResources.assertDatabaseCompatible(controller.signal);
-        // ADR-0026 does not yet contain the exact Task projection runtime
-        // policy. Keep the production process unavailable and never register
-        // or activate a consumer merely because connectivity succeeded.
-        productionResources.assertTaskProjectionConsumerPolicyAvailable();
       } finally {
         process.off("SIGTERM", abort);
         process.off("SIGINT", abort);
@@ -49,11 +45,17 @@ export async function bootstrapWorker(options: WorkerBootstrapOptions = {}): Pro
     }
     app = createWorkerApplication({
       ...composition,
+      ...(productionResources === undefined ? {} : {
+        dependencies: productionResources.readiness,
+        handlers: productionResources.handlers,
+        onStop: productionResources.close,
+        requireHandlers: true,
+      }),
       drainTimeoutMs: config.drainTimeoutMs,
       healthRefreshIntervalMs: config.healthRefreshMs,
       healthReporter,
       logger,
-      requireHandlers: false,
+      requireHandlers: productionResources !== undefined,
       startupTimeoutMs: config.startupTimeoutMs,
     });
     await app.start();

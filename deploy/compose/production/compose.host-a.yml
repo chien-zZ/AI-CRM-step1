@@ -19,7 +19,7 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_USER: ai_crm_admin
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
-    secrets: [postgres_admin_password, postgres_app_password, postgres_migration_password, postgres_keycloak_password, postgres_flowable_password]
+    secrets: [postgres_admin_password, postgres_app_password, postgres_worker_password, postgres_migration_password, postgres_keycloak_password, postgres_flowable_password]
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ../init/postgres/010-create-databases.sh:/docker-entrypoint-initdb.d/010-create-databases.sh:ro
@@ -62,11 +62,14 @@ services:
     user: rabbitmq
     group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     entrypoint: [/bin/sh, /opt/ai-crm/rabbitmq-entrypoint.sh]
-    secrets: [rabbitmq_password]
+    tmpfs: [/tmp]
+    environment:
+      AI_CRM_RABBIT_VHOST: ${AI_CRM_RABBIT_VHOST:?isolated RabbitMQ vhost is required}
+    secrets: [rabbitmq_ca_certificate, rabbitmq_tls_certificate, rabbitmq_tls_private_key, rabbitmq_publisher_username, rabbitmq_publisher_password, rabbitmq_consumer_username, rabbitmq_consumer_password]
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
       - ./rabbitmq-entrypoint.sh:/opt/ai-crm/rabbitmq-entrypoint.sh:ro
-    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:5672:5672"]
+    ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:5671:5671"]
     networks: [state]
     healthcheck:
       test: [CMD, rabbitmq-diagnostics, -q, ping]
@@ -162,6 +165,15 @@ services:
       AI_CRM_API_SHUTDOWN_TIMEOUT_MS: ${AI_CRM_API_SHUTDOWN_TIMEOUT_MS:?API shutdown timeout is required}
       AI_CRM_POSTGRES_URL_FILE: /run/secrets/api_postgres_url
       AI_CRM_MIGRATIONS_ROOT: /app
+      AI_CRM_FILE_DOWNLOAD_GRANT_TTL_MS: ${AI_CRM_FILE_DOWNLOAD_GRANT_TTL_MS:?reviewed download grant TTL is required}
+      AI_CRM_FILE_MAXIMUM_SCAN_BYTES: ${AI_CRM_FILE_MAXIMUM_SCAN_BYTES:?reviewed scan limit is required}
+      AI_CRM_FILE_MAXIMUM_UPLOAD_BYTES: ${AI_CRM_FILE_MAXIMUM_UPLOAD_BYTES:?reviewed upload limit is required}
+      AI_CRM_FILE_UPLOAD_SESSION_TTL_MS: ${AI_CRM_FILE_UPLOAD_SESSION_TTL_MS:?reviewed upload session TTL is required}
+      AI_CRM_COS_BUCKET: ${AI_CRM_COS_BUCKET:?reviewed COS bucket is required}
+      AI_CRM_COS_REGION: ${AI_CRM_COS_REGION:?reviewed COS region is required}
+      AI_CRM_COS_SECRET_ID_FILE: /run/secrets/api_cos_secret_id
+      AI_CRM_COS_SECRET_KEY_FILE: /run/secrets/api_cos_secret_key
+      AI_CRM_COS_TIMEOUT_MS: ${AI_CRM_COS_TIMEOUT_MS:?reviewed COS timeout is required}
       AI_CRM_KEYCLOAK_ISSUER: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}
       AI_CRM_KEYCLOAK_JWKS_URI: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}/protocol/openid-connect/certs
       AI_CRM_PC_OIDC_CLIENT_ID: ${AI_CRM_PC_OIDC_CLIENT_ID:?required}
@@ -180,7 +192,7 @@ services:
       AI_CRM_PC_OIDC_TIMEOUT_SECONDS: ${AI_CRM_PC_OIDC_TIMEOUT_SECONDS:?required}
       AI_CRM_PC_REFRESH_LEASE_TTL_MS: ${AI_CRM_PC_REFRESH_LEASE_TTL_MS:?required}
       AI_CRM_REDIS_CONNECT_TIMEOUT_MS: ${AI_CRM_REDIS_CONNECT_TIMEOUT_MS:?required}
-    secrets: [api_postgres_url, pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
+    secrets: [api_postgres_url, api_cos_secret_id, api_cos_secret_key, pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
     ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:${AI_CRM_API_PORT_A:?host A API port is required}:3000"]
     networks: [app]
     healthcheck:
@@ -238,12 +250,21 @@ volumes:
 secrets:
   postgres_admin_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_admin_password" }
   postgres_app_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_app_password" }
+  postgres_worker_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_worker_password" }
   postgres_migration_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_migration_password" }
   postgres_keycloak_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_keycloak_password" }
   postgres_flowable_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/postgres_flowable_password" }
   api_postgres_url: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_postgres_url" }
+  api_cos_secret_id: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_cos_secret_id" }
+  api_cos_secret_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_cos_secret_key" }
   redis_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/redis_password" }
-  rabbitmq_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_password" }
+  rabbitmq_ca_certificate: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_ca_certificate" }
+  rabbitmq_tls_certificate: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_tls_certificate" }
+  rabbitmq_tls_private_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_tls_private_key" }
+  rabbitmq_publisher_username: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_publisher_username" }
+  rabbitmq_publisher_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_publisher_password" }
+  rabbitmq_consumer_username: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_consumer_username" }
+  rabbitmq_consumer_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_consumer_password" }
   flowable_admin_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/flowable_admin_password" }
   pc_oidc_client_secret: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_oidc_client_secret" }
   pc_session_encryption_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_encryption_key" }

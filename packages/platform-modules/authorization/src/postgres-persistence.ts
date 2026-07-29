@@ -142,17 +142,22 @@ class PostgresAuthorizationPolicyPublisher implements AuthorizationPolicyPublish
   public constructor(private readonly runtime: AuthorizationPersistenceRuntime) {}
   public publish(command: PublishAuthorizationPolicyCommand): Promise<AuthorizationPolicyPublication> {
     let publicationId: string; let publishedAt: string; let contractVersion: string; let snapshot: AuthorizationPolicySnapshot;
+    let expectedPreviousVersion: string | null | undefined;
     try {
       publicationId = uuid(command.publicationId, "authorization_policy_invalid");
       publishedAt = iso(command.publishedAt);
       contractVersion = command.contractVersion === SUPPORTED_CONTRACT_VERSION
         ? command.contractVersion : fail("authorization_policy_invalid");
+      expectedPreviousVersion = command.expectedPreviousVersion === undefined || command.expectedPreviousVersion === null
+        ? command.expectedPreviousVersion
+        : policyVersion(command.expectedPreviousVersion);
       snapshot = canonicalizeAuthorizationPolicy(command.snapshot);
     } catch (error) {
       return Promise.reject(error instanceof AuthorizationPersistenceError ? error : new AuthorizationPersistenceError("authorization_policy_invalid"));
     }
     const contentDigest = digest(snapshot);
-    const fingerprint = digest({ contentDigest, contractVersion, publishedAt, version: snapshot.version });
+    const fingerprint = digest({ contentDigest, contractVersion, publishedAt, version: snapshot.version,
+      ...(expectedPreviousVersion === undefined ? {} : { expectedPreviousVersion }) });
     let transaction: Promise<AuthorizationPolicyPublication>;
     try { transaction = this.runtime.withTransaction(async () => {
       try {
@@ -177,6 +182,10 @@ class PostgresAuthorizationPolicyPublisher implements AuthorizationPolicyPublish
         const current = (await this.runtime.execute<CurrentRow>(
           "select version,content_digest from authorization_core.current_policy where singleton=true for update",
         )).rows[0];
+        if ((expectedPreviousVersion === null && current !== undefined) ||
+          (typeof expectedPreviousVersion === "string" && current?.version !== expectedPreviousVersion)) {
+          return fail("authorization_policy_conflict");
+        }
         const result: Omit<AuthorizationPolicyPublication, "replayed"> = {
           contentDigest, ...(current === undefined ? {} : { previousVersion: current.version }), publicationId,
           publishedAt, version: snapshot.version,

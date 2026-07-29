@@ -201,10 +201,10 @@ operations:
     x-ai-crm-activation:
       enabled: false
       blockedBy:
-        - real-rabbitmq-tls-integration-matrix
-        - least-privilege-vhost-and-secret-evidence
-        - inbox-retry-dlq-recovery-evidence
-        - alert-owner-and-runbook-evidence
+        - trusted-production-rabbitmq-tls-and-image-evidence
+        - least-privilege-vhost-secret-rotation-evidence
+        - inbox-retry-dlq-recovery-and-drain-evidence
+        - deployed-alert-owner-and-runbook-evidence
     x-ai-crm-failure-handling:
       immediateRequeue: false
       retryPublishConfirmBeforeAck: true

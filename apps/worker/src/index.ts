@@ -11,10 +11,13 @@ export { createFileWorkerHealthReporter, type WorkerHealthReporter, type WorkerH
 export { createWorkerHandlerRegistry, type WorkerHandlerRegistry } from "./handler-registry.js";
 export { loadRabbitConnectionConfiguration, type RabbitAccountRole, type RabbitConnectionConfiguration, type RabbitSecretFileAccess } from "./rabbit-config.js";
 export { approvedWorkerMigrationRoots, loadProductionWorkerConfiguration, validateWorkerMigrationRootManifest, type LoadProductionWorkerConfigurationOptions, type ProductionWorkerConfiguration } from "./production-config.js";
-export { createDefaultProductionWorkerResources, createProductionWorkerResources, taskProjectionConsumerPolicyUnavailable, type ProductionWorkerResourceDependencies, type ProductionWorkerResources } from "./production-composition.js";
+export { createDefaultProductionWorkerResources, createProductionWorkerResources, type ProductionWorkerResourceDependencies, type ProductionWorkerResources } from "./production-composition.js";
 export { createAmqplibConsumerAdapter, createAmqplibPublisherAdapter, createAmqplibResourceRuntime, type AbortableRabbitConsumerAdapter, type AmqplibConnector, type RabbitConsumerTopology, type RabbitPublisherAdapter, type RabbitResourceRuntime, type RabbitRetryLayer } from "./rabbit-adapter.js";
 export { classifyTaskProjectionError, taskProjectionBindingId, taskProjectionConsumerId, taskProjectionRabbitTopology, taskProjectionRuntimePolicy } from "./task-projection-policy.js";
 export { createTaskProjectionConsumerHandler, createTaskProjectionMessageHandler, type AbortableTaskProjectionApplyPort } from "./task-projection-composition.js";
+export { loadFileProviderConfiguration, type FileProviderConfiguration } from "./file-provider-config.js";
+export { createTencentCosStorageAdapter, TencentCosStorageAdapter, type CosClient, type CosStorageAdapterOptions } from "./cos-storage-adapter.js";
+export { ClamAvMalwareScanner, type ClamAvScannerOptions } from "./clamav-scanner.js";
 export {
   createFileMaintenanceHandler,
   createNotificationIntentHandler,

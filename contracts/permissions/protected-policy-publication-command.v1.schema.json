@@ -38,6 +38,13 @@
     },
     "contractVersion": { "const": "authorization-policy.v1" },
     "operationId": { "$ref": "#/$defs/uuid" },
+    "expectedPreviousVersion": {
+      "description": "Optimistic current-policy precondition. null is required for a first publication; a version protects replacement/rollback from lost updates.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/policyVersion" }
+      ]
+    },
     "publicationId": { "$ref": "#/$defs/uuid" },
     "publishedAt": { "$ref": "#/$defs/timestamp" },
     "reason": {

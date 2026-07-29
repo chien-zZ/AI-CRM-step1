@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPostgresRuntimeRoleCapabilityProbe, type RuntimeRoleCapabilityRuntime } from "./runtime-role-capability.js";
+import { createPostgresRuntimeRoleCapabilityProbe, createPostgresWorkerRuntimeRoleCapabilityProbe, type RuntimeRoleCapabilityRuntime } from "./runtime-role-capability.js";
 
 const exactCapabilities = Object.freeze({
   bypassrls_denied: true,
@@ -26,6 +26,13 @@ describe("PostgreSQL runtime-role capability probe", () => {
     await expect(createPostgresRuntimeRoleCapabilityProbe(value).check()).resolves.toEqual({ status: "available" });
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(value.execute).toHaveBeenCalledWith(expect.stringContaining("current_user = 'ai_crm_runtime'"));
+  });
+
+  it("accepts only the fixed ai_crm_worker_runtime least-privilege result for Worker", async () => {
+    const value = runtime([exactCapabilities]);
+    await expect(createPostgresWorkerRuntimeRoleCapabilityProbe(value).check()).resolves.toEqual({ status: "available" });
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(value.execute).toHaveBeenCalledWith(expect.stringContaining("current_user = 'ai_crm_worker_runtime'"));
   });
 
   it("fails closed for false, missing, additional, or accessor-backed capabilities", async () => {

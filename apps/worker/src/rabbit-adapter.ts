@@ -406,6 +406,7 @@ class ConsumerAdapter implements AbortableRabbitConsumerAdapter {
   private runResolve: (() => void) | undefined;
   private running = false;
   private stopping = false;
+  private drainOperation: Promise<void> | undefined;
   private readonly retryPort: ConfirmPort;
 
   public constructor(
@@ -540,19 +541,22 @@ class ConsumerAdapter implements AbortableRabbitConsumerAdapter {
     this.runResolve?.();
   }
 
-  public async drain(signal?: AbortSignal): Promise<void> {
-    try {
-      await abortable(Promise.all([...this.inFlight]), signal, "worker_rabbit_drain_aborted");
-    } catch (error) {
+  public drain(signal?: AbortSignal): Promise<void> {
+    this.drainOperation ??= (async () => {
+      try {
+        await abortable(Promise.all([...this.inFlight]), signal, "worker_rabbit_drain_aborted");
+      } catch (error) {
+        this.channelOpen = false;
+        this.state.markClosed();
+        void this.channel.close().catch(() => undefined);
+        void this.model.close().catch(() => undefined);
+        throw error;
+      }
       this.channelOpen = false;
       this.state.markClosed();
-      void this.channel.close().catch(() => undefined);
-      void this.model.close().catch(() => undefined);
-      throw error;
-    }
-    this.channelOpen = false;
-    this.state.markClosed();
-    await closeResources(this.channel, this.model, signal);
+      await closeResources(this.channel, this.model, signal);
+    })();
+    return this.drainOperation;
   }
 }
 

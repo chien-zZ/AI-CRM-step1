@@ -31,9 +31,15 @@ const schema = {
     default: 15_000, maximum: 300_000, minimum: 100,
   }),
   migrationsRoot: configuration.string("AI_CRM_MIGRATIONS_ROOT", { maxLength: 512 }),
+  outboxBackoffSeconds: configuration.string("AI_CRM_WORKER_OUTBOX_BACKOFF_SECONDS", { maxLength: 128, pattern: /^(?:none|[1-9]\d*(?:,[1-9]\d*)*)$/u }),
+  outboxBatchSize: configuration.integer("AI_CRM_WORKER_OUTBOX_BATCH_SIZE", { maximum: 1000, minimum: 1 }),
+  outboxClaimLeaseSeconds: configuration.integer("AI_CRM_WORKER_OUTBOX_CLAIM_LEASE_SECONDS", { maximum: 86_400, minimum: 1 }),
+  outboxIntervalMs: configuration.integer("AI_CRM_WORKER_OUTBOX_INTERVAL_MS", { maximum: 300_000, minimum: 10 }),
+  outboxMaxAttempts: configuration.integer("AI_CRM_WORKER_OUTBOX_MAX_ATTEMPTS", { maximum: 16, minimum: 1 }),
   rabbitAcquisitionTimeoutMs: configuration.integer("AI_CRM_WORKER_RABBIT_ACQUIRE_TIMEOUT_MS", {
     default: 10_000, maximum: 60_000, minimum: 100,
   }),
+  taskProjectionConsumerEnabled: configuration.boolean("AI_CRM_WORKER_TASK_PROJECTION_CONSUMER_ENABLED"),
 } as const;
 
 export const approvedWorkerMigrationRoots = Object.freeze([
@@ -95,11 +101,19 @@ export interface ProductionWorkerConfiguration {
   readonly databaseCompatibilityTimeoutMs: number;
   readonly databaseHealthProbe: Readonly<{ readonly intervalMs: number; readonly timeoutMs: number }>;
   readonly migrations: readonly string[];
+  readonly outbox: Readonly<{
+    readonly backoffSeconds: readonly number[];
+    readonly batchSize: number;
+    readonly claimLeaseSeconds: number;
+    readonly intervalMs: number;
+    readonly maxAttempts: number;
+  }>;
   readonly rabbit: Readonly<{
     readonly acquisitionTimeoutMs: number;
     readonly consumer: Readonly<RabbitConnectionConfiguration>;
     readonly publisher: Readonly<RabbitConnectionConfiguration>;
   }>;
+  readonly taskProjectionConsumerEnabled: boolean;
 }
 
 export interface LoadProductionWorkerConfigurationOptions extends LoadConfigurationOptions {
@@ -120,6 +134,10 @@ export async function loadProductionWorkerConfiguration(
     loadRabbitConnectionConfiguration("consumer", source, options.rabbitSecretFiles),
     loadRabbitConnectionConfiguration("publisher", source, options.rabbitSecretFiles),
   ]);
+  const outboxBackoffSeconds = raw.outboxBackoffSeconds === "none" ? [] : raw.outboxBackoffSeconds.split(",").map(Number);
+  if (outboxBackoffSeconds.length !== raw.outboxMaxAttempts - 1 || outboxBackoffSeconds.some((value) => !Number.isSafeInteger(value) || value > 86_400)) {
+    throw new Error("worker_outbox_policy_invalid");
+  }
   return Object.freeze({
     applicationSchemaVersion: raw.applicationSchemaVersion,
     database: Object.freeze({
@@ -136,6 +154,14 @@ export async function loadProductionWorkerConfiguration(
       timeoutMs: raw.databaseHealthProbeTimeoutMs,
     }),
     migrations: Object.freeze(approvedWorkerMigrationRoots.map((directory) => resolve(raw.migrationsRoot, directory))),
+    outbox: Object.freeze({
+      backoffSeconds: Object.freeze(outboxBackoffSeconds),
+      batchSize: raw.outboxBatchSize,
+      claimLeaseSeconds: raw.outboxClaimLeaseSeconds,
+      intervalMs: raw.outboxIntervalMs,
+      maxAttempts: raw.outboxMaxAttempts,
+    }),
     rabbit: Object.freeze({ acquisitionTimeoutMs: raw.rabbitAcquisitionTimeoutMs, consumer, publisher }),
+    taskProjectionConsumerEnabled: raw.taskProjectionConsumerEnabled,
   });
 }

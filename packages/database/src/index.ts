@@ -3,6 +3,7 @@ export { validateDatabaseConfig, type DatabaseConfig } from "./config.js";
 export { createDatabaseRuntime, type DatabaseHealth, type DatabaseQueryResult, type DatabaseRuntime } from "./runtime.js";
 export {
   createPostgresRuntimeRoleCapabilityProbe,
+  createPostgresWorkerRuntimeRoleCapabilityProbe,
   type RuntimeRoleCapabilityProbe,
   type RuntimeRoleCapabilityRuntime,
   type RuntimeRoleCapabilityStatus,

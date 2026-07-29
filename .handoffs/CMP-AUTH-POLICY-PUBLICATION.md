@@ -10,7 +10,7 @@
 - ADR-0025 is accepted and makes `authorization` the sole owner of immutable policy versions, publication history, the current-policy selection and authorization decision records.
 - The PostgreSQL publisher already validates a complete non-empty v1 snapshot, computes a canonical digest, serializes publications, commits version/history/current selection atomically and replays the same publication ID only for identical content.
 - Every production publication must be authorized against the current effective Workforce Person/Assignment context and must create management-audit evidence. Technical logs and authorization decision records do not replace management audit.
-- The real publication Owner, permission declaration, approval route, emergency procedure and first non-empty production policy have not been accepted.
+- Role-based ownership, approval and emergency procedure are confirmed by the 2026-07-29 G3 instruction; actual human/Organization mappings and the executed first publication remain production evidence.
 
 ## Allowed Assumptions
 
@@ -21,8 +21,8 @@
 
 ## Forbidden Assumptions
 
-- Do not create or seed any real Permission, Role, Grant, Workforce Person, Assignment or production policy content.
-- Do not invent a policy administrator, Owner, approval workflow, emergency route, HTTP endpoint, session convention or Assignment-selection transport.
+- Do not create or seed any real Workforce Person/Assignment identity or bypass the reviewed publication boundary. The business-neutral platform catalog may be compiled only with controlled release inputs.
+- Do not invent a named person, HTTP endpoint, session convention or Assignment-selection transport.
 - Do not trust a client-supplied allow result, actor identity, policy digest or partial/delta policy document.
 - Do not treat an audit failure after a committed publication as a rollback. The caller receives a stable unavailable result and must retry the identical command.
 - Do not expose policy contents, actor/workforce facts, raw errors, SQL, tokens, claims or provider payloads through logs or public errors.
@@ -30,7 +30,7 @@
 ## Non-goals
 
 - No `apps/**` composition, production write API/UI, migration, database grant, cache invalidation delivery, real policy publication, seed, Compose or lockfile change.
-- No decision about publication permission ownership, approval, emergency access, retention, SLA, RPO or RTO.
+- No decision about retention, SLA, RPO or RTO, and no repository mapping of governance roles to real people.
 - No distributed transaction claim across authorization persistence and the separately owned audit capability.
 
 ## Intended Result
@@ -52,11 +52,18 @@
 
 ## Unresolved Production Blockers
 
-- Accepted publication capability Owner and exact permission declaration/request.
-- Approval, separation-of-duties and emergency publication rules.
 - Concrete application-composed audit adapter and authorized administrative transport.
 - An accepted bootstrap authority for the first non-empty policy. The normal current-policy authorizer cannot authorize that first publication while production correctly has no current policy; this service does not resolve or bypass that bootstrap deadlock.
-- Reviewed first non-empty production Permission/Role/Grant snapshot.
+- Real release identity/Assignment values and execution evidence for the generated first complete snapshot.
+
+## G3 2026-07-29 Increment
+
+- The current project-owner instruction confirms role-based governance without inventing people: `authorization` owns the capability, the project owner is accountable/approves, the Authorization capability owner submits, an independent reviewer reviews, and a protected Production Release Operator executes. Submitter and reviewer are distinct; emergency publication still requires project-owner approval and a non-executing reviewer, followed by access revocation and incident review.
+- The protected command and PostgreSQL publisher now carry an optional optimistic `expectedPreviousVersion`. A first publication uses `null`; replacement or restoration uses the exact observed version. The check executes after the publication advisory lock and current-row lock, preventing a stale reviewer artifact or concurrent first-publication attempt from silently moving the current pointer.
+- `createPlatformBaselineAuthorizationPolicy` builds a complete non-empty assignment-scoped snapshot from the reviewed platform permission catalog. It requires release-supplied immutable IDs, effective time and a real Organization-owned active Assignment; it contains no synthetic production identity and is never called by API startup or migration.
+- Management publication audit remains mandatory through the existing protected boundary. The first-policy approval verifier/transport and Audit adapter must be supplied by the protected production release environment; technical logs, SQL access and authorization decision records do not replace it.
+- Still external and therefore not fabricated in Git: the named human-to-role assignments, real Workforce Person/Assignment UUID, approved publication/version/operation IDs, release timestamp, and protected-environment approval evidence. Until those values are supplied and the command is executed against production PostgreSQL, API correctly remains Not Ready; tests demonstrate the boundary but are not publication evidence.
+- Focused evidence: authorization test suite 53 passed/5 dependency-gated skipped; typecheck, lint, build, package contract check, repository contract generation/check, and `git diff --check` passed.
 
 ## Uncertain Success And Retry
 

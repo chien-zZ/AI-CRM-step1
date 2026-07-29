@@ -144,6 +144,21 @@ describe("PostgreSQL authorization persistence", () => {
     expect(runtime.publications.size).toBe(1);
   });
 
+  it("enforces the current-policy precondition inside the serialized publication transaction", async () => {
+    const runtime = new MemorySqlRuntime(); const publisher = createPostgresAuthorizationPersistence(runtime).publisher;
+    await expect(publisher.publish({ ...command(), expectedPreviousVersion: null })).resolves.toMatchObject({ version: "synthetic-v1" });
+    const replacement = { ...syntheticPolicySnapshot(), version: "synthetic-v2" };
+    await expect(publisher.publish({ ...command(replacement), expectedPreviousVersion: null,
+      publicationId: "60000000-0000-4000-8000-000000000002" }))
+      .rejects.toMatchObject({ code: "authorization_policy_conflict" });
+    await expect(publisher.publish({ ...command(replacement), expectedPreviousVersion: "stale-v1",
+      publicationId: "60000000-0000-4000-8000-000000000003" }))
+      .rejects.toMatchObject({ code: "authorization_policy_conflict" });
+    await expect(publisher.publish({ ...command(replacement), expectedPreviousVersion: "synthetic-v1",
+      publicationId: "60000000-0000-4000-8000-000000000004" }))
+      .resolves.toMatchObject({ previousVersion: "synthetic-v1", version: "synthetic-v2" });
+  });
+
   it("rejects publication-id and version-content conflicts", async () => {
     const runtime = new MemorySqlRuntime(); const publisher = createPostgresAuthorizationPersistence(runtime).publisher;
     await publisher.publish(command());

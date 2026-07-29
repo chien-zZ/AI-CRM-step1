@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "permissions": [
+    {
+      "owner": "platform.authorization",
+      "code": "platform.authorization.policy:publish",
+      "resource": "platform.authorization.policy",
+      "action": "publish",
+      "scopeDimensions": []
+    }
+  ]
+}

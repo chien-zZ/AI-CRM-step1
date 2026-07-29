@@ -128,7 +128,7 @@ function permission(value: unknown): PermissionRequest {
 }
 
 function command(value: ProtectedPublishAuthorizationPolicyCommand): ProtectedPublishAuthorizationPolicyCommand {
-  const input = exactRecord(value, ["actor", "auditOperationIds", "contractVersion", "operationId", "publicationId", "publishedAt", "reason", "snapshot", "traceId"]);
+  const input = exactRecord(value, ["actor", "auditOperationIds", "contractVersion", "operationId", "publicationId", "publishedAt", "reason", "snapshot", "traceId"], ["expectedPreviousVersion"]);
   const auditOperationIds = exactRecord(input["auditOperationIds"], ["authorizationDenied", "authorizationFailed", "publicationFailed"]);
   const reason = exactRecord(input["reason"], ["code"]);
   const publishedAt = input["publishedAt"];
@@ -137,6 +137,9 @@ function command(value: ProtectedPublishAuthorizationPolicyCommand): ProtectedPu
     typeof publishedAt !== "string" || !TIMESTAMP.test(publishedAt) || Number.isNaN(publishedDate.getTime()) || publishedDate.toISOString() !== publishedAt ||
     typeof reason["code"] !== "string" || !REASON_CODE.test(reason["code"])) return invalid();
   const snapshot = canonicalizeAuthorizationPolicy(snapshotData(input["snapshot"]) as ProtectedPublishAuthorizationPolicyCommand["snapshot"]);
+  const expectedPreviousVersion = input["expectedPreviousVersion"];
+  if (expectedPreviousVersion !== undefined && expectedPreviousVersion !== null &&
+    (typeof expectedPreviousVersion !== "string" || !POLICY_VERSION.test(expectedPreviousVersion))) return invalid();
   const operationId = uuid(input["operationId"]);
   const normalizedAuditOperationIds = Object.freeze({
     authorizationDenied: uuid(auditOperationIds["authorizationDenied"]),
@@ -146,6 +149,7 @@ function command(value: ProtectedPublishAuthorizationPolicyCommand): ProtectedPu
   if (new Set([operationId, ...Object.values(normalizedAuditOperationIds)]).size !== 4) return invalid();
   return Object.freeze({
     actor: actor(input["actor"]), auditOperationIds: normalizedAuditOperationIds, contractVersion: CONTRACT_VERSION, operationId,
+    ...(expectedPreviousVersion === undefined ? {} : { expectedPreviousVersion }),
     publicationId: uuid(input["publicationId"]), publishedAt,
     reason: Object.freeze({ code: reason["code"] }), snapshot, traceId: input["traceId"],
   });

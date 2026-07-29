@@ -1,0 +1,11 @@
+{
+  "moduleOwner": "database",
+  "purpose": "Separate the Task projection Worker database role from the API role, grant its exact Eventing/Task path, and grant the API only the reviewed File/Notification/Task surface.",
+  "applicationCompatibility": { "minimumInclusive": "0.0.0" },
+  "lockImpact": "Catalog-only GRANT operations take short permission metadata locks; no application table data or definitions are changed.",
+  "dataImpact": "No rows are changed. The dedicated ai_crm_worker_runtime role gains only the relations and verbs used by the reviewed Task projection Inbox and Outbox publication paths; the API role gains only the reviewed File/Notification/Task query surface.",
+  "backfill": "Not required. The privilege change is effective for new statements.",
+  "destructive": false,
+  "recovery": "Disable the Task projection consumer first, drain it, then append a forward migration revoking these exact grants if the composition is withdrawn. Keep the API grants until its File/Notification/Task bindings are withdrawn. Do not revoke privileges while a Worker can still hold an Inbox/projection transaction.",
+  "forwardFix": "Append a later globally numbered migration to narrow, revoke, or add a specifically reviewed privilege. Never rewrite this migration after application."
+}

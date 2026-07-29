@@ -12,6 +12,12 @@ export {
 } from "./postgres-persistence.js";
 export { createProtectedAuthorizationPolicyPublisher } from "./policy-publication.js";
 export {
+  createPlatformBaselineAuthorizationPolicy,
+  type PlatformBaselinePolicyInput,
+  type PlatformPermissionCatalog,
+  type PlatformPermissionCatalogEntry,
+} from "./platform-baseline.js";
+export {
   connectRedisAuthorizationCache,
   createRedisAuthorizationCache,
   type ConnectedAuthorizationCache,

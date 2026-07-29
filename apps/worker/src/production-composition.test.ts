@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { DatabaseRuntime } from "@ai-crm/database";
 import {
   createProductionWorkerResources,
-  taskProjectionConsumerPolicyUnavailable,
   type ProductionWorkerResourceDependencies,
 } from "./production-composition.js";
 import type { ProductionWorkerConfiguration } from "./production-config.js";
-import type { RabbitPublisherAdapter, RabbitResourceRuntime } from "./rabbit-adapter.js";
+import { taskProjectionBindingId } from "./task-projection-policy.js";
+import type { AbortableRabbitConsumerAdapter, RabbitPublisherAdapter } from "./rabbit-adapter.js";
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly reject: (error: Error) => void; readonly resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -25,13 +25,15 @@ const configuration = (overrides: Partial<ProductionWorkerConfiguration> = {}): 
   databaseCompatibilityTimeoutMs: 100,
   databaseHealthProbe: Object.freeze({ intervalMs: 1_000, timeoutMs: 100 }),
   migrations: Object.freeze(["D:\\AI-CRM\\packages\\database\\migrations"]),
+  outbox: Object.freeze({ backoffSeconds: Object.freeze([5, 30]), batchSize: 10, claimLeaseSeconds: 60, intervalMs: 1_000, maxAttempts: 3 }),
   rabbit: Object.freeze({ acquisitionTimeoutMs: 100, consumer: rabbitConfiguration, publisher: rabbitConfiguration }),
+  taskProjectionConsumerEnabled: true,
   ...overrides,
 });
 
 function fixture(options: {
   readonly compatibility?: ReturnType<ProductionWorkerResourceDependencies["checkCompatibility"]>;
-  readonly consumer?: Promise<RabbitResourceRuntime>;
+  readonly consumer?: Promise<AbortableRabbitConsumerAdapter>;
   readonly health?: () => Promise<{ readonly latencyMs: number; readonly status: "ready" | "unavailable" }>;
   readonly publisher?: Promise<RabbitPublisherAdapter>;
   readonly reportCompatible?: boolean;
@@ -43,13 +45,28 @@ function fixture(options: {
   const consumerHealthy = vi.fn(() => true);
   const publisherSignals: AbortSignal[] = [];
   const database: DatabaseRuntime = {
+    abortSignalSupport: true,
     close: closeDatabase,
     execute: vi.fn(() => Promise.resolve({ rowCount: 0, rows: [] })),
     healthCheck: vi.fn(options.health ?? (() => Promise.resolve({ latencyMs: 1, status: "ready" as const }))),
     withTransaction: <T>(work: () => Promise<T>): Promise<T> => work(),
   };
-  const publisher: RabbitPublisherAdapter = { channel: {} as RabbitPublisherAdapter["channel"], close: closePublisher, healthy: publisherHealthy };
-  const consumer: RabbitResourceRuntime = { close: closeConsumer, healthy: consumerHealthy };
+  const assertDurableExchange = vi.fn(() => Promise.resolve());
+  const publisher: RabbitPublisherAdapter = {
+    channel: {
+      assertDurableExchange,
+      publishMandatory: vi.fn(() => true),
+      takeReturned: vi.fn(() => false),
+      waitForConfirms: vi.fn(() => Promise.resolve()),
+      waitForDrain: vi.fn(() => Promise.resolve()),
+    },
+    close: closePublisher,
+    healthy: publisherHealthy,
+  };
+  const consumer: AbortableRabbitConsumerAdapter = {
+    bindingIds: () => [taskProjectionBindingId], concurrency: 1, drain: closeConsumer, healthy: consumerHealthy,
+    prefetch: 2, ready: () => undefined, run: () => Promise.resolve(), stop: () => undefined,
+  };
   const dependencies: ProductionWorkerResourceDependencies = {
     checkCompatibility: vi.fn(() => options.compatibility ?? Promise.resolve({ applicationSchemaVersion: "0.0.0", compatible: options.reportCompatible ?? true, currentMigrationVersion: "0000000012", issues: [] })),
     createConsumerResource: vi.fn(() => options.consumer ?? Promise.resolve(consumer)),
@@ -58,26 +75,37 @@ function fixture(options: {
       publisherSignals.push(signal);
       return options.publisher ?? Promise.resolve(publisher);
     }),
+    createRuntimeRoleProbe: vi.fn(() => ({ check: () => Promise.resolve({ status: "available" as const }) })),
     loadConfiguration: vi.fn(() => Promise.resolve(configuration())),
   };
-  return { closeConsumer, closeDatabase, closePublisher, consumerHealthy, database, dependencies, publisherHealthy, publisherSignals };
+  return { assertDurableExchange, closeConsumer, closeDatabase, closePublisher, consumerHealthy, database, dependencies, publisher, publisherHealthy, publisherSignals };
 }
 
-describe("generic production Worker resources", () => {
-  it("checks every configured migration read-only, caches DB health, but keeps Task projection unavailable", async () => {
+describe("production Task projection Worker resources", () => {
+  it("checks every configured migration read-only and exposes the sealed Task projection handler", async () => {
     const value = fixture();
     const resources = await createProductionWorkerResources(value.dependencies);
     await resources.assertDatabaseCompatible(new AbortController().signal);
     expect(value.dependencies.checkCompatibility).toHaveBeenCalledWith(expect.anything(), configuration().migrations, "0.0.0");
     expect(resources.readiness()).toEqual([
       { healthy: true, name: "application-database", required: true },
+      { healthy: true, name: "database-runtime-role", required: true },
       { healthy: true, name: "rabbitmq-publisher", required: true },
-      { healthy: true, name: "rabbitmq-consumer-control", required: true },
-      { healthy: false, name: taskProjectionConsumerPolicyUnavailable, required: true },
+      { healthy: true, name: "task-projection-consumer", required: true },
     ]);
-    expect(() => resources.assertTaskProjectionConsumerPolicyAvailable()).toThrow(taskProjectionConsumerPolicyUnavailable);
+    expect(resources.handlers.map((handler) => handler.name)).toEqual(["eventing.outbox-publisher", "eventing.rabbit-inbox"]);
+    expect(value.assertDurableExchange).toHaveBeenCalledWith("ai-crm.platform.events.v1", "topic");
     await resources.close();
     expect([value.closeConsumer.mock.calls.length, value.closePublisher.mock.calls.length, value.closeDatabase.mock.calls.length]).toEqual([1, 1, 1]);
+  });
+
+  it("does not acquire production resources when explicit consumer activation is false", async () => {
+    const value = fixture();
+    vi.mocked(value.dependencies.loadConfiguration).mockResolvedValueOnce(configuration({ taskProjectionConsumerEnabled: false }));
+    await expect(createProductionWorkerResources(value.dependencies)).rejects.toThrow("worker_task_projection_activation_required");
+    expect(value.dependencies.createDatabase).not.toHaveBeenCalled();
+    expect(value.dependencies.createPublisherResource).not.toHaveBeenCalled();
+    expect(value.dependencies.createConsumerResource).not.toHaveBeenCalled();
   });
 
   it("does not publish DB readiness for an incompatible migration catalog", async () => {
@@ -101,7 +129,7 @@ describe("generic production Worker resources", () => {
       expect(resources.readiness()[0]?.healthy).toBe(false);
       value.publisherHealthy.mockReturnValue(false);
       value.consumerHealthy.mockReturnValue(false);
-      expect(resources.readiness().slice(1, 3).map((item) => item.healthy)).toEqual([false, false]);
+      expect(resources.readiness().slice(2, 4).map((item) => item.healthy)).toEqual([false, false]);
     } finally {
       await resources?.close();
       vi.useRealTimers();

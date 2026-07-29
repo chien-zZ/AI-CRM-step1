@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./dist/index.js" },
+  "exports": {
+    ".": "./dist/index.js",
+    "./provider/tencent-cos": "./dist/tencent-cos-storage-adapter.js",
+    "./testing/storage-adapter-conformance": "./dist/storage-adapter.conformance.js"
+  },
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint src --max-warnings 0",
@@ -15,6 +19,7 @@
   },
   "dependencies": {
     "@ai-crm/database": "workspace:*",
+    "cos-nodejs-sdk-v5": "2.15.4",
     "drizzle-orm": "0.45.2"
   }
 }

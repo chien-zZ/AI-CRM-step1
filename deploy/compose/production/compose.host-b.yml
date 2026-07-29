@@ -26,6 +26,15 @@ services:
       AI_CRM_API_SHUTDOWN_TIMEOUT_MS: ${AI_CRM_API_SHUTDOWN_TIMEOUT_MS:?API shutdown timeout is required}
       AI_CRM_POSTGRES_URL_FILE: /run/secrets/api_postgres_url
       AI_CRM_MIGRATIONS_ROOT: /app
+      AI_CRM_FILE_DOWNLOAD_GRANT_TTL_MS: ${AI_CRM_FILE_DOWNLOAD_GRANT_TTL_MS:?reviewed download grant TTL is required}
+      AI_CRM_FILE_MAXIMUM_SCAN_BYTES: ${AI_CRM_FILE_MAXIMUM_SCAN_BYTES:?reviewed scan limit is required}
+      AI_CRM_FILE_MAXIMUM_UPLOAD_BYTES: ${AI_CRM_FILE_MAXIMUM_UPLOAD_BYTES:?reviewed upload limit is required}
+      AI_CRM_FILE_UPLOAD_SESSION_TTL_MS: ${AI_CRM_FILE_UPLOAD_SESSION_TTL_MS:?reviewed upload session TTL is required}
+      AI_CRM_COS_BUCKET: ${AI_CRM_COS_BUCKET:?reviewed COS bucket is required}
+      AI_CRM_COS_REGION: ${AI_CRM_COS_REGION:?reviewed COS region is required}
+      AI_CRM_COS_SECRET_ID_FILE: /run/secrets/api_cos_secret_id
+      AI_CRM_COS_SECRET_KEY_FILE: /run/secrets/api_cos_secret_key
+      AI_CRM_COS_TIMEOUT_MS: ${AI_CRM_COS_TIMEOUT_MS:?reviewed COS timeout is required}
       AI_CRM_KEYCLOAK_ISSUER: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}
       AI_CRM_KEYCLOAK_JWKS_URI: https://${AI_CRM_PUBLIC_HOST:?public host is required}/realms/${AI_CRM_KEYCLOAK_REALM:?realm is required}/protocol/openid-connect/certs
       AI_CRM_PC_OIDC_CLIENT_ID: ${AI_CRM_PC_OIDC_CLIENT_ID:?required}
@@ -44,7 +53,7 @@ services:
       AI_CRM_PC_OIDC_TIMEOUT_SECONDS: ${AI_CRM_PC_OIDC_TIMEOUT_SECONDS:?required}
       AI_CRM_PC_REFRESH_LEASE_TTL_MS: ${AI_CRM_PC_REFRESH_LEASE_TTL_MS:?required}
       AI_CRM_REDIS_CONNECT_TIMEOUT_MS: ${AI_CRM_REDIS_CONNECT_TIMEOUT_MS:?required}
-    secrets: [api_postgres_url, pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
+    secrets: [api_postgres_url, api_cos_secret_id, api_cos_secret_key, pc_oidc_client_secret, redis_password, pc_session_encryption_key, pc_session_index_key]
     ports: ["${AI_CRM_PRIVATE_BIND_ADDRESS:?private bind address is required}:${AI_CRM_API_PORT_B:?host B API port is required}:3000"]
     networks: [app]
     healthcheck:
@@ -62,11 +71,35 @@ services:
     image: ${AI_CRM_WORKER_IMAGE:?digest-pinned Worker image is required}
     read_only: true
     user: ${AI_CRM_APPLICATION_UID_GID:?application uid:gid is required}
+    group_add: ["${AI_CRM_SECRET_GID:?secret reader gid is required}"]
     tmpfs: [/tmp]
     environment:
       NODE_ENV: production
       AI_CRM_RELEASE: ${AI_CRM_RELEASE_ID:?release id is required}
+      AI_CRM_INSTANCE_ID: worker-b
       AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS: ${AI_CRM_WORKER_DRAIN_TIMEOUT_SECONDS:?required}
+      AI_CRM_WORKER_STARTUP_TIMEOUT_SECONDS: ${AI_CRM_WORKER_STARTUP_TIMEOUT_SECONDS:?required}
+      AI_CRM_WORKER_SCHEMA_VERSION: ${AI_CRM_WORKER_SCHEMA_VERSION:?required}
+      AI_CRM_WORKER_TASK_PROJECTION_CONSUMER_ENABLED: ${AI_CRM_WORKER_TASK_PROJECTION_CONSUMER_ENABLED:?explicit reviewed activation is required}
+      AI_CRM_WORKER_OUTBOX_BATCH_SIZE: ${AI_CRM_WORKER_OUTBOX_BATCH_SIZE:?reviewed Outbox batch size is required}
+      AI_CRM_WORKER_OUTBOX_CLAIM_LEASE_SECONDS: ${AI_CRM_WORKER_OUTBOX_CLAIM_LEASE_SECONDS:?reviewed Outbox claim lease is required}
+      AI_CRM_WORKER_OUTBOX_MAX_ATTEMPTS: ${AI_CRM_WORKER_OUTBOX_MAX_ATTEMPTS:?reviewed Outbox attempts are required}
+      AI_CRM_WORKER_OUTBOX_BACKOFF_SECONDS: ${AI_CRM_WORKER_OUTBOX_BACKOFF_SECONDS:?reviewed Outbox backoff vector is required}
+      AI_CRM_WORKER_OUTBOX_INTERVAL_MS: ${AI_CRM_WORKER_OUTBOX_INTERVAL_MS:?reviewed Outbox interval is required}
+      AI_CRM_POSTGRES_URL_FILE: /run/secrets/worker_postgres_url
+      AI_CRM_MIGRATIONS_ROOT: /app
+      AI_CRM_RABBIT_TLS: "true"
+      AI_CRM_RABBIT_HOST: ${AI_CRM_STATE_HOST:?state host is required}
+      AI_CRM_RABBIT_PORT: "5671"
+      AI_CRM_RABBIT_SERVERNAME: ${AI_CRM_RABBIT_SERVERNAME:?RabbitMQ certificate server name is required}
+      AI_CRM_RABBIT_VHOST: ${AI_CRM_RABBIT_VHOST:?isolated RabbitMQ vhost is required}
+      AI_CRM_RABBIT_HEARTBEAT_SECONDS: ${AI_CRM_RABBIT_HEARTBEAT_SECONDS:?RabbitMQ heartbeat is required}
+      AI_CRM_RABBIT_CA_FILE: /run/secrets/rabbitmq_ca_certificate
+      AI_CRM_RABBIT_PUBLISHER_USERNAME_FILE: /run/secrets/rabbitmq_publisher_username
+      AI_CRM_RABBIT_PUBLISHER_PASSWORD_FILE: /run/secrets/rabbitmq_publisher_password
+      AI_CRM_RABBIT_CONSUMER_USERNAME_FILE: /run/secrets/rabbitmq_consumer_username
+      AI_CRM_RABBIT_CONSUMER_PASSWORD_FILE: /run/secrets/rabbitmq_consumer_password
+    secrets: [worker_postgres_url, rabbitmq_ca_certificate, rabbitmq_publisher_username, rabbitmq_publisher_password, rabbitmq_consumer_username, rabbitmq_consumer_password]
     networks: [app]
     healthcheck:
       test: [CMD, node, /app/dist/worker-healthcheck.mjs]
@@ -115,7 +148,15 @@ networks:
   app: {}
 
 secrets:
+  worker_postgres_url: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/worker_postgres_url" }
+  rabbitmq_ca_certificate: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_ca_certificate" }
+  rabbitmq_publisher_username: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_publisher_username" }
+  rabbitmq_publisher_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_publisher_password" }
+  rabbitmq_consumer_username: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_consumer_username" }
+  rabbitmq_consumer_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/rabbitmq_consumer_password" }
   api_postgres_url: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_postgres_url" }
+  api_cos_secret_id: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_cos_secret_id" }
+  api_cos_secret_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/api_cos_secret_key" }
   redis_password: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/redis_password" }
   pc_oidc_client_secret: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_oidc_client_secret" }
   pc_session_encryption_key: { file: "${AI_CRM_SECRET_ROOT:?secret root is required}/pc_session_encryption_key" }

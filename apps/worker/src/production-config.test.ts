@@ -29,6 +29,11 @@ const databaseFiles: SecretFileSystem = {
 const environment = (): NodeJS.ProcessEnv => ({
   AI_CRM_MIGRATIONS_ROOT: "D:\\AI-CRM",
   AI_CRM_POSTGRES_URL_FILE: postgresPath,
+  AI_CRM_WORKER_OUTBOX_BACKOFF_SECONDS: "5,30",
+  AI_CRM_WORKER_OUTBOX_BATCH_SIZE: "10",
+  AI_CRM_WORKER_OUTBOX_CLAIM_LEASE_SECONDS: "60",
+  AI_CRM_WORKER_OUTBOX_INTERVAL_MS: "1000",
+  AI_CRM_WORKER_OUTBOX_MAX_ATTEMPTS: "3",
   AI_CRM_RABBIT_CA_FILE: "D:\\secrets\\rabbit-ca",
   AI_CRM_RABBIT_CONSUMER_PASSWORD_FILE: "D:\\secrets\\rabbit-consumer-password",
   AI_CRM_RABBIT_CONSUMER_USERNAME_FILE: "D:\\secrets\\rabbit-consumer-username",
@@ -41,6 +46,7 @@ const environment = (): NodeJS.ProcessEnv => ({
   AI_CRM_RABBIT_TLS: "true",
   AI_CRM_RABBIT_VHOST: "ai-crm-production",
   AI_CRM_WORKER_SCHEMA_VERSION: "0.0.0",
+  AI_CRM_WORKER_TASK_PROJECTION_CONSUMER_ENABLED: "true",
   NODE_ENV: "production",
 });
 
@@ -63,7 +69,16 @@ describe("Worker production configuration", () => {
     expect(value.rabbit.publisher.username).toBe("worker-publisher");
     expect(value.rabbit.consumer.username).toBe("worker-consumer");
     expect(value.migrations).toHaveLength(11);
+    expect(value.outbox).toEqual({ backoffSeconds: [5, 30], batchSize: 10, claimLeaseSeconds: 60, intervalMs: 1000, maxAttempts: 3 });
     expect(value.migrations.some((path) => path.endsWith("platform-modules\\authorization\\migrations"))).toBe(true);
+  });
+
+  it("rejects an Outbox retry vector that does not match the required release policy", async () => {
+    await expect(loadProductionWorkerConfiguration({
+      env: { ...environment(), AI_CRM_WORKER_OUTBOX_BACKOFF_SECONDS: "5", AI_CRM_WORKER_OUTBOX_MAX_ATTEMPTS: "3" },
+      rabbitSecretFiles: rabbitFiles,
+      secretFilePolicy: { fileSystem: databaseFiles },
+    })).rejects.toThrow("worker_outbox_policy_invalid");
   });
 
   it("rejects plaintext PostgreSQL values and an unsafe health window", async () => {

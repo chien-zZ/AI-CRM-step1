@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { createTraceContext } from "@ai-crm/observability";
 import {
   createPostgresApplicationRegistryCapabilityProbe,
@@ -16,10 +18,32 @@ import {
   createPostgresFormSchemaQueryService,
 } from "@ai-crm/platform-form-schema";
 import {
+  createNotificationCenter,
+  createPostgresNotificationStore,
+  type NotificationAudit,
+  type NotificationAuthorization,
+} from "@ai-crm/platform-notifications";
+import {
   createPostgresOrganizationService,
   type OrganizationCommandAuthorizer,
   type OrganizationPersistenceRuntime,
 } from "@ai-crm/platform-organization";
+import {
+  createFileCenterService,
+  createPostgresFileCenterStore,
+  FileCenterError,
+  type FileAudit,
+  type FileAuthorizationRequest,
+  type FileAuthorizer,
+  type StorageAdapter,
+} from "@ai-crm/platform-file-center";
+import {
+  createPostgresTaskCenterStore,
+  createTaskCenter,
+  type TaskAudit,
+  type TaskAuthorization,
+} from "@ai-crm/platform-task-center";
+import { createTencentCosStorageAdapter, type TencentCosStorageAdapter } from "@ai-crm/platform-file-center/provider/tencent-cos";
 import {
   checkMigrationCompatibility,
   createDatabaseRuntime,
@@ -105,6 +129,51 @@ function authenticationAuditPort(audit: ApiPlatformBindings["audit"]): Authentic
   });
 }
 
+function deterministicUuid(material: string): string {
+  const value = createHash("sha256").update(material).digest("hex").slice(0, 32).split("");
+  value[12] = "5";
+  value[16] = ((Number.parseInt(value[16] ?? "0", 16) & 3) | 8).toString(16);
+  return `${value.slice(0, 8).join("")}-${value.slice(8, 12).join("")}-${value.slice(12, 16).join("")}-${value.slice(16, 20).join("")}-${value.slice(20).join("")}`;
+}
+
+function managementAuditPort(
+  audit: ApiPlatformBindings["audit"],
+  capability: "notification" | "task",
+  decisionTraces: Map<string, string>,
+) {
+  return Object.freeze({
+    async record(event: {
+      readonly actor: { readonly principalId: string };
+      readonly decisionId: string;
+      readonly errorCode?: string;
+      readonly operation: string;
+      readonly phase: "attempted" | "failed" | "succeeded";
+      readonly referenceId: string;
+    }): Promise<void> {
+      const traceId = decisionTraces.get(event.decisionId);
+      if (traceId === undefined) throw new Error(`${capability}_audit_trace_unavailable`);
+      const operationId = deterministicUuid(`${capability}\0${event.decisionId}\0${event.operation}\0${event.phase}\0${event.referenceId}`);
+      try {
+        await audit.record({
+          action: `${capability}.${event.operation}`,
+          actor: { actorId: event.actor.principalId, actorType: "authenticated_subject", workforcePersonId: event.actor.principalId },
+          reason: { code: event.errorCode === undefined ? `${capability}_query` : `${capability}_query_failed` },
+          resource: {
+            resourceId: event.referenceId,
+            resourceType: capability === "task" ? "platform.task-center.task-projection" : "platform.notifications.in-app-notification",
+          },
+          result: event.phase === "attempted" ? "attempted" : event.phase === "succeeded" ? "succeeded" : "failed",
+          trace: { authorizationDecisionId: event.decisionId, operationId, traceId },
+        });
+      } catch (error) {
+        decisionTraces.delete(event.decisionId);
+        throw error;
+      }
+      if (event.phase !== "attempted") decisionTraces.delete(event.decisionId);
+    },
+  });
+}
+
 async function hasCompleteCurrentPolicy(store: AuthorizationPolicyStore): Promise<boolean> {
   try {
     const version = await store.currentVersion();
@@ -167,6 +236,7 @@ export interface ProductionApiBindingDependencies {
   readonly checkCompatibility: typeof checkMigrationCompatibility;
   readonly connectSessions: (config: RedisSessionConnectionConfig) => Promise<Readonly<RedisSessionConnection>>;
   readonly createDatabase: (config: DatabaseConfig) => DatabaseRuntime;
+  readonly createFileStorage?: (config: ProductionApiConfiguration["fileCenter"]["cos"]) => TencentCosStorageAdapter;
   readonly createOidc: typeof createOidcClient;
   readonly createTokenVerifier: (config: ProductionApiConfiguration["oidcVerifier"]) => TokenVerifier;
   readonly loadConfiguration: () => Promise<Readonly<ProductionApiConfiguration>>;
@@ -176,6 +246,7 @@ const productionDependencies: ProductionApiBindingDependencies = Object.freeze({
   checkCompatibility: checkMigrationCompatibility,
   connectSessions: connectRedisSessionStore,
   createDatabase: createDatabaseRuntime,
+  createFileStorage: createTencentCosStorageAdapter,
   createOidc: createOidcClient,
   createTokenVerifier: createOidcTokenVerifier,
   loadConfiguration: loadProductionApiConfiguration,
@@ -369,6 +440,49 @@ export async function createProductionApiPlatformBindings(
     { authorize: () => Promise.reject(new Error("audit_read_authorization_unavailable")) },
     { fieldPolicies: {} },
   );
+  const fileStorage: StorageAdapter & { readonly checkHealth: () => Promise<boolean> } = dependencies.createFileStorage?.(configuration.fileCenter.cos) ?? Object.freeze({
+    checkHealth: () => Promise.resolve(false),
+    createDownloadGrant: () => Promise.reject(new FileCenterError("file_center_storage_unavailable", { retryable: true })),
+    createUploadGrant: () => Promise.reject(new FileCenterError("file_center_storage_unavailable", { retryable: true })),
+    deleteObject: () => Promise.reject(new FileCenterError("file_center_storage_unavailable", { retryable: true })),
+    inspectObject: () => Promise.reject(new FileCenterError("file_center_storage_unavailable", { retryable: true })),
+    quarantineObject: () => Promise.reject(new FileCenterError("file_center_storage_unavailable", { retryable: true })),
+    readObject: () => Promise.reject(new FileCenterError("file_center_storage_unavailable", { retryable: true })),
+  });
+  const fileAuthorizer: FileAuthorizer = Object.freeze({
+    authorize: async (request: FileAuthorizationRequest) => {
+      if (request.actor.actorType !== "authenticated_subject" || (request.action !== "file:upload" && request.action !== "file:download")) {
+        return { allowed: false, decisionId: "file-center-unsupported-operation" };
+      }
+      const decision = await authorizationTrace.run(authorizationTrace.getStore() ?? createTraceContext().traceId, () => authorization.check({
+        activeAssignmentIds: request.actor.assignmentId === undefined ? [] : [request.actor.assignmentId],
+        ...(request.actor.assignmentId === undefined ? {} : { selectedAssignmentId: request.actor.assignmentId }),
+        workforcePersonId: request.actor.actorId,
+      }, { action: request.action === "file:upload" ? "upload" : "download", resource: "platform.file-center.file" }));
+      return { allowed: decision.allowed, decisionId: decision.decisionId };
+    },
+  });
+  const fileAudit: FileAudit = Object.freeze({
+    async record(event: Parameters<FileAudit["record"]>[0]) {
+      await audit.record({
+        action: event.action,
+        actor: { ...event.actor, ...(event.actor.actorType === "authenticated_subject" ? { workforcePersonId: event.actor.actorId } : {}) },
+        reason: { code: "file_center_operation" },
+        resource: { resourceId: event.resourceReference, resourceType: "platform.file-center.file" },
+        result: event.result,
+        trace: { authorizationDecisionId: event.authorizationDecisionId, operationId: event.operationId, traceId: event.traceId },
+      });
+    },
+  });
+  const fileCenterStore = createPostgresFileCenterStore(activeDatabase);
+  const fileCenter = createFileCenterService(
+    fileCenterStore,
+    fileStorage,
+    { scan: () => Promise.reject(new FileCenterError("file_center_scan_unavailable", { retryable: true })) },
+    fileAuthorizer,
+    fileAudit,
+    configuration.fileCenter,
+  );
   const auditCapability = createPostgresAuditCapabilityProbe(activeDatabase);
   const runtimeRoleCapability = createPostgresRuntimeRoleCapabilityProbe(activeDatabase);
   const applicationRegistryCapability = createPostgresApplicationRegistryCapabilityProbe(activeDatabase);
@@ -385,6 +499,55 @@ export async function createProductionApiPlatformBindings(
       { action: request.permission.action, resource: request.permission.resource },
     )),
   });
+  const taskStore = createPostgresTaskCenterStore(activeDatabase);
+  const notificationStore = createPostgresNotificationStore(activeDatabase);
+  const queryDecisionTraces = new Map<string, string>();
+  const taskAuthorization: TaskAuthorization = Object.freeze({
+    authorize: async ({ actor, operation }: Parameters<TaskAuthorization["authorize"]>[0]) => {
+      if (operation !== "task_list") {
+        throw new Error("task_object_or_mutation_authorization_unavailable");
+      }
+      const traceId = authorizationTrace.getStore() ?? createTraceContext().traceId;
+      const decision = await authorizationTrace.run(traceId, () => authorization.check(
+        { activeAssignmentIds: [], workforcePersonId: actor.principalId },
+        {
+          action: "list",
+          resource: "platform.task-center.task-projection",
+        },
+      ));
+      queryDecisionTraces.set(decision.decisionId, traceId);
+      return { allowed: decision.allowed, decisionId: decision.decisionId };
+    },
+  });
+  const notificationAuthorization: NotificationAuthorization = Object.freeze({
+    authorize: async ({ actor, operation }: Parameters<NotificationAuthorization["authorize"]>[0]) => {
+      const action = operation === "notification_list" || operation === "notification_unread_count"
+        ? "list"
+        : operation === "notification_detail" ? "read" : undefined;
+      if (action === undefined) throw new Error("notification_mutation_authorization_unavailable");
+      const traceId = authorizationTrace.getStore() ?? createTraceContext().traceId;
+      const decision = await authorizationTrace.run(traceId, () => authorization.check(
+        { activeAssignmentIds: [], workforcePersonId: actor.principalId },
+        { action, resource: "platform.notifications.in-app-notification" },
+      ));
+      queryDecisionTraces.set(decision.decisionId, traceId);
+      return { allowed: decision.allowed, decisionId: decision.decisionId };
+    },
+  });
+  const tasks = createTaskCenter({
+    audit: managementAuditPort(audit, "task", queryDecisionTraces) as TaskAudit,
+    authorization: taskAuthorization,
+    router: { complete: () => Promise.reject(new Error("task_source_router_unavailable")) },
+    sourceReader: { get: () => Promise.reject(new Error("task_source_reader_unavailable")) },
+    store: taskStore,
+  });
+  const notifications = createNotificationCenter({
+    audit: managementAuditPort(audit, "notification", queryDecisionTraces) as NotificationAudit,
+    authorization: notificationAuthorization,
+    preference: { evaluate: () => Promise.reject(new Error("notification_preference_unavailable")) },
+    resolver: { resolve: () => Promise.reject(new Error("notification_recipient_resolver_unavailable")) },
+    store: notificationStore,
+  });
   const organization = createPostgresOrganizationService(
     organizationRuntime(activeDatabase),
     failClosedOrganizationAuthorizer,
@@ -397,18 +560,24 @@ export async function createProductionApiPlatformBindings(
     databaseCompatible: false,
     databaseHealthy: false,
     formSchemaCapabilityReady: false,
+    fileCenterProviderReady: false,
     runtimeRoleCapabilityReady: false,
+    notificationQueryReady: false,
+    taskQueryReady: false,
   };
   let probeController = new AbortController();
   let probeGeneration = 0;
   let probeTimer: NodeJS.Timeout | undefined;
-  type DependencyProbeName = "applicationRegistry" | "audit" | "authorizationPolicy" | "formSchema" | "runtimeRole";
+  type DependencyProbeName = "applicationRegistry" | "audit" | "authorizationPolicy" | "fileCenter" | "formSchema" | "notificationQuery" | "runtimeRole" | "taskQuery";
   const dependentProbeCompletions: Record<DependencyProbeName, Promise<void> | undefined> = {
     applicationRegistry: undefined,
     audit: undefined,
     authorizationPolicy: undefined,
     formSchema: undefined,
+    fileCenter: undefined,
+    notificationQuery: undefined,
     runtimeRole: undefined,
+    taskQuery: undefined,
   };
   const stopDatabaseProbes = (): void => {
     probeGeneration += 1;
@@ -421,6 +590,9 @@ export async function createProductionApiPlatformBindings(
     state.authorizationPolicyReady = false;
     state.applicationRegistryCapabilityReady = false;
     state.formSchemaCapabilityReady = false;
+    state.fileCenterProviderReady = false;
+    state.notificationQueryReady = false;
+    state.taskQueryReady = false;
   };
   const runDependencyProbe = async (
     name: DependencyProbeName,
@@ -454,10 +626,22 @@ export async function createProductionApiPlatformBindings(
         (healthy) => { state.authorizationPolicyReady = healthy; }, generation, controller, signals),
       runDependencyProbe("runtimeRole", () => runtimeRoleCapability.check().then(({ status }) => status === "available"),
         (healthy) => { state.runtimeRoleCapabilityReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("fileCenter", async () => {
+        const [providerReady] = await Promise.all([
+          fileStorage.checkHealth(),
+          fileCenterStore.findFile("00000000-0000-4000-8000-000000000000"),
+        ]);
+        return providerReady;
+      },
+        (healthy) => { state.fileCenterProviderReady = healthy; }, generation, controller, signals),
       runDependencyProbe("applicationRegistry", () => applicationRegistryCapability.check().then(({ status }) => status === "available"),
         (healthy) => { state.applicationRegistryCapabilityReady = healthy; }, generation, controller, signals),
       runDependencyProbe("formSchema", () => formSchemaCapability.check().then(({ status }) => status === "available"),
         (healthy) => { state.formSchemaCapabilityReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("taskQuery", () => taskStore.list({ limit: 1 }).then(() => true),
+        (healthy) => { state.taskQueryReady = healthy; }, generation, controller, signals),
+      runDependencyProbe("notificationQuery", () => notificationStore.unreadCount("api.capability-probe").then(() => true),
+        (healthy) => { state.notificationQueryReady = healthy; }, generation, controller, signals),
     ]);
   };
   const scheduleDatabaseProbe = (generation: number, controller: AbortController): void => {
@@ -478,6 +662,8 @@ export async function createProductionApiPlatformBindings(
           state.runtimeRoleCapabilityReady = false;
           state.applicationRegistryCapabilityReady = false;
           state.formSchemaCapabilityReady = false;
+          state.notificationQueryReady = false;
+          state.taskQueryReady = false;
         }
         void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
       });
@@ -504,6 +690,8 @@ export async function createProductionApiPlatformBindings(
         state.runtimeRoleCapabilityReady = false;
         state.applicationRegistryCapabilityReady = false;
         state.formSchemaCapabilityReady = false;
+        state.notificationQueryReady = false;
+        state.taskQueryReady = false;
         void result.completion.then(() => { scheduleDatabaseProbe(generation, controller); });
         return;
       }
@@ -552,6 +740,7 @@ export async function createProductionApiPlatformBindings(
     async close() {
       if (state.closed) return;
       state.closed = true;
+      queryDecisionTraces.clear();
       state.databaseCompatible = false;
       state.authorizationPolicyReady = false;
       stopDatabaseProbes();
@@ -576,7 +765,10 @@ export async function createProductionApiPlatformBindings(
     queries: {
       ...unavailable.queries,
       applicationRegistry: applicationRegistryQueries,
+      fileCenter,
       forms: formQueries,
+      notifications,
+      tasks,
     },
     readiness: () => [
       { healthy: !state.closed && state.databaseCompatible && state.databaseHealthy, name: "application-database", required: true },
@@ -587,7 +779,9 @@ export async function createProductionApiPlatformBindings(
       { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.auditCapabilityReady, name: "authentication-audit", required: true },
       { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.applicationRegistryCapabilityReady, name: "application-registry-query", required: true },
       { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.formSchemaCapabilityReady, name: "form-schema-query", required: true },
-      { healthy: false, name: "file-center-provider", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.taskQueryReady, name: "task-query", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.notificationQueryReady, name: "notification-query", required: true },
+      { healthy: !state.closed && state.databaseHealthy && state.runtimeRoleCapabilityReady && state.fileCenterProviderReady, name: "file-center-provider", required: true },
     ],
     sessions: { resolvePrincipal: sessionService.resolvePrincipal, sessionForMutation: sessionService.sessionForMutation },
   });

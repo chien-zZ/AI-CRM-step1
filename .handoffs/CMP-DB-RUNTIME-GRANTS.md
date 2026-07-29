@@ -1,5 +1,7 @@
 # CMP-DB-RUNTIME-GRANTS Handoff
 
+> Status: superseded for Worker role topology by G3 production composition. This handoff records the earlier API-only baseline; current production facts are in `docs/04-工程手册/PostgreSQL运行角色权限矩阵.md` and `.handoffs/G3-WORKER-PRODUCTION-COMPOSITION.md`.
+
 ## Known Facts
 
 - 生产初始化权威定义 `ai_crm_migration` 与单一应用登录角色 `ai_crm_runtime`；运行角色当前只有数据库 `CONNECT`。

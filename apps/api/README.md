@@ -34,6 +34,10 @@ The OAuth Client ID and API resource Audience are separate values. The developme
 
 The CMP-01 application root now starts a NestJS HTTP application and exposes the reviewed `/health/live` and `/health/ready` contract. Required dependencies are supplied explicitly by the composition caller; an unavailable required dependency returns `503` without exposing dependency names or topology. Authentication and platform facades remain injected through their public entry points as their controllers are registered; the composition root does not create repositories or domain rules.
 
+Production composition now supplies PostgreSQL-backed Task and Notification query facades and required `task-query` / `notification-query` readiness dependencies. Notification reads retain current-principal storage filtering and module authorization/audit. Task list keeps per-item object authorization; because no reviewed Assignment/candidate visibility adapter exists yet, Task object reads fail closed rather than treating a function permission as object access. Task/Notification mutations, source routing, recipient resolution and preferences remain unavailable and are not exported by the API query binding.
+
+Workflow remains uncomposed: the repository has no production durable Workflow command Ledger, API-owned typed Flowable Secret contract/mount, or reviewed Workflow HTTP binding. Flowable container health alone is not API Workflow readiness.
+
 The reviewed PC BFF routes (`/auth/pc/login`, `/auth/pc/callback`, `/auth/pc/session`, `/auth/pc/refresh`, and `/auth/pc/logout`) delegate to the IAM-01 HTTP adapter. Cookie, Origin, Referer, and CSRF values are bounded and rejected when repeated before being passed to that adapter; their values are never logged.
 
 Database startup uses an application-owned bounded runtime and an explicit semantic `applicationSchemaVersion`; the schema version is not `AI_CRM_RELEASE`. The compatibility query is read-only and bounded by the PostgreSQL statement timeout. Startup never runs migrations or schema synchronization.

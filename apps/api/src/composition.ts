@@ -203,7 +203,7 @@ export function createApiPlatformComposition(bindings: ApiPlatformBindings): Rea
           ...(input.selectedAssignmentId === undefined ? {} : { selectedAssignmentId: input.selectedAssignmentId }),
         });
         return Object.freeze({
-          actorId: actorId(context),
+          actorId: context.workforce.workforcePersonId,
           actorType: "authenticated_subject" as const,
           ...(input.selectedAssignmentId === undefined ? {} : { assignmentId: input.selectedAssignmentId }),
         });

@@ -1,0 +1,14 @@
+.git
+.github
+.agents
+.claude
+.handoffs
+.turbo
+coverage
+node_modules
+output
+**/coverage
+**/dist
+**/node_modules
+**/*.tsbuildinfo
+deploy/compose/.runtime

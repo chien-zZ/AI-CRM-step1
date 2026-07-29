@@ -10,6 +10,8 @@ Repeatable environment deployment, health verification, rollback, and release me
 
 These scripts validate evidence metadata and content bindings; they do not execute a production release or prove the trusted origin of the referenced tests, approval, restore point, Secret permissions, observability alerts or rollback rehearsal. The release authority must resolve each `evidence://` reference in its approved evidence store, recompute the digest and verify its CI/approval identity before deployment. Follow the versioned production Runbook and retain the underlying evidence outside the repository without sensitive payloads.
 
+The API and Worker production images are defined by `apps/api/Dockerfile` and `apps/worker/Dockerfile`. The application-image workflow builds both exact commit artifacts, exports their filesystems, and invokes the joint migration verifier before a non-PR run may publish commit-addressed images. Registry-returned digests, rather than tags alone, are the production Compose and release-manifest inputs.
+
 ## OPS-G3 Migration Artifact Integrity
 
 - `generate-migration-manifest.mjs` recursively inventories every file in the reviewed repository `packages/database/migrations` and `packages/platform-modules/*/migrations` directories. It writes a deterministic version 1 manifest with safe relative paths, sizes and SHA-256 digests and refuses to overwrite an existing output.

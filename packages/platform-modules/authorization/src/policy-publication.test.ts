@@ -41,7 +41,7 @@ function fixture() {
   const options = {
     audit: { record: vi.fn((record: AuthorizationPolicyPublicationAuditRecord) => { auditRecords.push(record); return Promise.resolve(); }) },
     authorizer: { requireAllowed: vi.fn(() => Promise.resolve({ allowed: true, decisionId, evaluatedAt: "2026-07-28T04:59:59.000Z", policyVersion: "current-v1", reason: "allowed" as const })) },
-    permission: { action: "publish", resource: "synthetic.authorization-policy" },
+    permission: { action: "publish", resource: "platform.authorization.policy" },
     publisher: { publish: vi.fn((input: ProtectedPublishAuthorizationPolicyCommand) => Promise.resolve({ contentDigest: "a".repeat(64), publicationId: input.publicationId, publishedAt: input.publishedAt, replayed: false, version: input.snapshot.version })) },
   } satisfies ProtectedAuthorizationPolicyPublisherOptions;
   return { auditRecords, options, service: createProtectedAuthorizationPolicyPublisher(options) };
@@ -64,7 +64,7 @@ describe("protected authorization policy publication", () => {
     await expect(service.publish(command())).resolves.toMatchObject({ replayed: false, version: "synthetic-v1" });
     expect(options.authorizer.requireAllowed).toHaveBeenCalledWith(
       { activeAssignmentIds: [assignmentId], selectedAssignmentId: assignmentId, workforcePersonId },
-      { action: "publish", resource: "synthetic.authorization-policy" },
+      { action: "publish", resource: "platform.authorization.policy" },
       { managementOperationId: command().operationId, traceId: command().traceId },
     );
     expect(options.publisher.publish).toHaveBeenCalledTimes(1);
@@ -80,6 +80,12 @@ describe("protected authorization policy publication", () => {
     expect(auditRecords[0]?.actor).not.toHaveProperty("subject");
     expect(auditRecords[0]?.auditOperationId).toBe(command().operationId);
     expect(auditRecords[0]?.managementOperationId).toBe(command().operationId);
+  });
+
+  it("preserves the reviewed first-publication precondition through the protected boundary", async () => {
+    const { options, service } = fixture();
+    await service.publish({ ...command(), expectedPreviousVersion: null });
+    expect(options.publisher.publish).toHaveBeenCalledWith(expect.objectContaining({ expectedPreviousVersion: null }));
   });
 
   it("records an authorization denial and never reaches policy persistence", async () => {

@@ -125,4 +125,4 @@
 - Worker Drain deadline 与 Compose `stop_grace_period` 的静态门已实现并通过；仍需真实生产组合和运行证据。
 - BFF previous encryption key 轮换已由代码与生产 Compose overlay 表达并通过静态门；密钥值仍只来自受限文件。
 - Worker 尚未向公共只读迁移兼容检查提供受控 Pool、完整迁移目录和独立应用 Schema SemVer；API 已独立使用 `AI_CRM_API_SCHEMA_VERSION`，不得改传 Release ID 或调用 `runMigrations`。
-- CMP-01 仍处于 IMPLEMENTING，不满足 G3 或 Definition of Done，不得解锁 E2E-01。剩余关键门是首个真实策略的 bootstrap authority/Owner/权限/审批与管理审计接线、真实非空策略发布、File Provider 决策与实现，以及 Worker 真实环境证据、可中止投影持久化和消费者激活。
+- 2026-07-29 G3 增量：仓库侧 Authorization 管理权限/基线、API Task/Notification/File/COS、独立 API/Worker 数据库角色、Task Outbox/Inbox/投影 Worker、AMQPS 固定重试/DLQ、告警/恢复声明和 API/Worker 镜像迁移制品门已完成，汇总见 `G3-PRODUCTION-COMPOSITION.md`。CMP-01 现为 `EVIDENCE_BLOCKED`，仍不得解锁 E2E-01：真实首发策略、COS Bucket、镜像摘要、TLS/CAM/告警/恢复证据及消费者激活尚未由受保护生产环境闭合；Notification/Workflow/File Job 缺少已审合同，未创建虚假消费者。

@@ -70,6 +70,25 @@ test("protected platform HTTP operations map completely to reviewed platform Per
   assert.equal(Object.hasOwn(catalog, "grants"), false);
 });
 
+test("protected platform management commands use a separate reviewed permission catalog", async () => {
+  const [schema, catalog, httpCatalog] = await Promise.all([
+    readJson("contracts/permissions/platform-management-permission-catalog.v1.schema.json"),
+    readJson("contracts/permissions/platform-management-permission-catalog.v1.json"),
+    readJson("contracts/permissions/platform-permission-catalog.v1.json"),
+  ]);
+  const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);
+  assert.equal(validate(catalog), true, JSON.stringify(validate.errors));
+  assert.deepEqual(catalog.permissions, [{
+    action: "publish",
+    code: "platform.authorization.policy:publish",
+    owner: "platform.authorization",
+    resource: "platform.authorization.policy",
+    scopeDimensions: [],
+  }]);
+  const httpCodes = new Set(httpCatalog.permissions.map(({ code }) => code));
+  assert.equal(httpCodes.has(catalog.permissions[0].code), false, "management authority must not imply an HTTP surface");
+});
+
 test("new platform HTTP contracts declare bounded CSRF and idempotency semantics", async () => {
   const documents = await Promise.all(protectedDocuments.slice(0, 3).map(readYaml));
   const operations = new Map();

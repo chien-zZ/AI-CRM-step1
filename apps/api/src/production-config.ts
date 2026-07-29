@@ -28,6 +28,15 @@ const schema = {
   databaseStatementTimeoutMs: configuration.integer("AI_CRM_POSTGRES_STATEMENT_TIMEOUT_MS", {
     default: 15_000, maximum: 300_000, minimum: 100,
   }),
+  fileCenterDownloadGrantTtlMs: configuration.integer("AI_CRM_FILE_DOWNLOAD_GRANT_TTL_MS", { maximum: 3_600_000, minimum: 1_000 }),
+  fileCenterMaximumScanBytes: configuration.integer("AI_CRM_FILE_MAXIMUM_SCAN_BYTES", { maximum: 1_073_741_824, minimum: 1 }),
+  fileCenterMaximumUploadBytes: configuration.integer("AI_CRM_FILE_MAXIMUM_UPLOAD_BYTES", { maximum: 1_073_741_824, minimum: 1 }),
+  fileCenterUploadSessionTtlMs: configuration.integer("AI_CRM_FILE_UPLOAD_SESSION_TTL_MS", { maximum: 86_400_000, minimum: 1_000 }),
+  cosBucket: configuration.string("AI_CRM_COS_BUCKET", { maxLength: 255, pattern: /^[a-z0-9][a-z0-9.-]*-[1-9][0-9]{4,}$/u }),
+  cosRegion: configuration.string("AI_CRM_COS_REGION", { maxLength: 64, pattern: /^[a-z][a-z0-9-]+$/u }),
+  cosSecretId: configuration.secretFile("AI_CRM_COS_SECRET_ID_FILE"),
+  cosSecretKey: configuration.secretFile("AI_CRM_COS_SECRET_KEY_FILE"),
+  cosTimeoutMs: configuration.integer("AI_CRM_COS_TIMEOUT_MS", { maximum: 120_000, minimum: 100 }),
   jwksCacheMaxAgeMs: configuration.integer("AI_CRM_OIDC_JWKS_CACHE_MAX_AGE_MS", {
     default: 3_600_000, maximum: 86_400_000, minimum: 1_000,
   }),
@@ -54,6 +63,13 @@ export interface ProductionApiConfiguration {
   readonly databaseHealthProbe: Readonly<{
     readonly intervalMs: number;
     readonly timeoutMs: number;
+  }>;
+  readonly fileCenter: Readonly<{
+    readonly cos: Readonly<{ readonly bucket: string; readonly region: string; readonly secretId: string; readonly secretKey: string; readonly timeoutMs: number }>;
+    readonly downloadGrantTtlMs: number;
+    readonly maximumScanBytes: number;
+    readonly maximumUploadBytes: number;
+    readonly uploadSessionTtlMs: number;
   }>;
   readonly migrations: readonly string[];
   readonly oidcVerifier: Readonly<{
@@ -94,6 +110,8 @@ export async function loadProductionApiConfiguration(
   if (raw.databaseHealthProbeTimeoutMs >= raw.databaseHealthProbeIntervalMs) {
     throw new Error("api_database_health_window_invalid");
   }
+  if (raw.cosSecretId === raw.cosSecretKey) throw new Error("api_cos_credentials_not_separated");
+  if (raw.fileCenterMaximumScanBytes > raw.fileCenterMaximumUploadBytes) throw new Error("api_file_center_size_window_invalid");
   return Object.freeze({
     applicationSchemaVersion: raw.applicationSchemaVersion,
     database: Object.freeze({
@@ -107,6 +125,13 @@ export async function loadProductionApiConfiguration(
     databaseHealthProbe: Object.freeze({
       intervalMs: raw.databaseHealthProbeIntervalMs,
       timeoutMs: raw.databaseHealthProbeTimeoutMs,
+    }),
+    fileCenter: Object.freeze({
+      cos: Object.freeze({ bucket: raw.cosBucket, region: raw.cosRegion, secretId: raw.cosSecretId, secretKey: raw.cosSecretKey, timeoutMs: raw.cosTimeoutMs }),
+      downloadGrantTtlMs: raw.fileCenterDownloadGrantTtlMs,
+      maximumScanBytes: raw.fileCenterMaximumScanBytes,
+      maximumUploadBytes: raw.fileCenterMaximumUploadBytes,
+      uploadSessionTtlMs: raw.fileCenterUploadSessionTtlMs,
     }),
     migrations: Object.freeze(migrationDirectories.map((directory) => resolve(raw.migrationsRoot, directory))),
     oidcVerifier: Object.freeze({

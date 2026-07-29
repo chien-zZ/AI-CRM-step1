@@ -42,8 +42,8 @@ const capabilityKeys = [
   "temporary_denied",
 ] as const satisfies readonly (keyof CapabilityRow)[];
 
-const capabilityQuery = `select
-  current_user = 'ai_crm_runtime' as exact_runtime_role,
+const capabilityQuery = (expectedRole: "ai_crm_runtime" | "ai_crm_worker_runtime") => `select
+  current_user = '${expectedRole}' as exact_runtime_role,
   role.rolcanlogin as login_enabled,
   not role.rolsuper as superuser_denied,
   not role.rolcreatedb as createdb_denied,
@@ -76,10 +76,23 @@ function hasExactCapabilities(value: unknown): value is CapabilityRow {
 export function createPostgresRuntimeRoleCapabilityProbe(
   runtime: RuntimeRoleCapabilityRuntime,
 ): RuntimeRoleCapabilityProbe {
+  return createFixedRoleCapabilityProbe(runtime, "ai_crm_runtime");
+}
+
+export function createPostgresWorkerRuntimeRoleCapabilityProbe(
+  runtime: RuntimeRoleCapabilityRuntime,
+): RuntimeRoleCapabilityProbe {
+  return createFixedRoleCapabilityProbe(runtime, "ai_crm_worker_runtime");
+}
+
+function createFixedRoleCapabilityProbe(
+  runtime: RuntimeRoleCapabilityRuntime,
+  expectedRole: "ai_crm_runtime" | "ai_crm_worker_runtime",
+): RuntimeRoleCapabilityProbe {
   return Object.freeze({
     async check(): Promise<Readonly<RuntimeRoleCapabilityStatus>> {
       try {
-        const result = await runtime.execute<CapabilityRow>(capabilityQuery);
+        const result = await runtime.execute<CapabilityRow>(capabilityQuery(expectedRole));
         if (result.rowCount !== 1 || result.rows.length !== 1 || !hasExactCapabilities(result.rows[0])) {
           return unavailable;
         }
