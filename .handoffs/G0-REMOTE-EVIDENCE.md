@@ -9,7 +9,7 @@
 
 Known facts:
 
-- The local repository is on `main` at `e090dda` and has a locally configured `origin` URL and fetch refspec.
+- The local `main` history contains the G3 base `e090dda` plus the reviewed documentation and governance follow-ups, and has a locally configured `origin` URL and fetch refspec.
 - TLS access is restored for this Worktree by selecting Git's OpenSSL backend after the independent review reproduced one intermittent Schannel `missing close_notify` failure. GitHub Web/API requests succeed and eight consecutive `git ls-remote --symref origin HEAD` checks exit successfully. The remote repository is empty, so they return no refs.
 - GitHub's public repository API reports `main` as the configured default branch. Because the repository has no commits or branches, this setting is not yet a protected branch or merge-governance fact.
 - GitHub CLI is installed but has no authenticated GitHub host or `GH_TOKEN` in this execution context.
