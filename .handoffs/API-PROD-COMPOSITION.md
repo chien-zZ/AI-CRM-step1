@@ -103,7 +103,7 @@ This section preserves that completed subtask's original scope. The later `CMP-A
 - Resolved for production composition by CMP-API-AUTH-PERSIST: authentication audit maps through the public PostgreSQL Audit service with deterministic logical operation IDs and safe retry. Retention remains an Audit Owner decision and is not invented here.
 - What production image path supplies all migration source files, and how is its catalog integrity tied to the immutable release artifact?
 - Resolved by CMP-API-DB-READY: the synchronous health dependency reads a bounded application cache maintained by the public `DatabaseRuntime`; it does not execute a fresh query per request.
-- CMP-01 remains IMPLEMENTING and E2E-01 remains blocked until these items and the other G3 lines are closed.
+- Historical note: this subpackage did not complete CMP-01 at the time. The repository-side composition was later merged in `e090dda`; the current aggregate status is `EVIDENCE_BLOCKED`, and E2E-01 remains blocked until the external G3 evidence closes.
 
 ## Independent Review And Fix
 
@@ -120,7 +120,7 @@ This section preserves that completed subtask's original scope. The later `CMP-A
 - An application timeout cannot cancel the public `DatabaseRuntime.healthCheck()` call. Scheduling therefore waits for that underlying call to settle before starting the interval, preventing accumulated Pool queries when a probe remains stuck; a never-settling call leaves Readiness unavailable without launching more probes.
 - The probe uses only public `DatabaseRuntime.healthCheck()` and does not run migration, DDL, module SQL or automatic schema synchronization.
 - Verification: API ordinary suite 90 passed and 5 dependency integration tests skipped; API typecheck, lint, build and contracts check passed; `git diff --check` passed.
-- The reviewed authorization and authentication-audit adapters are composed. Absence of a complete published policy still deliberately keeps production Not Ready; CMP-01 remains IMPLEMENTING and E2E-01 remains blocked by the remaining G3 lines.
+- The reviewed authorization and authentication-audit adapters are composed. Absence of a complete published policy still deliberately keeps production Not Ready. This historical subpackage was later superseded by the merged G3 composition in `e090dda`; CMP-01 is now `EVIDENCE_BLOCKED`, and E2E-01 remains blocked by the external G3 evidence.
 - Independent review found one P2 overlapping-query risk after an application timeout. The scheduler now waits for underlying settlement, and regression coverage proves advancing multiple timeout/interval windows cannot start a second query while the first is pending. Re-review closed the P2 with no new P1/P2; its P3 wording correction now distinguishes ignored late readiness from the permitted next interval after underlying settlement.
 
 ## CMP-API-AUTH-PERSIST Integration Result

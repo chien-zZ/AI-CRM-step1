@@ -1,6 +1,6 @@
 # G3 Production Composition Aggregate Handoff
 
-- Status: CODE AND RELEASE GATES MERGED FOR REVIEW; PRODUCTION ACTIVATION EVIDENCE BLOCKED
+- Status: CODE AND RELEASE GATES MERGED; PRODUCTION ACTIVATION EVIDENCE BLOCKED
 - Date: 2026-07-29
 - Owner: CMP-01 Integration Owner
 
@@ -62,3 +62,9 @@
 - Authorization 53 passed / 5 dependency-gated skipped.
 - PostgreSQL isolated integration 39/39 passed; synthetic Rabbit TLS matrix passed and resources were cleaned.
 - Repository, Compose and targeted contract gates passed. Final `pnpm check` completed with 140/140 Turbo tasks; isolated PostgreSQL integration completed 39/39 after the final allow/deny matrix was added.
+
+## Merge result
+
+- Merged to local `main` as `e090dda feat(g3): compose production api and worker`; no remote merge is claimed.
+- `output/` was not modified or committed.
+- Repository-side CMP-01 implementation is complete; the gate remains `EVIDENCE_BLOCKED` until the external evidence above is accepted.

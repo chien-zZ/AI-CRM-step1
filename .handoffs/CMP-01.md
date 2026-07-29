@@ -1,13 +1,13 @@
 # CMP-01 API 与 Worker 组合根
 
-- Status: IMPLEMENTING
+- Status: EVIDENCE_BLOCKED（仓库侧生产组合已随 `e090dda` 合并；等待受保护环境证据）
 - Owner: 当前会话（`apps/api`、`apps/worker` 组合根单一 Owner）
 - Reviewer: 独立 Review 多轮完成；授权持久化、RabbitMQ Adapter 与 API 授权/审计/组织组合的复审 finding 已清零
 - Allowed paths: `apps/api`、`apps/worker` 的 Composition Root、Module Wiring、启动与健康入口，以及本任务 handoff
 
 ## CMP-API-DB-READY 历史子包边界
 
-本节保留已完成数据库 Readiness 子包当时的范围；后文“当前实现”与“尚未完成”记录后续授权、组织、审计和 RabbitMQ Adapter 的增量结果。
+本节保留已完成数据库 Readiness 子包当时的范围；后文至“独立 Review”为 G3 合并前的累积历史记录。当前权威结论见文末“当前状态与外部阻塞”和 `G3-PRODUCTION-COMPOSITION.md`。
 
 ### 已知事实
 
@@ -79,7 +79,9 @@
 - Authorization 已新增受保护策略发布命令边界，显式要求当前 Workforce 授权、稳定操作幂等、管理审计和事务发布；未创建真实发布权限、Owner、Role/Grant/策略 seed 或生产写入口，首次策略 bootstrap 仍失败关闭。
 - Worker 已提供固定 `amqplib@2.0.1` 的文件式 AMQPS Adapter，覆盖 Confirm/Return、背压、ACK/NACK、固定 TTL 分层重试、DLQ、Prefetch/Concurrency、Readiness 和可中止 Drain/Close；生产 bootstrap 尚未接线，消费者保持禁用。
 
-## 尚未完成
+## G3 合并前历史未完成项（已由后续增量取代）
+
+以下内容用于解释增量演进，不再代表 `e090dda` 合并后的当前缺口。
 
 - 生产 API Binding Factory 已闭合 PostgreSQL、Redis Session、OIDC、迁移检查、运行角色最小权限验证、资源生命周期、Organization 只读解析、持久化 Authorization Policy/Decision、认证 Audit，以及 Registry/Form 查询与模块能力 Readiness。File internal-only HTTP 合同和受保护 Controller/Adapter 已组合，但 storage/scanner Provider 尚未组合并保持 required Readiness 失败关闭。
 - Task/Notification 的 9 个 HTTP operation 已映射到 8 个业务中立平台权限；Registry/Form/File 新增 7 个 HTTP operation 与 6 个业务中立权限。未创建角色、Grant 或策略 seed。
@@ -117,12 +119,9 @@
 - Audit/Registry/Form 查询组合独立 Review Round 1 发现关闭后可能启动策略 SQL、卡死依赖冻结数据库探测、嵌套 accessor 仍可执行三项 P2；均已按复现路径修复并补回归，同一 Reviewer 复审关闭全部 finding，未发现新增问题。
 - 数据库最小权限、Registry/Form 模块探针和受保护策略发布边界均完成独立 Review 与原 Reviewer 复审。API 最终接线 Review 关闭启动取消状态残留、guard lint/type 和卡死探针恢复证明问题，无开放 P0-P3。
 
-## 未解决问题
+## 当前状态与外部阻塞
 
-- RabbitMQ concrete adapter、文件式 AMQPS/TLS/VHost 配置与固定 TTL 分层延迟机制已实现；Task projection 的精确重试/超时/流控、错误分类和首版告警下限已由 ADR-0027/AsyncAPI 接受并在 Worker 中密封。真实 TLS/最小权限/恢复/告警证据和可中止 Task 投影持久化边界未完成，生产消费仍禁用。
-- Production Compose 已向两台 API 挂载专用 `api_postgres_url`，并声明 Schema 版本、迁移根、JWKS 与生命周期预算；不可变 API 镜像是否包含完整迁移目录仍需制品门证明。
-- Worker 生产代码已定义文件式 PostgreSQL 与 Rabbit TLS 配置，但 Production Compose 尚未挂载相应 Secret；在消费激活合同解决前不把资源组合解释为消费者 Ready。
-- Worker Drain deadline 与 Compose `stop_grace_period` 的静态门已实现并通过；仍需真实生产组合和运行证据。
-- BFF previous encryption key 轮换已由代码与生产 Compose overlay 表达并通过静态门；密钥值仍只来自受限文件。
-- Worker 尚未向公共只读迁移兼容检查提供受控 Pool、完整迁移目录和独立应用 Schema SemVer；API 已独立使用 `AI_CRM_API_SCHEMA_VERSION`，不得改传 Release ID 或调用 `runMigrations`。
-- 2026-07-29 G3 增量：仓库侧 Authorization 管理权限/基线、API Task/Notification/File/COS、独立 API/Worker 数据库角色、Task Outbox/Inbox/投影 Worker、AMQPS 固定重试/DLQ、告警/恢复声明和 API/Worker 镜像迁移制品门已完成，汇总见 `G3-PRODUCTION-COMPOSITION.md`。CMP-01 现为 `EVIDENCE_BLOCKED`，仍不得解锁 E2E-01：真实首发策略、COS Bucket、镜像摘要、TLS/CAM/告警/恢复证据及消费者激活尚未由受保护生产环境闭合；Notification/Workflow/File Job 缺少已审合同，未创建虚假消费者。
+- 2026-07-29，仓库侧 Authorization 管理权限/基线、API Task/Notification/File/COS、独立 API/Worker 数据库角色、Task Outbox/Inbox/投影 Worker、AMQPS 固定重试/DLQ、告警/恢复声明和 API/Worker 镜像迁移制品门已随 `e090dda` 合并；汇总见 `G3-PRODUCTION-COMPOSITION.md`。
+- CMP-01 当前唯一口径为 `EVIDENCE_BLOCKED`，尚未达到 `PASSED`。真实首发策略、COS test Bucket、不可变镜像摘要、RabbitMQ TLS/CAM、告警部署、Inbox/重试/DLQ/Drain 恢复演练及消费者显式启用必须由受保护环境闭合。
+- 在上述证据完成前不得解锁 E2E-01，不得把合成集成测试当作生产证据。
+- Notification、Workflow、File Job 缺少已审的队列/Job 合同，因此未创建消费者；这属于合同边界，不是遗漏实现。Workflow 还需要耐久 Ledger 和有类型的应用/Provider 组合合同。

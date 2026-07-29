@@ -1,32 +1,33 @@
 # G0 Remote Governance And Image Artifact Evidence
 
 - Task: WP-D / G0 remote governance and immutable image evidence
-- Status: `PARTIAL` / blocked on remote administrative evidence and application image build foundations
-- Evidence date: 2026-07-28 (Asia/Shanghai)
+- Status: `PARTIAL` / TLS and default-branch discovery restored; blocked on remote administrative evidence and trusted published-image evidence
+- Evidence date: 2026-07-29 (Asia/Shanghai; remote rechecked after `e090dda`)
 - Scope owner: Integration governance line
 
 ## Task Boundary
 
 Known facts:
 
-- The local repository is on `main` at `97d7fc76f089ef8886233ade88e8d38855ec275e` and has a locally configured `origin` URL and fetch refspec.
-- The current verification could not read `origin` because both `git ls-remote --symref origin HEAD` and `git ls-remote --heads origin` failed during the TLS handshake.
+- The local repository is on `main` at `e090dda` and has a locally configured `origin` URL and fetch refspec.
+- TLS access is restored for this Worktree by selecting Git's OpenSSL backend after the independent review reproduced one intermittent Schannel `missing close_notify` failure. GitHub Web/API requests succeed and eight consecutive `git ls-remote --symref origin HEAD` checks exit successfully. The remote repository is empty, so they return no refs.
+- GitHub's public repository API reports `main` as the configured default branch. Because the repository has no commits or branches, this setting is not yet a protected branch or merge-governance fact.
 - GitHub CLI is installed but has no authenticated GitHub host or `GH_TOKEN` in this execution context.
-- There are no cached `origin/*` remote-tracking refs. Local branches and Worktrees are not remote governance evidence.
+- There are no remote commits, branches, pull requests, Actions runs or cached `origin/*` remote-tracking refs. Local branches and Worktrees are not remote governance evidence.
 - `.github/workflows/ci.yml` defines `pnpm check` for pull requests and pushes to a locally named `main` branch.
-- `.github/CODEOWNERS` contains comments and examples only; it assigns no actual user or team.
-- The repository contains no API or Worker Dockerfile and no workflow that builds, exports/unpacks, or verifies API/Worker images.
-- The repository does contain a fail-closed verifier for two already-unpacked application filesystems and unit evidence for that verifier.
+- `.github/CODEOWNERS` now assigns repository-wide ownership to the confirmed repository owner `@chien-zZ`; server-side required CODEOWNERS review is still absent.
+- The repository contains reviewed non-root API and Worker Dockerfiles plus `.github/workflows/application-images.yml` for commit-addressed builds and migration-manifest verification before push. The workflow now runs only for pushes to `main`, but this becomes a protected-commit gate only after remote `main` protection is established.
+- No trusted workflow run, immutable registry digest, build attestation or successful protected publication record is available in this workspace.
 
 Allowed assumptions:
 
-- The configured `origin` is a candidate GitHub repository endpoint only. Its existence, default branch, refs, permissions and protection settings remain unconfirmed until readable remote evidence is captured.
-- The existing unpacked-filesystem verifier may be invoked by a future reviewed image pipeline after immutable API and Worker images exist.
+- The configured `origin` is the readable public GitHub repository endpoint. Its configured default branch is `main` and its refs are confirmed empty; permissions and protection settings remain unconfirmed until the first controlled push and authenticated governance export.
+- The repository image pipeline and embedded-manifest verifier are implementation evidence only until the trusted pipeline produces and verifies immutable registry digests.
 
 Forbidden assumptions:
 
 - Do not treat a configured remote URL, a local `main` branch, a local workflow file, local Review notes, or Worktree isolation as server-side branch protection.
-- Do not infer a remote default branch, required status check, PR approval rule, CODEOWNERS review, force-push protection, deletion protection, repository existence, or successful CI run.
+- Do not infer that the configured default branch already exists or is protected, or infer a required status check, PR approval rule, CODEOWNERS review, force-push protection, deletion protection, or successful CI run.
 - Do not claim image evidence from repository migration directories, synthetic filesystem fixtures, Compose image variables, or static manifest tests.
 - Do not invent an image layout, registry, build credential, GitHub owner/team, required check name, Task projection value, or production Secret.
 
@@ -40,15 +41,15 @@ Non-goals:
 | Requirement | Available evidence | Result |
 |---|---|---|
 | Remote configured | Local config has `origin=https://github.com/chien-zZ/AI-CRM-step1.git` and the normal heads fetch refspec | `LOCAL_ONLY` |
-| Remote repository and refs readable | Current `ls-remote` requests failed at TLS handshake; no cached `origin/*` refs | `UNVERIFIED` |
-| Default branch | Local `HEAD -> main` proves only the local branch; remote symbolic `HEAD` was not readable | `UNVERIFIED` |
+| Remote repository and refs readable | TLS/API access succeeds; the public remote is empty and has no refs or cached `origin/*` refs | `PARTIAL` |
+| Default branch | GitHub's repository API reports configured default `main`; no branch ref exists yet | `CONFIGURED/NOT_CREATED` |
 | Required status checks | Local CI declares one `check` job, but no authenticated branch-protection response or completed remote check run is available | `UNVERIFIED` |
 | Required PR review | No authenticated ruleset/branch-protection response or PR evidence is available | `UNVERIFIED` |
-| Required CODEOWNERS review | `CODEOWNERS` has no effective owner entry, and no server-side review rule is available | `ABSENT/UNVERIFIED` |
+| Required CODEOWNERS review | Repository-wide `@chien-zZ` ownership is effective in the file; no server-side review rule or independent-review PR evidence is available | `LOCAL_READY/UNVERIFIED` |
 | Force-push protection | No authenticated ruleset/branch-protection response is available | `UNVERIFIED` |
 | Branch deletion protection | No authenticated ruleset/branch-protection response is available | `UNVERIFIED` |
 
-Conclusion: G0 remains `PARTIAL`. The local governance process is usable, but none of the remote enforcement requirements above is closed by current evidence.
+Conclusion: G0 remains `PARTIAL`. TLS and configured default-branch discovery are closed, but none of the remote enforcement requirements above is closed by current evidence.
 
 ## Immutable API/Worker Image Evidence
 
@@ -58,39 +59,33 @@ The existing implementation provides:
 - a joint verifier that requires both already-unpacked API and Worker filesystems to contain the fixed embedded manifest and the complete approved migration set;
 - rejection of missing, extra, modified, malformed and symbolic-link content, with one external approved digest binding both artifacts.
 
-The image evidence is nevertheless blocked:
-
-- no API or Worker Dockerfile exists;
-- no build workflow produces digest-pinned application images;
-- no workflow exports or unpacks both produced image filesystems and calls `scripts/deploy/verify-application-migration-artifacts.mjs`;
-- no registry digest, build attestation, unpacked image filesystem or successful image-level verifier output is available.
-
-Accordingly, this task did not add a speculative Dockerfile or claim that repository fixtures are images. The next authorized build-window owner must create the reviewed application Dockerfiles/pipeline, copy the same complete migration tree and fixed manifest into both images, build immutable images, export/unpack the exact digest-addressed images, and run the joint verifier against the release manifest's externally approved `artifacts.migrationHead`. Only that successful build/unpack/verify record can close image evidence.
+The repository-side image foundation is now implemented, but image evidence remains blocked because no trusted pipeline run, registry digest, build attestation, published image filesystem or protected release record is available. The workflow is locally restricted to pushes to `main`; because remote `main` does not yet exist or have protection, this is necessary implementation evidence but not protected-commit proof. The authorized release operator must establish and export remote protection, then retain the exact API/Worker digests and prove the embedded migration manifests match the approved release evidence. Repository files and synthetic fixtures alone cannot close this gate.
 
 ## Verification Commands
 
 - `git branch -a -vv`: local `main` and local task branches only; no `remotes/origin/*` entries.
 - `git config --get-regexp "^branch\\.|^remote\\.origin\\."`: local origin URL/fetch refspec recorded; no branch upstream configuration returned.
-- `git ls-remote --symref origin HEAD`: blocked by TLS handshake failure.
-- `git ls-remote --heads origin`: blocked by TLS handshake failure.
+- `git config --local http.sslBackend openssl` avoids the independently reproduced intermittent Schannel close-notify failure; eight consecutive `git ls-remote --symref origin HEAD` checks exit successfully with no refs because the public remote is empty.
+- GitHub public repository API: repository is readable, `default_branch` is `main`, repository rulesets are empty, and branches/PRs/Actions runs are absent.
 - `gh auth status`: no authenticated GitHub host.
 - `gh repo view ...` / branch protection API: unavailable without authentication.
-- `.github/CODEOWNERS`: comment-only placeholder.
-- `.github/workflows/ci.yml`: local `pnpm check` definition only; no image job.
-- `rg --files -g "*Dockerfile*" -g "*.dockerfile"`: no result.
-- Docker engine is locally available, but no local AI-CRM API/Worker image was found; engine availability is not build evidence.
+- `.github/CODEOWNERS`: repository-wide `@chien-zZ` owner entry; server-side enforcement remains unverified.
+- `.github/workflows/ci.yml`: local `pnpm check` definition; `.github/workflows/application-images.yml` now permits image build/verify/publish only on pushes to `main`.
+- `apps/api/Dockerfile` and `apps/worker/Dockerfile`: reviewed non-root build definitions exist.
+- No trusted image publication or registry-digest evidence was produced in this documentation update.
 
 ## Required Follow-up Evidence
 
-1. Restore read access to the intended remote and record its repository identity plus symbolic default branch.
+1. Create the configured `main` branch through the approved initial push and confirm its symbolic remote HEAD; TLS/read access and the configured default name are already verified.
 2. Obtain a read-only authenticated ruleset/branch-protection export proving required checks, minimum approvals/CODEOWNERS behavior, force-push prohibition and deletion prohibition.
 3. Record a real PR that satisfied those rules and a successful required-check run; do not expose credentials in the evidence.
-4. Replace the placeholder CODEOWNERS examples with confirmed users/teams, then prove that the server requires their review where intended.
-5. Add reviewed API/Worker Dockerfiles and an immutable image build pipeline, then retain the exact image digests and successful joint build/unpack/manifest verification output.
+4. Prove that the server requires the confirmed CODEOWNER's review where intended, with a distinct real reviewer for the acceptance PR; do not treat self-review as approval evidence.
+5. Prove the image workflow's push-to-`main` trigger can only receive commits that entered through the protected required-PR path.
+6. Run the reviewed API/Worker image pipeline in the trusted environment, then retain the exact registry digests, build evidence and successful embedded-manifest verification output.
 
 ## Local Verification Result
 
 - `node --test scripts/check/migration-artifact.test.mjs scripts/check/production-deployment-gates.test.mjs`: 12/12 passed.
 - `pnpm compose:check`: passed.
 - `git diff --check`: passed.
-- No API/Worker image was built or unpacked in this task, so these local results are static gate evidence only and are not image evidence.
+- Repository-side Dockerfiles and the image workflow are present after `e090dda`, but no trusted API/Worker image was published in this documentation update; local/static results are not production image evidence.
