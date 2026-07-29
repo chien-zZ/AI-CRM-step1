@@ -1,10 +1,8 @@
 name: Application images
 
 on:
-  pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,14 +35,12 @@ jobs:
           node scripts/deploy/verify-application-migration-artifacts.mjs \
             "$RUNNER_TEMP/api-root/app" "$RUNNER_TEMP/worker-root/app" "$approved_digest"
       - name: Authenticate to the immutable image registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish commit-addressed images and retain digests
-        if: github.event_name != 'pull_request'
         run: |
           repository="${GITHUB_REPOSITORY,,}"
           for application in api worker; do

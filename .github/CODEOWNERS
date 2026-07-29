@@ -1,6 +1,2 @@
-# Add real GitHub users or teams before enabling required CODEOWNERS reviews.
-# Example:
-# * @your-org/project-maintainers
-# /contracts/ @your-org/platform-architecture
-# /docs/02-业务规则/ @your-org/product-owners
-# /deploy/ @your-org/platform-operations
+# Repository-wide ownership.
+* @chien-zZ

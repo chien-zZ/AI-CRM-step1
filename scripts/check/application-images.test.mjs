@@ -27,3 +27,11 @@ test("image workflow verifies both extracted artifacts before publishing commit 
   assert.match(workflow, /docker export/u);
   assert.match(workflow, /RepoDigests/u);
 });
+
+test("image publication can only be triggered by a push to main", async () => {
+  const workflow = await read(".github/workflows/application-images.yml");
+  assert.match(workflow, /on:\s*\n\s*push:\s*\n\s*branches: \[main\]/u);
+  assert.doesNotMatch(workflow, /pull_request:/u);
+  assert.doesNotMatch(workflow, /workflow_dispatch:/u);
+  assert.doesNotMatch(workflow, /github\.event_name/u);
+});
