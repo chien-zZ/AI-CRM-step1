@@ -164,6 +164,13 @@ export function createPcAuthenticationHttpAdapter(
             status: result.endSessionUrl === undefined ? 204 : 302,
           });
         }
+        validateBrowserMutation({
+          allowedOrigins: options.allowedOrigins,
+          csrfHeader: "anonymous-logout",
+          csrfSessionValue: "anonymous-logout",
+          origin: context.origin,
+          referer: context.referer,
+        });
         return Object.freeze({
           headers: noStoreHeaders({ "Set-Cookie": clearPcSessionCookie() }),
           status: 204,

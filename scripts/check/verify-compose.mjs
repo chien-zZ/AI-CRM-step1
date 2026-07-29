@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import YAML from "yaml";
 import { validatePreviousSessionKeyOverlay } from "./production-deployment-gates.mjs";
+import { mergeComposeModels, validateEffectiveComposeSafety } from "./compose-safety.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const parseCompose = async (path) => YAML.parse(await readFile(resolve(root, path), "utf8"), { merge: true });
@@ -25,6 +26,17 @@ const productionRabbitEntrypoint = await readFile(resolve(root, "deploy/compose/
 const productionKeycloakEntrypoint = await readFile(resolve(root, "deploy/compose/production/keycloak-entrypoint.sh"), "utf8");
 const required = ["postgres", "redis", "rabbitmq", "keycloak", "flowable", "clamav", "nginx"];
 const errors = [];
+
+for (const [label, model, options] of [
+  ["development", mergeComposeModels(base, dev), {}],
+  ["test", mergeComposeModels(base, test), {}],
+  ["authentication-test", mergeComposeModels(base, authTest), {}],
+  ["rabbitmq-integration", mergeComposeModels(base, rabbitmqIntegration), {}],
+  ["host-a", productionA, { production: true }],
+  ["host-b", productionB, { production: true }],
+  ["host-a-previous-key", mergeComposeModels(productionA, productionAPreviousKey), { production: true }],
+  ["host-b-previous-key", mergeComposeModels(productionB, productionBPreviousKey), { production: true }],
+]) errors.push(...validateEffectiveComposeSafety(model, label, options));
 
 if (!base.services?.postgres?.secrets?.includes("postgres_migration_password")) {
   errors.push("PostgreSQL must receive a distinct migration credential file.");
@@ -225,8 +237,10 @@ if (!productionRedisEntrypoint.includes('${#password}') || !productionRedisEntry
 for (const requiredText of ["listeners.tcp = none", "listeners.ssl.default = 5671", "ssl_options.verify = verify_peer", "rabbitmq_publisher_username", "rabbitmq_consumer_username", '"configure":"^ai-crm\\\\.platform']) {
   if (!productionRabbitEntrypoint.includes(requiredText)) errors.push(`RabbitMQ production entrypoint is missing the reviewed TLS/least-privilege boundary: ${requiredText}`);
 }
-if (!productionRabbitEntrypoint.includes('"read":"^ai-crm\\\\.platform\\\\.task-center\\\\.projection\\\\.v1$"')) {
-  errors.push("RabbitMQ production consumer may read only the reviewed main Task projection queue, never retry or DLQ queues.");
+if (!productionRabbitEntrypoint.includes('"write":"^(ai-crm\\\\.platform\\\\.(events|retry|dead-letter)') ||
+  !productionRabbitEntrypoint.includes('"read":"^(ai-crm\\\\.platform\\\\.(events|retry|dead-letter)') ||
+  !productionRabbitEntrypoint.includes('task-center\\\\.projection\\\\.v1)$"')) {
+  errors.push("RabbitMQ production consumer permissions must cover the reviewed declarations, bindings, retry publishing and main queue consumption.");
 }
 if (productionKeycloakEntrypoint.includes("start-dev") || productionKeycloakEntrypoint.includes("realm-dev") ||
   !productionKeycloakEntrypoint.includes("/run/secrets/postgres_keycloak_password")) {

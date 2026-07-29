@@ -1,4 +1,5 @@
-import { lstat, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readFile } from "node:fs/promises";
 
 import { configurationError } from "./errors.js";
 
@@ -10,8 +11,15 @@ export interface SecretFileInfo {
 }
 
 export interface SecretFileSystem {
+  open?(filePath: string): Promise<SecretFileHandle>;
   inspect(filePath: string): Promise<SecretFileInfo>;
   read(filePath: string): Promise<string>;
+}
+
+export interface SecretFileHandle {
+  close(): Promise<void>;
+  inspect(): Promise<SecretFileInfo>;
+  read(maxBytes: number): Promise<string>;
 }
 
 export interface SecretFilePolicy {
@@ -21,6 +29,22 @@ export interface SecretFilePolicy {
 }
 
 const nodeFileSystem: SecretFileSystem = {
+  open: async (filePath) => {
+    const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    return {
+      close: async () => handle.close(),
+      inspect: async () => {
+        const stats = await handle.stat();
+        return { isFile: stats.isFile(), isSymbolicLink: stats.isSymbolicLink(), mode: stats.mode, size: stats.size };
+      },
+      read: async (maxBytes) => {
+        const buffer = Buffer.allocUnsafe(maxBytes + 1);
+        const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0);
+        if (bytesRead > maxBytes) throw new Error("secret_file_too_large");
+        return buffer.subarray(0, bytesRead).toString("utf8");
+      },
+    };
+  },
   inspect: async (filePath) => {
     const stats = await lstat(filePath);
     return {
@@ -55,23 +79,43 @@ export const readSecretFile = async (
   }
 
   let info: SecretFileInfo;
-  try {
-    info = await fileSystem.inspect(filePath);
-  } catch {
-    throw configurationError("secret_unreadable", referenceVariable);
-  }
-  if (info.isSymbolicLink || !info.isFile || info.size < 1 || info.size > maxBytes) {
-    throw configurationError("secret_unreadable", referenceVariable);
-  }
-  if (policy.enforcePermissions === true && !RESTRICTED_MODES.has(info.mode & 0o777)) {
-    throw configurationError("secret_permissions", referenceVariable);
-  }
-
   let contents: string;
-  try {
-    contents = await fileSystem.read(filePath);
-  } catch {
-    throw configurationError("secret_unreadable", referenceVariable);
+  if (fileSystem.open) {
+    let handle: SecretFileHandle | undefined;
+    try {
+      handle = await fileSystem.open(filePath);
+      info = await handle.inspect();
+      if (info.isSymbolicLink || !info.isFile || info.size < 1 || info.size > maxBytes) {
+        throw configurationError("secret_unreadable", referenceVariable);
+      }
+      if (policy.enforcePermissions === true && !RESTRICTED_MODES.has(info.mode & 0o777)) {
+        throw configurationError("secret_permissions", referenceVariable);
+      }
+      contents = await handle.read(maxBytes);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error &&
+        ((error as { code?: unknown }).code === "secret_permissions" || (error as { code?: unknown }).code === "secret_unreadable")) throw error;
+      throw configurationError("secret_unreadable", referenceVariable);
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  } else {
+    try {
+      info = await fileSystem.inspect(filePath);
+    } catch {
+      throw configurationError("secret_unreadable", referenceVariable);
+    }
+    if (info.isSymbolicLink || !info.isFile || info.size < 1 || info.size > maxBytes) {
+      throw configurationError("secret_unreadable", referenceVariable);
+    }
+    if (policy.enforcePermissions === true && !RESTRICTED_MODES.has(info.mode & 0o777)) {
+      throw configurationError("secret_permissions", referenceVariable);
+    }
+    try {
+      contents = await fileSystem.read(filePath);
+    } catch {
+      throw configurationError("secret_unreadable", referenceVariable);
+    }
   }
   if (Buffer.byteLength(contents, "utf8") > maxBytes) {
     throw configurationError("secret_unreadable", referenceVariable);

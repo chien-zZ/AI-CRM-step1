@@ -105,14 +105,17 @@ export const validateMigrationManifest = (manifest) => {
         errors.push(`${path} must contain exactly path, sha256 and size.`);
         continue;
       }
-      if (typeof file.path !== "string" || !SAFE_PATH.test(file.path) || file.path.includes("..") || seen.has(file.path) || file.path <= previous) {
+      const safeFilePath = typeof file.path === "string" && SAFE_PATH.test(file.path) && !file.path.includes("..") && !seen.has(file.path) && file.path > previous;
+      if (!safeFilePath) {
         errors.push(`${path}.path must be a unique, sorted, safe migration file path.`);
       }
-      seen.add(file.path);
-      previous = file.path;
+      if (typeof file.path === "string") {
+        seen.add(file.path);
+        previous = file.path;
+      }
       if (!Number.isSafeInteger(file.size) || file.size < 0) errors.push(`${path}.size must be a non-negative safe integer.`);
       if (typeof file.sha256 !== "string" || !SHA256.test(file.sha256)) errors.push(`${path}.sha256 must be a sha256 digest.`);
-      if (Array.isArray(manifest.migrationRoots) && !manifest.migrationRoots.some((root) => file.path.startsWith(`${root}/`))) {
+      if (typeof file.path === "string" && Array.isArray(manifest.migrationRoots) && !manifest.migrationRoots.some((root) => file.path.startsWith(`${root}/`))) {
         errors.push(`${path}.path is not inside a declared migration root.`);
       }
     }

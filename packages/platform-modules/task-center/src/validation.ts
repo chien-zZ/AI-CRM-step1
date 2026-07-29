@@ -8,8 +8,21 @@ const UTC_RFC3339 = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9
 const invalid = (): never => { throw new TaskCenterError("TASK_INPUT_INVALID"); };
 export const validateId = (value: unknown): string => typeof value === "string" && ID.test(value) ? value : invalid();
 export const validateUuid = (value: unknown): string => typeof value === "string" && UUID.test(value) ? value : invalid();
-export const validateKey = (value: TaskProjectionKey): TaskProjectionKey => ({ sourceType: validateId(value.sourceType), sourceTaskId: validateId(value.sourceTaskId) });
-export const validateActor = (value: TaskActor): TaskActor => ({ principalId: validateId(value.principalId) });
+const record = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid();
+  return value as Record<string, unknown>;
+};
+export const validateKey = (value: TaskProjectionKey): TaskProjectionKey => {
+  const input = record(value);
+  return { sourceType: validateId(input["sourceType"]), sourceTaskId: validateId(input["sourceTaskId"]) };
+};
+export const validateActor = (value: TaskActor): TaskActor => {
+  const input = record(value);
+  const assignments=input["activeAssignmentIds"];
+  if(assignments!==undefined&&(!Array.isArray(assignments)||assignments.length>100))invalid();
+  const activeAssignmentIds=assignments===undefined?undefined:Object.freeze((assignments as unknown[]).map(validateId));
+  return { principalId: validateId(input["principalId"]),...(activeAssignmentIds===undefined?{}:{activeAssignmentIds}) };
+};
 export const validateTimestamp = (value: unknown): string => {
   if (typeof value !== "string") return invalid();
   const match = UTC_RFC3339.exec(value);
@@ -20,11 +33,13 @@ export const validateTimestamp = (value: unknown): string => {
   return maximumDay!==undefined&&day>=1&&day<=maximumDay&&hour<=23&&minute<=59&&second<=59 ? value : invalid();
 };
 export const validateEvent = (value: TaskLifecycleEvent): TaskLifecycleEvent => {
+  const input = record(value);
   const key = validateKey(value);
-  if (!Number.isSafeInteger(value.sourceVersion) || value.sourceVersion < 1 || !["open", "completed", "cancelled"].includes(value.status)) invalid();
-  const occurredAt = validateTimestamp(value.occurredAt);
-  const dueAt = value.dueAt === undefined ? undefined : validateTimestamp(value.dueAt);
-  return { ...value, ...key, occurredAt, eventId: validateUuid(value.eventId), deepLink: { appId: validateId(value.deepLink.appId), routeId: validateId(value.deepLink.routeId) }, ...(value.assigneeReference === undefined ? {} : { assigneeReference: validateId(value.assigneeReference) }), ...(value.candidateScopeReference === undefined ? {} : { candidateScopeReference: validateId(value.candidateScopeReference) }), ...(dueAt === undefined ? {} : { dueAt }) };
+  if (!Number.isSafeInteger(input["sourceVersion"]) || Number(input["sourceVersion"]) < 1 || !["open", "completed", "cancelled"].includes(String(input["status"]))) invalid();
+  const occurredAt = validateTimestamp(input["occurredAt"]);
+  const dueAt = input["dueAt"] === undefined ? undefined : validateTimestamp(input["dueAt"]);
+  const deepLink = record(input["deepLink"]);
+  return { ...value, ...key, occurredAt, eventId: validateUuid(input["eventId"]), deepLink: { appId: validateId(deepLink["appId"]), routeId: validateId(deepLink["routeId"]) }, ...(input["assigneeReference"] === undefined ? {} : { assigneeReference: validateId(input["assigneeReference"]) }), ...(input["candidateScopeReference"] === undefined ? {} : { candidateScopeReference: validateId(input["candidateScopeReference"]) }), ...(dueAt === undefined ? {} : { dueAt }) };
 };
 const canonicalize = (value: unknown, ancestors: ReadonlySet<object>): unknown => {
   if (value === null || typeof value === "boolean" || typeof value === "string") return value;

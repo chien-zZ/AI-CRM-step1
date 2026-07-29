@@ -189,6 +189,20 @@ describe("amqplib publisher adapter", () => {
 });
 
 describe("amqplib consumer adapter", () => {
+  it("cancels a consumer tag that is returned after run is aborted", async () => {
+    const normal = new FakeChannel(); const model = new FakeModel(normal, new FakeChannel());
+    let resolveConsume!: (reply: Replies.Consume) => void;
+    vi.spyOn(normal, "consume").mockImplementation((queue, callback) => {
+      normal.consumedQueue = queue; normal.consumeCallback = callback;
+      return new Promise((resolve) => { resolveConsume = resolve; });
+    });
+    const adapter = await createAmqplibConsumerAdapter(configuration, [topology], { concurrency: 1, prefetch: 1 }, () => Promise.resolve(model as unknown as ChannelModel));
+    const controller = new AbortController(); const run = adapter.run(() => Promise.resolve(), controller.signal);
+    await vi.waitFor(() => { expect(resolveConsume).toBeTypeOf("function"); });
+    controller.abort(); resolveConsume({ consumerTag: "late-tag" });
+    await run; expect(normal.cancelled).toEqual(["late-tag"]); await adapter.drain();
+  });
+
   it("confirms a reviewed retry before the handler can ACK the original delivery", async () => {
     const model = new FakeModel(new FakeChannel(), new FakeChannel());
     const adapter = await createAmqplibConsumerAdapter(configuration, [topology], { concurrency: 1, prefetch: 1 }, () => Promise.resolve(model as unknown as ChannelModel));

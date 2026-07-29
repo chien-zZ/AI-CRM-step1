@@ -33,6 +33,7 @@ suite("PostgreSQL Eventing store", () => {
   it("claims committed rows and durably deduplicates concurrent consumer effects", async () => {
     const store=createPostgresEventingStore(runtime); const core=createEventingCore(store); const input=event(); await runtime.withTransaction(()=>core.appendEvent(input));
     const claimed=await store.claimOutbox({at:new Date("2026-07-27T00:00:00.000Z"),staleBefore:new Date("2026-07-26T23:59:00.000Z"),limit:10,token:randomUUID}); expect(claimed).toHaveLength(1);
+    expect(typeof claimed[0]?.payload).toBe("string"); expect(JSON.parse(claimed[0]?.payload ?? "null")).toMatchObject({ id: input.id });
     let enteredResolve:()=>void=()=>undefined;let releaseResolve:()=>void=()=>undefined;const entered=new Promise<void>((resolveEntered)=>{enteredResolve=resolveEntered;});const release=new Promise<void>((resolveRelease)=>{releaseResolve=resolveRelease;});
     let effects=0; const handler={kind:"event" as const,messageType:input.type,messageVersion:1,handle:async()=>{enteredResolve();await release;await runtime.execute("insert into platform_eventing_test_effects (message_id) values ($1)",[input.id]);effects++;}};
     const first=core.consume({attempt:1,consumer:"platform.synthetic-projection",envelope:input,timeoutMs:5000},handler);await entered;

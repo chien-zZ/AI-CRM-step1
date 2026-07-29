@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath, URL } from "node:url";
 import { runMigrations } from "../../packages/database/dist/index.js";
 
 const secretPath = process.env.DATABASE_MIGRATION_URL_FILE;
@@ -14,10 +15,11 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const directories = [resolve("packages/database/migrations")];
-for (const entry of await readdir(resolve("packages/platform-modules"), { withFileTypes: true })) {
+const repositoryRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const directories = [resolve(repositoryRoot, "packages/database/migrations")];
+for (const entry of await readdir(resolve(repositoryRoot, "packages/platform-modules"), { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
-  const directory = resolve("packages/platform-modules", entry.name, "migrations");
+  const directory = resolve(repositoryRoot, "packages/platform-modules", entry.name, "migrations");
   try { if ((await readdir(directory)).some((name) => name.endsWith(".sql"))) directories.push(directory); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
 }

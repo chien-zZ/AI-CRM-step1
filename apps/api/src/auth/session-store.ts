@@ -192,7 +192,7 @@ function parseStoredSession(value: unknown): Readonly<StoredBrowserSession> {
   const tokens = parsed["tokens"];
   if (tokens["algorithm"] !== "A256GCM" || typeof tokens["ciphertext"] !== "string" ||
     typeof tokens["initializationVector"] !== "string" || typeof tokens["keyId"] !== "string" ||
-    typeof tokens["tag"] !== "string" || tokens["version"] !== 1) {
+    typeof tokens["tag"] !== "string" || (tokens["version"] !== 1 && tokens["version"] !== 2)) {
     throw new BrowserSessionFailure("authentication_session_invalid");
   }
   return Object.freeze({
@@ -208,7 +208,7 @@ function parseStoredSession(value: unknown): Readonly<StoredBrowserSession> {
       initializationVector: tokens["initializationVector"],
       keyId: tokens["keyId"],
       tag: tokens["tag"],
-      version: 1,
+      version: tokens["version"],
     }),
   });
 }

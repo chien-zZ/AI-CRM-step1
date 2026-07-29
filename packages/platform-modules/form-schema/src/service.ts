@@ -118,7 +118,7 @@ export function createFormSchemaService(store: FormSchemaStore, authorizer: Form
       const auth = await authorize({ action: "form:validate", actor: parsed.actor, resourceId: parsed.definitionId });
       if (!auth.allowed) throw new FormSchemaError("form_denied");
       const release = await findRelease(parsed.definitionId, parsed.releaseVersion);
-      if (!release) throw new FormSchemaError("form_not_found");
+      if (!release || !release.active) throw new FormSchemaError("form_not_found");
       const validate = compileSchema(release.jsonSchema);
       const valid = validate(parsed.data);
       return { errors: safeErrors(validate.errors), reference: reference(release), valid };

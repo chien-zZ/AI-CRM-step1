@@ -20,6 +20,7 @@ const SHA256 = /^sha256:[a-f0-9]{64}$/u;
 const EVIDENCE_REFERENCE = /^evidence:\/\/[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/u;
 const APPLICATION_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?@sha256:[a-f0-9]{64}$/u;
 const PINNED_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::(?!latest(?:$|@))[A-Za-z0-9][A-Za-z0-9._-]{0,127})(?:@sha256:[a-f0-9]{64})?$/u;
+const IMMUTABLE_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::(?!latest(?:$|@))[A-Za-z0-9][A-Za-z0-9._-]{0,127})?@sha256:[a-f0-9]{64}$/u;
 const SECRET_KEY = /(?:password|secret|token|cookie|credential|private.?key|session.?key|dsn|authorization)/iu;
 
 const assertSafeReference = (value, path, errors) => {
@@ -39,7 +40,7 @@ const scanKeys = (value, path, errors) => {
   }
 };
 
-const validateImages = (images, errors) => {
+const validateImages = (images, environment, errors) => {
   const keys = ["api", "edge", "worker", "postgres", "redis", "rabbitmq", "keycloak", "flowable", "clamav"];
   if (!EXACT_KEYS(images, keys, "images", errors)) return;
   for (const name of ["api", "edge", "worker"]) {
@@ -48,8 +49,11 @@ const validateImages = (images, errors) => {
     }
   }
   for (const name of ["postgres", "redis", "rabbitmq", "keycloak", "flowable", "clamav"]) {
-    if (typeof images[name] !== "string" || !PINNED_IMAGE.test(images[name])) {
-      errors.push(`images.${name} must use an explicit non-latest version, optionally with a digest.`);
+    const pattern = environment === "production" ? IMMUTABLE_IMAGE : PINNED_IMAGE;
+    if (typeof images[name] !== "string" || !pattern.test(images[name])) {
+      errors.push(environment === "production"
+        ? `images.${name} must be pinned by sha256 digest for production.`
+        : `images.${name} must use an explicit non-latest version, optionally with a digest.`);
     }
   }
 };
@@ -98,7 +102,7 @@ export const validateReleaseManifest = (manifest) => {
   assertSafeReference(manifest.operatorRef, "operatorRef", errors);
   assertSafeReference(manifest.approverRef, "approverRef", errors);
   if (manifest.operatorRef === manifest.approverRef) errors.push("operatorRef and approverRef must be distinct.");
-  validateImages(manifest.images, errors);
+  validateImages(manifest.images, manifest.environment, errors);
   if (EXACT_KEYS(manifest.artifacts, ["contracts", "generatedManifest", "migrationHead", "configuration"], "artifacts", errors)) {
     for (const [name, value] of Object.entries(manifest.artifacts)) {
       if (typeof value !== "string" || !SHA256.test(value)) errors.push(`artifacts.${name} must be a sha256 reference.`);
@@ -134,9 +138,13 @@ export const readAndValidateReleaseManifest = async (path) => {
   return { errors: validateReleaseManifest(manifest), manifest };
 };
 
-export const renderComposeVariables = (manifest) => {
+export const renderComposeVariables = (manifest, expectedEnvironment) => {
   const errors = validateReleaseManifest(manifest);
   if (errors.length > 0) throw new Error("Release manifest is invalid.");
+  if (expectedEnvironment !== "staging" && expectedEnvironment !== "production") {
+    throw new Error("Expected release environment must be staging or production.");
+  }
+  if (manifest.environment !== expectedEnvironment) throw new Error("Release manifest environment does not match the deployment target.");
   const names = ["api", "edge", "worker", "postgres", "redis", "rabbitmq", "keycloak", "flowable", "clamav"];
   return [
     `AI_CRM_RELEASE_ID=${manifest.releaseId}`,

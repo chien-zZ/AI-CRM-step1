@@ -7,6 +7,12 @@
 coverage
 node_modules
 output
+backups
+.env
+.env.*
+deploy/data
+deploy/secrets
+deploy/compose/.runtime
 **/coverage
 **/dist
 **/node_modules

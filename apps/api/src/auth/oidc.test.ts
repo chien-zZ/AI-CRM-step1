@@ -160,6 +160,8 @@ describe("createOidcClient", () => {
     )).rejects.toMatchObject({ code: "authentication_callback_invalid" });
     await expect(client.beginLogin("https://attacker.example.test/collect"))
       .rejects.toMatchObject({ code: "authentication_callback_invalid" });
+    await expect(client.exchangeCallback("not a valid URL", login.transaction))
+      .rejects.toMatchObject({ code: "authentication_callback_invalid" });
   });
 
   it("classifies a Token endpoint outage as a closed dependency failure", async () => {

@@ -1,0 +1,7 @@
+DROP TRIGGER organization_unit_placements_no_overlap
+ON organization.organization_unit_placements;
+
+CREATE TRIGGER organization_unit_placements_no_overlap
+BEFORE INSERT OR UPDATE OF organization_unit_id, parent_organization_unit_id, effective_from, effective_to
+ON organization.organization_unit_placements
+FOR EACH ROW EXECUTE FUNCTION organization.reject_overlapping_unit_placement();

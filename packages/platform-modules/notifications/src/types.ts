@@ -1,6 +1,6 @@
 export type JsonPrimitive=null|boolean|number|string;
 export type JsonValue=JsonPrimitive|readonly JsonValue[]|{readonly [key:string]:JsonValue};
-export interface NotificationActor { readonly principalId:string }
+export interface NotificationActor { readonly activeAssignmentIds?:readonly string[];readonly principalId:string }
 export interface NotificationDeepLink { readonly applicationId:string;readonly routeId:string;readonly resourceType:string;readonly resourceId:string;readonly parameters?:Readonly<Record<string,string>> }
 export interface RecipientSelector { readonly selectorType:string;readonly referenceId:string }
 export interface ResolvedRecipient { readonly principalId:string;readonly recipientReference:string;readonly resolutionReference:string;readonly resolutionVersion:string }

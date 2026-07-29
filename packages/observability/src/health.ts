@@ -21,9 +21,12 @@ export function evaluateHealth(
     return Object.freeze({ status: "ok" });
   }
   const safeDependencies = dependencies.filter((dependency) => CHECK_NAME.test(dependency.name));
-  const unavailable = safeDependencies.some(
+  // Diagnostic-name filtering must never remove a required dependency from the
+  // availability decision. An invalid name is itself unsafe for a required
+  // dependency because operators cannot identify it from the bounded response.
+  const unavailable = dependencies.some(
     (dependency) => dependency.required && !dependency.healthy,
-  );
+  ) || dependencies.some((dependency) => dependency.required && !CHECK_NAME.test(dependency.name));
   if (kind === "readiness") {
     return Object.freeze({ status: unavailable ? "unavailable" : "ok" });
   }

@@ -159,6 +159,16 @@ const formSchemaCapabilities = Object.freeze({
 });
 
 describe("production API platform binding factory", () => {
+  it("closes acquired resources when composition after connection fails", async () => {
+    const fixture = dependencies();
+    const failure = new Error("synthetic storage composition failure");
+    const failingDependencies = { ...fixture.value, createFileStorage: vi.fn(() => { throw failure; }) };
+
+    await expect(createProductionApiPlatformBindings(failingDependencies)).rejects.toBe(failure);
+    expect(fixture.closeSessions).toHaveBeenCalledTimes(1);
+    expect(fixture.closeDatabase).toHaveBeenCalledTimes(1);
+  });
+
   it("checks migration compatibility, stays fail-closed for unresolved capabilities, and closes once", async () => {
     const fixture = dependencies();
     const bindings = await createProductionApiPlatformBindings(fixture.value);
@@ -264,7 +274,7 @@ describe("production API platform binding factory", () => {
     expect(fixture.execute.mock.calls.some(([sql, values]) =>
       typeof sql === "string" && sql.startsWith("insert into authorization_core.decision_records") &&
       Array.isArray(values) && values.includes(traceId))).toBe(true);
-    const actor = { principalId: "44444444-4444-4444-8444-444444444444" };
+    const actor = { activeAssignmentIds: ["11111111-1111-4111-8111-111111111111"], principalId: "44444444-4444-4444-8444-444444444444" };
     await expect(bindings.queries.tasks.list({ actor, limit: 1 })).resolves.toEqual({ items: [] });
     await expect(bindings.queries.notifications.list({ actor, limit: 1 })).resolves.toEqual({ items: [] });
     await expect(bindings.queries.tasks.get(actor, { sourceTaskId: "task.synthetic", sourceType: "workflow" }))

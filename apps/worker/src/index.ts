@@ -133,12 +133,12 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
     exitSettled = true;
     resolveExit?.(code);
   };
-  const triggerFatal = (errorCode: "worker_dependency_lost" | "worker_handler_failed" | "worker_handler_stopped", handler?: string): void => {
+  const triggerFatal = (errorCode: "worker_dependency_lost" | "worker_handler_failed" | "worker_handler_stopped" | "worker_health_report_failed", handler?: string): void => {
     if (!running || draining || fatalShutdown) return;
     failed = true;
     terminal = true;
     reportHealth("unavailable");
-    log("error", { errorCode, ...(handler === undefined ? {} : { fields: { handler } }), operation: handler === undefined ? "worker.health.dependencies" : "worker.handler.run", outcome: "failed" });
+    log("error", { errorCode, ...(handler === undefined ? {} : { fields: { handler } }), operation: errorCode === "worker_health_report_failed" ? "worker.health.report" : handler === undefined ? "worker.health.dependencies" : "worker.handler.run", outcome: "failed" });
     fatalShutdown = stop().then(() => { settleExit(1); }, () => { settleExit(1); });
   };
   const dependenciesReady = (): boolean => {
@@ -248,7 +248,7 @@ export const createWorkerApplication = (composition: WorkerComposition): WorkerA
         if (!reportHealth("ok")) throw new Error("worker_health_report_failed");
         healthTimer = setInterval(() => {
           if (!dependenciesReady()) triggerFatal("worker_dependency_lost");
-          else reportHealth(health().status);
+          else if (!reportHealth(health().status)) triggerFatal("worker_health_report_failed");
         }, refreshIntervalMs);
         healthTimer.unref();
         log("info", { operation: "worker.lifecycle.start", outcome: "succeeded" });

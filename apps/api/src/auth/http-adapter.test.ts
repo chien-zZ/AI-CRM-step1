@@ -151,6 +151,19 @@ describe("createPcAuthenticationHttpAdapter", () => {
     expect(fixture.service.logoutCalls).toBe(0);
   });
 
+  it("does not let a cross-site request clear an absent session cookie", async () => {
+    const fixture = adapter();
+    const response = await fixture.adapter.logout(mutationContext({
+      cookie: undefined,
+      csrfToken: undefined,
+      origin: "https://attacker.example.test",
+    }));
+
+    expect(response).toMatchObject({ body: { code: "authentication_csrf_rejected" }, status: 403 });
+    expect(response.headers["Set-Cookie"]).toBeUndefined();
+    expect(fixture.service.logoutCalls).toBe(0);
+  });
+
   it("clears the local cookie and redirects an existing session to Keycloak logout", async () => {
     const fixture = adapter();
     const response = await fixture.adapter.logout(mutationContext());

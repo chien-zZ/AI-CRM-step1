@@ -33,6 +33,8 @@ class MemoryOrganizationStore implements OrganizationStore {
     if (write.kind === "create_person") this.#insert(this.#people, write.person.workforcePersonId, write.person);
     if (write.kind === "create_employment") this.#insert(this.#employments, write.employment.employmentId, write.employment);
     if (write.kind === "create_organization_unit") {
+      this.#assertAbsent(this.#units, write.unit.organizationUnitId);
+      this.#assertAbsent(this.#placements, write.placement.placementId);
       this.#insert(this.#units, write.unit.organizationUnitId, write.unit);
       this.#insert(this.#placements, write.placement.placementId, write.placement);
     }
@@ -99,8 +101,12 @@ class MemoryOrganizationStore implements OrganizationStore {
   }
 
   #insert<T>(records: Map<string, T>, id: string, value: T): void {
-    if (records.has(id)) throw new OrganizationError("entity_conflict");
+    this.#assertAbsent(records, id);
     records.set(id, value);
+  }
+
+  #assertAbsent<T>(records: Map<string, T>, id: string): void {
+    if (records.has(id)) throw new OrganizationError("entity_conflict");
   }
 }
 

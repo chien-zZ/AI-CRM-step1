@@ -14,10 +14,21 @@ test("accepts the synthetic immutable two-host release manifest repeatedly", () 
 });
 
 test("renders only non-secret immutable Compose variables", () => {
-  const variables = renderComposeVariables(copy());
+  const variables = renderComposeVariables(copy(), "production");
   assert.match(variables, /^AI_CRM_RELEASE_ID=2026\.07\.26\.1$/mu);
   assert.match(variables, /^AI_CRM_API_IMAGE=.*@sha256:[a-f0-9]{64}$/mu);
   assert.doesNotMatch(variables, /operator|approver|password|secret|token|credential/iu);
+});
+
+test("binds rendered variables to the explicit deployment environment", () => {
+  assert.throws(() => renderComposeVariables(copy(), "staging"), /does not match/u);
+  assert.throws(() => renderComposeVariables(copy()), /must be staging or production/u);
+});
+
+test("requires every production image to be digest-pinned", () => {
+  const manifest = copy();
+  manifest.images.postgres = "postgres:17.5-bookworm";
+  assert.ok(validateReleaseManifest(manifest).includes("images.postgres must be pinned by sha256 digest for production."));
 });
 
 test("rejects floating or digest-free application images", () => {

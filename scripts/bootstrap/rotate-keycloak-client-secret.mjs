@@ -1,7 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, URL, URLSearchParams } from "node:url";
+
+/* global AbortSignal, fetch */
 
 const defaultFileSystem = Object.freeze({ chmod, open, readFile, rename, rm });
 

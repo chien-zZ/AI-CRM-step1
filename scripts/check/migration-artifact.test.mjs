@@ -109,3 +109,14 @@ test("rejects malformed versions, digests, and path traversal without reading ou
   assert.ok(errors.some((error) => error.includes("safe migration file path")));
   assert.ok(errors.some((error) => error.includes("sha256 digest")));
 });
+
+test("reports a missing file path without throwing from the validator", () => {
+  const malformed = {
+    schemaVersion: 1,
+    artifact: "ai-crm-reviewed-migrations",
+    migrationRoots: ["packages/database/migrations"],
+    files: [{ size: 1, sha256: `sha256:${"0".repeat(64)}` }],
+  };
+  assert.doesNotThrow(() => validateMigrationManifest(malformed));
+  assert.ok(validateMigrationManifest(malformed).some((error) => error.includes("files[0]")));
+});

@@ -1,7 +1,7 @@
 export type TaskProjectionStatus = "cancelled" | "completed" | "open";
 export type TaskOperation = "task_complete" | "task_detail" | "task_list" | "task_reconcile";
 
-export interface TaskActor { readonly principalId: string }
+export interface TaskActor { readonly activeAssignmentIds?: readonly string[]; readonly principalId: string }
 export interface TaskDeepLink { readonly appId: string; readonly routeId: string }
 export interface TaskProjectionKey { readonly sourceType: string; readonly sourceTaskId: string }
 export interface TaskProjection extends TaskProjectionKey {

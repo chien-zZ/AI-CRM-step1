@@ -35,17 +35,24 @@ export async function runWithDeadline<T>(
 
   const controller = new AbortController();
   const timeoutState = { expired: false };
+  let rejectBoundary!: (error: IntegrationRuntimeError) => void;
+  const boundary = new Promise<never>((_resolve, reject) => { rejectBoundary = reject; });
   const timeout = setTimeout(() => {
     timeoutState.expired = true;
     controller.abort();
+    rejectBoundary(new IntegrationRuntimeError("timeout", { retryable: true }));
   }, timeoutMs);
   const cancel = (): void => {
     controller.abort();
+    rejectBoundary(new IntegrationRuntimeError("cancelled"));
   };
   parentSignal?.addEventListener("abort", cancel, { once: true });
 
   try {
-    const result = await operation(controller.signal);
+    // The deadline must also bound adapters that ignore AbortSignal. The
+    // operation promise remains observed so a late rejection is consumed.
+    const observedOperation = Promise.resolve().then(() => operation(controller.signal));
+    const result = await Promise.race([observedOperation, boundary]);
     if (timeoutState.expired) throw new IntegrationRuntimeError("timeout", { retryable: true });
     if (parentIsAborted()) throw new IntegrationRuntimeError("cancelled");
     return result;

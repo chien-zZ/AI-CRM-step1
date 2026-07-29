@@ -18,9 +18,9 @@ const baseConfig: UserConfigExport = {
   h5: { publicPath: "/", staticDirectory: "static", router: { mode: "browser" } },
 };
 
-export default defineConfig((merge, { command }) => {
+export default defineConfig((merge) => {
   const useDevelopmentRuntime = process.env["EXTERNAL_PORTAL_RUNTIME"] === "development";
   const runtimePort = fileURLToPath(new URL(useDevelopmentRuntime ? "../src/runtime.development.ts" : "../src/runtime.production.ts", import.meta.url));
   const externalClient = fileURLToPath(new URL("../../../packages/api-client/src/external.ts", import.meta.url));
-  return merge({}, baseConfig, command === "build" ? prodConfig : devConfig, { alias: { "@ai-crm/api-client/external": externalClient, "@external-portal/runtime-port": runtimePort } });
+  return merge({}, baseConfig, useDevelopmentRuntime ? devConfig : prodConfig, { alias: { "@ai-crm/api-client/external": externalClient, "@external-portal/runtime-port": runtimePort } });
 });

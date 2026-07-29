@@ -13,6 +13,7 @@ export interface WebhookEnvelope {
 
 export interface WebhookSignatureVerifier {
   verify(input: Readonly<{
+    eventId: string;
     nonce: string;
     rawBody: Uint8Array;
     signature: string;
@@ -59,6 +60,7 @@ export async function acceptVerifiedWebhook(
   if (
     !Number.isSafeInteger(options.allowedClockSkewMs) || options.allowedClockSkewMs < 0
     || !Number.isSafeInteger(options.replayRetentionMs) || options.replayRetentionMs < 1
+    || options.replayRetentionMs < options.allowedClockSkewMs * 2
     || !Number.isSafeInteger(options.maxBodyBytes) || options.maxBodyBytes < 1
     || !(envelope.rawBody instanceof Uint8Array)
     || envelope.rawBody.byteLength > options.maxBodyBytes
@@ -77,10 +79,14 @@ export async function acceptVerifiedWebhook(
   const bodyDigest = createHash("sha256").update(rawBody).digest("hex");
 
   const now = options.now?.() ?? new Date();
+  const replayExpiresAt = now.getTime() + options.replayRetentionMs;
   const signedAt = new Date(envelope.timestamp);
   const receivedAt = new Date(envelope.receivedAt);
   if (
-    Number.isNaN(signedAt.getTime())
+    Number.isNaN(now.getTime())
+    || !Number.isSafeInteger(replayExpiresAt)
+    || replayExpiresAt > 8_640_000_000_000_000
+    || Number.isNaN(signedAt.getTime())
     || Number.isNaN(receivedAt.getTime())
     || Math.abs(now.getTime() - signedAt.getTime()) > options.allowedClockSkewMs
   ) {
@@ -90,6 +96,7 @@ export async function acceptVerifiedWebhook(
   let verified = false;
   try {
     verified = await options.verifier.verify({
+      eventId: envelope.eventId,
       nonce: envelope.nonce,
       rawBody,
       signature: envelope.signature,
@@ -113,7 +120,7 @@ export async function acceptVerifiedWebhook(
   let reservation: WebhookReplayReservation;
   try {
     const candidate: unknown = await options.replayStore.reserve({
-      expiresAt: new Date(now.getTime() + options.replayRetentionMs).toISOString(),
+      expiresAt: new Date(replayExpiresAt).toISOString(),
       fingerprints: [fingerprint("event", envelope.eventId), fingerprint("nonce", envelope.nonce)],
     });
     if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) throw new Error("Replay store returned a malformed reservation.");

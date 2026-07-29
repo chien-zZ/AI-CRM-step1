@@ -1,23 +1,24 @@
 name: Application images
 
 on:
+  pull_request:
   push:
     branches: [main]
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: application-images-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-verify-publish:
+  build-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build exact application images
         run: |
           docker build --file apps/api/Dockerfile --tag ai-crm-api:${GITHUB_SHA} .
@@ -34,8 +35,35 @@ jobs:
           docker export "$worker_container" | tar -x -C "$RUNNER_TEMP/worker-root"
           node scripts/deploy/verify-application-migration-artifacts.mjs \
             "$RUNNER_TEMP/api-root/app" "$RUNNER_TEMP/worker-root/app" "$approved_digest"
+  publish:
+    if: github.event_name == 'push'
+    needs: build-verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Rebuild exact verified application images
+        run: |
+          docker build --file apps/api/Dockerfile --tag ai-crm-api:${GITHUB_SHA} .
+          docker build --file apps/worker/Dockerfile --tag ai-crm-worker:${GITHUB_SHA} .
+      - name: Reverify both image migration artifacts before publication
+        run: |
+          mkdir -p "$RUNNER_TEMP/api-root" "$RUNNER_TEMP/worker-root" "$RUNNER_TEMP/approved"
+          node scripts/deploy/generate-migration-manifest.mjs . "$RUNNER_TEMP/approved/ai-crm-migrations.manifest.json"
+          approved_digest="sha256:$(sha256sum "$RUNNER_TEMP/approved/ai-crm-migrations.manifest.json" | cut -d' ' -f1)"
+          api_container="$(docker create ai-crm-api:${GITHUB_SHA})"
+          worker_container="$(docker create ai-crm-worker:${GITHUB_SHA})"
+          trap 'docker rm -f "$api_container" "$worker_container" >/dev/null 2>&1 || true' EXIT
+          docker export "$api_container" | tar -x -C "$RUNNER_TEMP/api-root"
+          docker export "$worker_container" | tar -x -C "$RUNNER_TEMP/worker-root"
+          node scripts/deploy/verify-application-migration-artifacts.mjs \
+            "$RUNNER_TEMP/api-root/app" "$RUNNER_TEMP/worker-root/app" "$approved_digest"
       - name: Authenticate to the immutable image registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

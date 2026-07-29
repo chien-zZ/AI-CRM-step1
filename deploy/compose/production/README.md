@@ -34,7 +34,7 @@ Do not mount the Secret root. Compose resolves each declared file and mounts onl
 
 ```text
 node scripts/deploy/verify-release.mjs <approved-release.json>
-node scripts/deploy/render-release-variables.mjs <approved-release.json> > <root-owned-release-dir>/images.vars.tmp
+node scripts/deploy/render-release-variables.mjs <approved-release.json> production > <root-owned-release-dir>/images.vars.tmp
 pnpm compose:check
 node scripts/check/run-production-edge-integration.mjs
 ```

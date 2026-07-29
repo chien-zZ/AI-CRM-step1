@@ -12,7 +12,10 @@ const CREDENTIAL_BYTES = 32;
 const ENCRYPTION_KEY_BYTES = 32;
 const INITIALIZATION_VECTOR_BYTES = 12;
 const MAX_TOKEN_LENGTH = 16_384;
-const MAX_ENCRYPTED_PAYLOAD_LENGTH = 65_536;
+// Keep the complete encrypted token payload comfortably below the Redis
+// session-record limit after base64 and JSON envelope overhead are added.
+const MAX_TOKEN_PAYLOAD_BYTES = 32 * 1024;
+const MAX_ENCODED_TOKEN_PAYLOAD_LENGTH = Math.ceil(MAX_TOKEN_PAYLOAD_BYTES / 3) * 4;
 const MAX_SESSION_SECONDS = 31_536_000;
 const SAFE_KEY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 
@@ -33,7 +36,7 @@ export interface EncryptedSessionTokenSet {
   readonly initializationVector: string;
   readonly keyId: string;
   readonly tag: string;
-  readonly version: 1;
+  readonly version: 1 | 2;
 }
 
 export interface BrowserMutationEvidence {
@@ -109,16 +112,21 @@ export function createSessionIndex(credential: string, indexingKey: Uint8Array):
 export function encryptSessionTokens(
   tokens: SessionTokenSet,
   key: KeyEncryptionKey,
+  sessionReference: string,
 ): Readonly<EncryptedSessionTokenSet> {
   validateEncryptionKey(key);
+  validateCredential(sessionReference);
   if (!validateToken(tokens.accessToken) || !validateToken(tokens.refreshToken) ||
     (tokens.idToken !== undefined && !validateToken(tokens.idToken))) {
     throw new BrowserSessionFailure("authentication_session_invalid");
   }
+  const plaintext = Buffer.from(JSON.stringify(tokens), "utf8");
+  if (plaintext.byteLength > MAX_TOKEN_PAYLOAD_BYTES) {
+    throw new BrowserSessionFailure("authentication_session_invalid");
+  }
   const initializationVector = randomBytes(INITIALIZATION_VECTOR_BYTES);
   const cipher = createCipheriv("aes-256-gcm", key.value, initializationVector);
-  cipher.setAAD(Buffer.from(`ai-crm:bff-session:v1:${key.id}`, "utf8"));
-  const plaintext = Buffer.from(JSON.stringify(tokens), "utf8");
+  cipher.setAAD(Buffer.from(`ai-crm:bff-session:v2:${key.id}:${sessionReference}`, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
 
   return Object.freeze({
@@ -127,19 +135,21 @@ export function encryptSessionTokens(
     initializationVector: initializationVector.toString("base64url"),
     keyId: key.id,
     tag: cipher.getAuthTag().toString("base64url"),
-    version: 1,
+    version: 2,
   });
 }
 
 export function decryptSessionTokens(
   encrypted: unknown,
   keys: readonly KeyEncryptionKey[],
+  sessionReference: string,
 ): Readonly<SessionTokenSet> {
+  validateCredential(sessionReference);
   if (!isRecord(encrypted)) {
     throw new BrowserSessionFailure("authentication_session_invalid");
   }
   const envelope = encrypted;
-  if (envelope["version"] !== 1 || envelope["algorithm"] !== "A256GCM" ||
+  if ((envelope["version"] !== 1 && envelope["version"] !== 2) || envelope["algorithm"] !== "A256GCM" ||
     typeof envelope["keyId"] !== "string") {
     throw new BrowserSessionFailure("authentication_session_invalid");
   }
@@ -149,16 +159,20 @@ export function decryptSessionTokens(
   try {
     const initializationVector = decodeBoundedBase64Url(envelope["initializationVector"], 32);
     const tag = decodeBoundedBase64Url(envelope["tag"], 32);
-    const ciphertext = decodeBoundedBase64Url(envelope["ciphertext"], MAX_ENCRYPTED_PAYLOAD_LENGTH);
+    const ciphertext = decodeBoundedBase64Url(envelope["ciphertext"], MAX_ENCODED_TOKEN_PAYLOAD_LENGTH);
     if (initializationVector.byteLength !== INITIALIZATION_VECTOR_BYTES || tag.byteLength !== 16) {
       throw new BrowserSessionFailure("authentication_session_invalid");
     }
+    if (ciphertext.byteLength > MAX_TOKEN_PAYLOAD_BYTES) throw new BrowserSessionFailure("authentication_session_invalid");
     const decipher = createDecipheriv(
       "aes-256-gcm",
       key.value,
       initializationVector,
     );
-    decipher.setAAD(Buffer.from(`ai-crm:bff-session:v1:${key.id}`, "utf8"));
+    const additionalData = envelope["version"] === 1
+      ? `ai-crm:bff-session:v1:${key.id}`
+      : `ai-crm:bff-session:v2:${key.id}:${sessionReference}`;
+    decipher.setAAD(Buffer.from(additionalData, "utf8"));
     decipher.setAuthTag(tag);
     const plaintext = Buffer.concat([
       decipher.update(ciphertext),

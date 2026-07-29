@@ -27,4 +27,10 @@ describe("evaluateHealth", () => {
       status: "unavailable",
     });
   });
+
+  it("fails closed when a required dependency has an unsafe diagnostic name", () => {
+    expect(evaluateHealth("readiness", [
+      { healthy: true, name: "postgres://user:password@host", required: true },
+    ])).toEqual({ status: "unavailable" });
+  });
 });

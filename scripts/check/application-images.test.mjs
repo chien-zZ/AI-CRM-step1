@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { URL } from "node:url";
 
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
@@ -28,10 +29,20 @@ test("image workflow verifies both extracted artifacts before publishing commit 
   assert.match(workflow, /RepoDigests/u);
 });
 
-test("image publication can only be triggered by a push to main", async () => {
+test("pull requests build and verify images while publication remains push-only", async () => {
   const workflow = await read(".github/workflows/application-images.yml");
-  assert.match(workflow, /on:\s*\n\s*push:\s*\n\s*branches: \[main\]/u);
-  assert.doesNotMatch(workflow, /pull_request:/u);
+  assert.match(workflow, /on:\s*\n\s*pull_request:\s*\n\s*push:\s*\n\s*branches: \[main\]/u);
+  assert.match(workflow, /publish:\s*\n\s*if: github\.event_name == 'push'/u);
+  assert.match(workflow, /publish:[\s\S]*packages: write[\s\S]*docker\/login-action@[a-f0-9]{40}[\s\S]*docker push/u);
   assert.doesNotMatch(workflow, /workflow_dispatch:/u);
-  assert.doesNotMatch(workflow, /github\.event_name/u);
+});
+
+test("workflows pin third-party actions, bound permissions, and timeouts", async () => {
+  for (const path of [".github/workflows/ci.yml", ".github/workflows/application-images.yml"]) {
+    const workflow = await read(path);
+    assert.doesNotMatch(workflow, /uses:\s*[^\s]+@v\d+/u);
+    assert.match(workflow, /uses:\s*[^\s]+@[a-f0-9]{40}/u);
+    assert.match(workflow, /permissions:\s*\n\s+contents: read/u);
+    assert.match(workflow, /timeout-minutes:\s*\d+/u);
+  }
 });
