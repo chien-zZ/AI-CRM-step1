@@ -208,8 +208,13 @@ export async function createOidcClient(
     },
 
     async exchangeCallback(callbackUrl: string, transaction: LoginTransaction): Promise<Readonly<OidcTokenResult>> {
+      let currentUrl: URL;
       try {
-        const currentUrl = new URL(callbackUrl);
+        currentUrl = new URL(callbackUrl);
+      } catch {
+        throw new BrowserSessionFailure("authentication_callback_invalid");
+      }
+      try {
         if (currentUrl.origin !== redirectUri.origin || currentUrl.pathname !== redirectUri.pathname ||
           currentUrl.username || currentUrl.password || currentUrl.hash) {
           throw new BrowserSessionFailure("authentication_callback_invalid");

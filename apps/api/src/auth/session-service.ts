@@ -235,7 +235,7 @@ export function createPcBffSessionService(
       throw new BrowserSessionFailure("authentication_session_invalid");
     }
     try {
-      const tokens = decryptSessionTokens(session.tokens, securityKeys.decryptionKeys);
+      const tokens = decryptSessionTokens(session.tokens, securityKeys.decryptionKeys, session.id);
       const principal = await options.tokenVerifier.verify(tokens.accessToken);
       return Object.freeze({ principal, session });
     } catch (error) {
@@ -288,14 +288,15 @@ export function createPcBffSessionService(
       const timestamp = now();
       const credential = createOpaqueCredential();
       const sessionIndex = createSessionIndex(credential, securityKeys.indexingKey);
+      const sessionReference = createOpaqueCredential();
       const session: StoredBrowserSession = Object.freeze({
         absoluteExpiresAtMs: timestamp + absoluteTtlMs,
         authenticatedAtMs: tokenResult.authenticatedAtMs,
         createdAtMs: timestamp,
         csrfToken: createOpaqueCredential(),
-        id: createOpaqueCredential(),
+        id: sessionReference,
         revision: 0,
-        tokens: encryptSessionTokens(tokenResult.tokens, securityKeys.encryptionKey),
+        tokens: encryptSessionTokens(tokenResult.tokens, securityKeys.encryptionKey, sessionReference),
       });
       await options.store.createSession(sessionIndex, session, idleTtlMs);
       try {
@@ -344,7 +345,7 @@ export function createPcBffSessionService(
         if (!current || current.id !== initial.id || current.revision !== initial.revision) {
           throw new BrowserSessionFailure("authentication_session_invalid");
         }
-        const tokens = decryptSessionTokens(current.tokens, securityKeys.decryptionKeys);
+        const tokens = decryptSessionTokens(current.tokens, securityKeys.decryptionKeys, current.id);
         const refreshed = await options.oidc.refresh(tokens);
         await verifyIssuedAccessToken(options.tokenVerifier, refreshed.tokens.accessToken);
         const nextCredential = createOpaqueCredential();
@@ -352,7 +353,7 @@ export function createPcBffSessionService(
         const nextSession: StoredBrowserSession = Object.freeze({
           ...current,
           revision: current.revision + 1,
-          tokens: encryptSessionTokens(refreshed.tokens, securityKeys.encryptionKey),
+          tokens: encryptSessionTokens(refreshed.tokens, securityKeys.encryptionKey, current.id),
         });
         const rotated = await options.store.rotateSession(
           previousIndex,
@@ -372,7 +373,9 @@ export function createPcBffSessionService(
         }
         return Object.freeze({ credential: nextCredential, session: sessionView(nextSession) });
       } finally {
-        await options.store.releaseRefreshLease(initial.id, leaseOwner);
+        // The lease is an optimization with a bounded TTL. Cleanup failure must not
+        // replace the refresh result (or its primary failure) after state rotation.
+        await options.store.releaseRefreshLease(initial.id, leaseOwner).catch(() => undefined);
       }
     },
 

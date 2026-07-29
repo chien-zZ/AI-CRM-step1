@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { URL } from "node:url";
+
+/* global AbortSignal, Response */
 
 import { rotateKeycloakClientSecret } from "../bootstrap/rotate-keycloak-client-secret.mjs";
 

@@ -2,7 +2,7 @@
 set -eu
 
 for secret in rabbitmq_publisher_username rabbitmq_publisher_password rabbitmq_consumer_username rabbitmq_consumer_password rabbitmq_tls_certificate rabbitmq_tls_private_key rabbitmq_ca_certificate; do
-  if [ ! -r "/run/secrets/$secret" ]; then
+  if [ ! -r "/run/secrets/$secret" ] || [ ! -s "/run/secrets/$secret" ]; then
     echo "RabbitMQ required Secret file is unavailable." >&2
     exit 1
   fi
@@ -37,7 +37,7 @@ management.load_definitions = /tmp/rabbitmq-definitions.json
 EOF
 
 cat >/tmp/rabbitmq-definitions.json <<EOF
-{"vhosts":[{"name":"$vhost"}],"users":[{"name":"$publisher_username","password":"$publisher_password","tags":[]},{"name":"$consumer_username","password":"$consumer_password","tags":[]}],"permissions":[{"user":"$publisher_username","vhost":"$vhost","configure":"^ai-crm\\.platform\\.events\\.v1$","write":"^ai-crm\\.platform\\.events\\.v1$","read":"^$"},{"user":"$consumer_username","vhost":"$vhost","configure":"^(ai-crm\\.platform\\.(events|retry|dead-letter)\\.v1|ai-crm\\.platform\\.task-center\\.projection(\\.retry\\.(30s|300s)|\\.dead)?\\.v1)$","write":"^ai-crm\\.platform\\.(events|retry|dead-letter)\\.v1$","read":"^ai-crm\\.platform\\.task-center\\.projection\\.v1$"}]}
+{"vhosts":[{"name":"$vhost"}],"users":[{"name":"$publisher_username","password":"$publisher_password","tags":[]},{"name":"$consumer_username","password":"$consumer_password","tags":[]}],"permissions":[{"user":"$publisher_username","vhost":"$vhost","configure":"^ai-crm\\.platform\\.events\\.v1$","write":"^ai-crm\\.platform\\.events\\.v1$","read":"^$"},{"user":"$consumer_username","vhost":"$vhost","configure":"^(ai-crm\\.platform\\.(events|retry|dead-letter)\\.v1|ai-crm\\.platform\\.task-center\\.projection(\\.retry\\.(30s|300s)|\\.dead)?\\.v1)$","write":"^(ai-crm\\.platform\\.(events|retry|dead-letter)\\.v1|ai-crm\\.platform\\.task-center\\.projection(\\.retry\\.(30s|300s)|\\.dead)?\\.v1)$","read":"^(ai-crm\\.platform\\.(events|retry|dead-letter)\\.v1|ai-crm\\.platform\\.task-center\\.projection\\.v1)$"}]}
 EOF
 
 export RABBITMQ_CONFIG_FILE=/tmp/rabbitmq

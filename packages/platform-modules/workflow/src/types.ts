@@ -3,7 +3,7 @@ import type { WorkflowErrorCode } from "./errors.js";
 export type WorkflowOperation = "definition_deploy" | "process_cancel" | "process_start" | "task_claim" | "task_complete" | "task_release";
 export interface WorkflowActor { readonly principalId: string }
 export interface WorkflowAuthorizationDecision { readonly allowed: boolean; readonly decisionId: string }
-export interface WorkflowAuthorization { authorize(input: { readonly actor: WorkflowActor; readonly operation: WorkflowOperation; readonly referenceId: string }): Promise<Readonly<WorkflowAuthorizationDecision>> }
+export interface WorkflowAuthorization { authorize(input: { readonly actor: WorkflowActor; readonly operation: WorkflowOperation; readonly referenceId: string; readonly targetAssigneeReference?: string }): Promise<Readonly<WorkflowAuthorizationDecision>> }
 export interface WorkflowAuditRecord { readonly actor: WorkflowActor; readonly authorizationDecisionId: string; readonly idempotencyKey: string; readonly operation: WorkflowOperation; readonly phase: "attempted" | "failed" | "succeeded"; readonly referenceId: string; readonly errorCode?: string }
 export interface WorkflowAudit { record(record: WorkflowAuditRecord): Promise<void> }
 

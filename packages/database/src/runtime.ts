@@ -45,8 +45,11 @@ interface TransactionState {
   readonly connection: RuntimeConnection;
   cancellation?: Promise<void>;
   destroyed: boolean;
+  failure?: Error;
   destroy(): void;
 }
+
+const transactionDestroyed = (state: TransactionState): boolean => state.destroyed;
 
 export class PostgresRuntime implements DatabaseRuntime {
   public readonly abortSignalSupport = true as const;
@@ -91,8 +94,9 @@ export class PostgresRuntime implements DatabaseRuntime {
     const canceller = new Client(this.#clientConfig);
     try {
       await canceller.connect();
-      const result = await canceller.query<{ cancelled: boolean }>("select pg_cancel_backend($1) cancelled", [processId]);
-      if (result.rows[0]?.cancelled !== true) throw new Error("database_backend_cancellation_rejected");
+      await canceller.query<{ cancelled: boolean }>("select pg_cancel_backend($1) cancelled", [processId]);
+    } catch {
+      // Closing the owned connection below is the fail-closed cancellation path.
     } finally {
       await canceller.end().catch(() => undefined);
       terminateConnection(connection);
@@ -113,6 +117,11 @@ export class PostgresRuntime implements DatabaseRuntime {
         const result = await transaction.connection.query(sql, values);
         signal?.throwIfAborted();
         return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
+      } catch (error) {
+        transaction.failure ??= error instanceof Error ? error : new Error("database_query_failed");
+        signal?.throwIfAborted();
+        if (transactionDestroyed(transaction)) throw abortError();
+        throw error;
       } finally {
         signal?.removeEventListener("abort", abort);
       }
@@ -139,6 +148,9 @@ export class PostgresRuntime implements DatabaseRuntime {
       const result = await connection.query(sql, values);
       signal.throwIfAborted();
       return { rowCount: result.rowCount ?? 0, rows: (result.rows ?? []) as readonly Row[] };
+    } catch (error) {
+      signal.throwIfAborted();
+      throw error;
     } finally {
       signal.removeEventListener("abort", abort);
       await cancellation;
@@ -196,6 +208,7 @@ export class PostgresRuntime implements DatabaseRuntime {
         await state.cancellation;
         throw abortError();
       }
+      if (state.failure !== undefined) throw state.failure;
       await client.query("commit");
       return result;
     } catch (error) {

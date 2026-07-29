@@ -87,8 +87,16 @@ describe("Outbox publisher and operations", () => {
     const store = new InMemoryEventingStore(); await createEventingCore(store).appendEvent(event()); const publish = vi.fn(() => Promise.resolve());
     let tick = new Date(at).getTime();
     const publisher = createOutboxPublisher(store, { publish }, { batchSize: 10, claimLeaseSeconds: 1, maxAttempts: 3, backoffSeconds: [1, 1], clock: () => new Date(tick += 60_000) });
-    store.failPublishedUpdate = true; await expect(publisher.publishBatch()).resolves.toMatchObject({ retained: 1 }); store.failPublishedUpdate = false;
+    store.failPublishedUpdate = true; await expect(publisher.publishBatch()).rejects.toMatchObject({ code: "eventing_storage_unavailable", retryable: true });
+    expect([...store.outbox.values()][0]?.status).toBe("publishing"); store.failPublishedUpdate = false;
     await expect(publisher.publishBatch()).resolves.toMatchObject({ published: 1 }); expect(publish).toHaveBeenCalledTimes(2);
+  });
+  it("surfaces a lost failure-state update instead of reporting a result that was not persisted", async () => {
+    const store = new InMemoryEventingStore(); await createEventingCore(store).appendEvent(event());
+    store.markOutboxFailure = () => Promise.resolve(false);
+    const publisher = createOutboxPublisher(store, { publish: () => Promise.reject(new Error("offline")) }, { batchSize: 1, claimLeaseSeconds: 1, maxAttempts: 1, backoffSeconds: [] });
+    await expect(publisher.publishBatch()).rejects.toMatchObject({ code: "eventing_storage_unavailable", retryable: true });
+    expect([...store.outbox.values()][0]?.status).toBe("publishing");
   });
   it("requires authorization and audit before replay", async () => {
     const store = new InMemoryEventingStore(); const input = event(); await createEventingCore(store).appendEvent(input);

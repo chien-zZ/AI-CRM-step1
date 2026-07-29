@@ -32,7 +32,7 @@ export interface TaroAdapterApi {
   onNetworkStatusChange(listener: (result: { isConnected: boolean }) => void): void;
   offNetworkStatusChange(listener: (result: { isConnected: boolean }) => void): void;
   chooseImage(input: { count: number }): Promise<{ tempFilePaths: string[] }>;
-  request(input: Record<string, unknown>): Promise<{ data: unknown }>;
+  request(input: Record<string, unknown>): Promise<{ data: unknown; statusCode: number }>;
 }
 
 export function createTaroH5Adapters(api: TaroAdapterApi = Taro as unknown as TaroAdapterApi): {
@@ -78,6 +78,9 @@ export function createTaroH5Adapters(api: TaroAdapterApi = Taro as unknown as Ta
           credentials: "include",
           header: { Accept: "application/json" },
         });
+        if (!Number.isInteger(response.statusCode) || response.statusCode < 200 || response.statusCode >= 300) {
+          throw new Error("internal_mobile_transport_http_failure");
+        }
         return response.data;
       },
     },

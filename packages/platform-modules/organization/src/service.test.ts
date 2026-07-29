@@ -201,6 +201,30 @@ describe("OrganizationService", () => {
     await expect(service.resolveWorkforceContext(subject, at)).rejects.toMatchObject({ code: "organization_path_invalid" });
   });
 
+  it("keeps compound organization-unit creation atomic when its placement conflicts", async () => {
+    const store = createMemoryOrganizationStore();
+    const firstUnitId = randomUUID();
+    const conflictingPlacementId = randomUUID();
+    const rejectedUnitId = randomUUID();
+    const command = (organizationUnitId: string, operationId: string) => ({
+      actor: metadata().actor,
+      auditAction: "organization_unit_created",
+      eventType: "organization.organization-unit.created.v1",
+      fingerprint: operationId.replaceAll("-", "").padEnd(64, "0").slice(0, 64),
+      operationId,
+      reason: "memory-store atomicity fixture",
+      traceId: `trace-${operationId}`,
+      write: {
+        kind: "create_organization_unit" as const,
+        placement: { effectiveFrom: at, organizationUnitId, placementId: conflictingPlacementId },
+        unit: { effectiveFrom: at, organizationUnitId },
+      },
+    });
+    await store.commit(command(firstUnitId, randomUUID()));
+    await expect(Promise.resolve().then(()=>store.commit(command(rejectedUnitId, randomUUID())))).rejects.toMatchObject({ code: "entity_conflict" });
+    await expect(store.findOrganizationUnit(rejectedUnitId)).resolves.toBeUndefined();
+  });
+
   it("rejects a hierarchy cycle that would begin at a scheduled future placement", async () => {
     const first = randomUUID();
     const firstRootPlacement = randomUUID();

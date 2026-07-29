@@ -54,7 +54,7 @@ describe("createRedisBrowserSessionStore", () => {
         initializationVector: "initialization",
         keyId: "key-1",
         tag: "authenticationtag",
-        version: 1,
+        version: 2,
       },
     } as const;
     const executor = new ScriptedExecutor([JSON.stringify(record), 1]);
@@ -65,6 +65,27 @@ describe("createRedisBrowserSessionStore", () => {
     expect(executor.commands[0]?.[0]).toBe("EVAL");
     expect(executor.commands[1]?.[0]).toBe("EVAL");
     expect(executor.commands[1]?.[2]).toBe("2");
+  });
+
+  it("keeps legacy v1 session records readable during the v2 rollout", async () => {
+    const record = {
+      absoluteExpiresAtMs: 10_000,
+      authenticatedAtMs: 1_000,
+      createdAtMs: 1_000,
+      csrfToken: "c".repeat(43),
+      id: "d".repeat(43),
+      revision: 0,
+      tokens: {
+        algorithm: "A256GCM",
+        ciphertext: "ciphertext",
+        initializationVector: "initialization",
+        keyId: "key-1",
+        tag: "authenticationtag",
+        version: 1,
+      },
+    } as const;
+    const store = createRedisBrowserSessionStore(new ScriptedExecutor([JSON.stringify(record)]));
+    await expect(store.getSession(index, 5_000, 2_000)).resolves.toEqual(record);
   });
 
   it("fails closed on malformed stored JSON", async () => {

@@ -85,4 +85,19 @@ describe("Secret file loading", () => {
       maxBytes: 4,
     })).rejects.toMatchObject({ code: "secret_unreadable" });
   });
+
+  it("uses one opened handle for metadata and bounded content reads", async () => {
+    const calls: string[] = [];
+    const singleHandle: SecretFileSystem = {
+      inspect: () => Promise.reject(new Error("path inspection must not be used")),
+      read: () => Promise.reject(new Error("path read must not be used")),
+      open: () => Promise.resolve({
+        close: () => { calls.push("close"); return Promise.resolve(); },
+        inspect: () => { calls.push("inspect"); return Promise.resolve({ isFile: true, isSymbolicLink: false, mode: 0o100400, size: 9 }); },
+        read: (maxBytes) => { calls.push(`read:${String(maxBytes)}`); return Promise.resolve("synthetic"); },
+      }),
+    };
+    await expect(readSecretFile("AI_CRM_PASSWORD_FILE", "/secret", { fileSystem: singleHandle, maxBytes: 16 })).resolves.toBe("synthetic");
+    expect(calls).toEqual(["inspect", "read:16", "close"]);
+  });
 });

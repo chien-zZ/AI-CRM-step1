@@ -122,7 +122,7 @@ export function createPostgresFormSchemaQueryService(
       const releaseVersion = positiveVersion(raw.releaseVersion);
       await authorize(context, "validate", definitionId, releaseVersion);
       const release = await find(definitionId, releaseVersion);
-      if (release === undefined) throw new FormSchemaError("form_not_found");
+      if (release === undefined || !release.active) throw new FormSchemaError("form_not_found");
       const validate = compileSchema(release.jsonSchema);
       const valid = validate(raw.data);
       return {

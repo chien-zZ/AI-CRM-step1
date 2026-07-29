@@ -8,6 +8,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import YAML from "yaml";
 
 const methods = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+const compareStable = (left, right) => left.localeCompare(right, "en");
 
 async function walk(directory, predicate) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -17,13 +18,13 @@ async function walk(directory, predicate) {
     if (entry.isDirectory()) results.push(...(await walk(path, predicate)));
     else if (predicate(path)) results.push(path);
   }
-  return results.sort();
+  return results.sort(compareStable);
 }
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, stable(item)]));
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => compareStable(left, right)).map(([key, item]) => [key, stable(item)]));
   }
   return value;
 }

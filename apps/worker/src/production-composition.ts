@@ -238,10 +238,16 @@ export async function createProductionWorkerResources(
   let probeTimer: NodeJS.Timeout | undefined;
   let closeConfirmed = false;
   let closeOperation: Promise<readonly PromiseSettledResult<void>[]> | undefined;
+  const closeControllers = new Set<AbortController>();
+  const cancellableClose = (close: (signal: AbortSignal) => Promise<void>): (() => Promise<void>) => async () => {
+    const controller = new AbortController(); closeControllers.add(controller);
+    try { await close(controller.signal); }
+    finally { closeControllers.delete(controller); }
+  };
   let closeTargets: Array<() => Promise<void>> = [
-    () => activeConsumer.drain(),
-    () => activePublisher.close(),
-    () => database.close(),
+    cancellableClose((closeSignal) => activeConsumer.drain(closeSignal)),
+    cancellableClose((closeSignal) => activePublisher.close(closeSignal)),
+    cancellableClose(() => database.close()),
   ];
 
   const stopProbes = (): void => {
@@ -276,7 +282,12 @@ export async function createProductionWorkerResources(
       state.databaseCompatible = false;
       state.runtimeRoleReady = false;
       const generation = ++probeGeneration;
-      const runtimeRole = await runtimeRoleProbe.check();
+      const runtimeRole = await bounded(
+        runtimeRoleProbe.check(),
+        configuration.databaseCompatibilityTimeoutMs,
+        activeSignal,
+        "worker_database_runtime_role_probe_cancelled",
+      );
       assertActive(activeSignal);
       if (runtimeRole.status !== "available") throw new Error("worker_database_runtime_role_unavailable");
       state.runtimeRoleReady = true;
@@ -317,7 +328,10 @@ export async function createProductionWorkerResources(
       closeOperation ??= Promise.allSettled(targets.map(async (close) => { await close(); }));
       const operation = closeOperation;
       const result = await waitForCloseOperation(operation, cleanupTimeoutMs);
-      if (result === "timeout") throw new Error("worker_production_resource_close_timeout");
+      if (result === "timeout") {
+        for (const controller of closeControllers) controller.abort();
+        throw new Error("worker_production_resource_close_timeout");
+      }
       const failedTargets = targets.filter((_target, index) => result[index]?.status === "rejected");
       if (failedTargets.length > 0) {
         if (closeOperation === operation) closeOperation = undefined;

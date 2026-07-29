@@ -32,6 +32,11 @@ describe("deadline primitives", () => {
     })).rejects.toMatchObject({ category: "timeout", retryable: true });
   });
 
+  it("returns at the deadline even when an adapter ignores cancellation", async () => {
+    await expect(runWithDeadline(5, () => new Promise(() => undefined)))
+      .rejects.toMatchObject({ category: "timeout", retryable: true });
+  });
+
   it("caps connect and response phases by the remaining total budget", async () => {
     const budget = createDeadlineBudget({ connectMs: 100, responseMs: 100, totalMs: 5 });
     try {
@@ -179,6 +184,19 @@ describe("circuit breaker and executor", () => {
       });
       throw new IntegrationRuntimeError("cancelled");
     })).rejects.toMatchObject({ category: "timeout" });
+  });
+
+  it("bounds an operation that never enters a phase and releases its concurrency slot", async () => {
+    const limiter = createConcurrencyLimiter(1);
+    const executor = createIntegrationExecutor({
+      circuitBreaker: createCircuitBreaker({ failureThreshold: 2, halfOpenMaxCalls: 1, openMs: 1000 }),
+      concurrencyLimiter: limiter,
+      rateLimiter: createFixedWindowRateLimiter(10, 1000),
+    });
+    const oneAttempt = { ...executionPolicy, deadlines: { connectMs: 50, responseMs: 50, totalMs: 5 }, retry: { ...retryPolicy, backoffMs: [], maxAttempts: 1 } };
+    await expect(executor.execute(oneAttempt, () => new Promise(() => undefined)))
+      .rejects.toMatchObject({ category: "timeout" });
+    expect(limiter.snapshot().active).toBe(0);
   });
 
   it("keeps one total deadline across retries and backoff", async () => {

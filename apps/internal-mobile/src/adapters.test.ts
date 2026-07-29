@@ -13,7 +13,7 @@ function createApi(overrides: Partial<TaroAdapterApi> = {}): TaroAdapterApi {
     onNetworkStatusChange: vi.fn(),
     offNetworkStatusChange: vi.fn(),
     chooseImage: vi.fn().mockResolvedValue({ tempFilePaths: ["temporary://picked-image"] }),
-    request: vi.fn().mockResolvedValue({ data: { ok: true } }),
+    request: vi.fn().mockResolvedValue({ data: { ok: true }, statusCode: 200 }),
     ...overrides,
   };
 }
@@ -83,6 +83,12 @@ describe("Taro H5 adapters", () => {
     await expect(transport.request(unapproved)).rejects.toThrow("not allowlisted");
     await expect(transport.request(forged)).rejects.toThrow("not allowlisted");
     expect(api.request).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when Taro resolves a non-success HTTP response", async () => {
+    const api = createApi({ request: vi.fn().mockResolvedValue({ data: { code: "forbidden" }, statusCode: 403 }) });
+    await expect(createTaroH5Adapters(api).transport.request(operationById("listTasks")))
+      .rejects.toThrow("internal_mobile_transport_http_failure");
   });
 
   it("fails closed while the reviewed internal login contract is pending", () => {

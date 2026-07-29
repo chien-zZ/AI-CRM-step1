@@ -48,6 +48,38 @@ function moduleSpecifiers(content, file) {
   return specifiers;
 }
 
+function propertyName(node) {
+  return ts.isIdentifier(node) || ts.isStringLiteralLike(node) ? node.text : undefined;
+}
+
+function externalAliasTarget(configSource, configFile) {
+  const source = ts.createSourceFile(configFile, configSource, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+  let targetIdentifier;
+  function findAlias(node) {
+    if (ts.isPropertyAssignment(node) && propertyName(node.name) === "@ai-crm/api-client/external" && ts.isIdentifier(node.initializer)) {
+      targetIdentifier = node.initializer.text;
+    }
+    ts.forEachChild(node, findAlias);
+  }
+  findAlias(source);
+  if (targetIdentifier === undefined) throw new Error("External client alias is missing or is not a statically resolved path.");
+  let relativeTarget;
+  function findDeclaration(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === targetIdentifier &&
+      node.initializer !== undefined && ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === "fileURLToPath") {
+      const urlCall = node.initializer.arguments[0];
+      if (urlCall !== undefined && ts.isNewExpression(urlCall) && ts.isIdentifier(urlCall.expression) &&
+        urlCall.expression.text === "URL" && urlCall.arguments?.length === 2 &&
+        ts.isStringLiteralLike(urlCall.arguments[0])) relativeTarget = urlCall.arguments[0].text;
+    }
+    ts.forEachChild(node, findDeclaration);
+  }
+  findDeclaration(source);
+  if (relativeTarget === undefined) throw new Error("External client alias target is not a static file URL.");
+  return resolve(dirname(configFile), relativeTarget);
+}
+
 function attribute(tag, name) {
   const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>]+))`, "iu").exec(tag);
   return match?.[1] ?? match?.[2] ?? match?.[3];
@@ -103,8 +135,13 @@ export async function checkArtifacts({ appRoot = defaultAppRoot, h5BudgetBytes =
     const clientImports = moduleSpecifiers(content, file).filter((specifier) => specifier === "@ai-crm/api-client" || specifier.startsWith("@ai-crm/api-client/"));
     if (clientImports.some((specifier) => specifier !== "@ai-crm/api-client/external")) throw new Error(`External source imports a non-allowlisted API client: ${relative(appRoot, file)}`);
   }
-  const configSource = await readFile(join(appRoot, "config", "index.ts"), "utf8");
-  if (!configSource.includes("packages/api-client/src/external.ts") || configSource.includes("packages/api-client/src/index.ts")) throw new Error("External client alias must resolve only to the generated external allowlist source.");
+  const configFile = join(appRoot, "config", "index.ts");
+  const configSource = await readFile(configFile, "utf8");
+  const configuredExternalClient = await realpath(externalAliasTarget(configSource, configFile));
+  const reviewedExternalClient = await realpath(resolve(appRoot, "../../packages/api-client/src/external.ts"));
+  if (configuredExternalClient !== reviewedExternalClient) {
+    throw new Error("External client alias must resolve only to the generated external allowlist source.");
+  }
 
   const h5Root = await realpath(join(appRoot, "dist", "h5"));
   const weappRoot = await realpath(join(appRoot, "dist", "weapp"));

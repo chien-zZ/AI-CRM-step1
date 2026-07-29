@@ -443,6 +443,7 @@ class ConsumerAdapter implements AbortableRabbitConsumerAdapter {
   public async run(accept: (bindingId: string, message: RabbitDelivery) => Promise<void>, signal: AbortSignal): Promise<void> {
     if (this.running || !this.healthy()) throw new Error("worker_rabbit_consumer_unavailable");
     this.running = true;
+    const completion = new Promise<void>((resolve, reject) => { this.runResolve = resolve; this.runReject = reject; });
     const abort = (): void => { void this.stopAcquisition().then(() => { this.runResolve?.(); }, () => { this.runReject?.(new Error("worker_rabbit_cancel_failed")); }); };
     signal.addEventListener("abort", abort, { once: true });
     try {
@@ -467,10 +468,13 @@ class ConsumerAdapter implements AbortableRabbitConsumerAdapter {
             },
           );
         }, { noAck: false });
-        this.consumers.set(topology.bindingId, reply.consumerTag);
+        // Abort or failure may win while amqplib is registering. Never publish
+        // a late consumer tag into the live set after acquisition has stopped.
+        if (this.stopping || signal.aborted) await this.channel.cancel(reply.consumerTag);
+        else this.consumers.set(topology.bindingId, reply.consumerTag);
       }
       if (signal.aborted) abort();
-      await new Promise<void>((resolve, reject) => { this.runResolve = resolve; this.runReject = reject; });
+      await completion;
     } finally {
       signal.removeEventListener("abort", abort);
       this.runResolve = undefined;

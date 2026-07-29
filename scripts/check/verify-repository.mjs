@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -57,6 +57,12 @@ const missing = required.filter((path) => !existsSync(resolve(root, path)));
 const premature = contractsOnly
   ? []
   : forbiddenDuringFoundation.filter((path) => existsSync(resolve(root, path)));
+if (!contractsOnly) {
+  const domainRoot = resolve(root, "packages/domain-modules");
+  for (const entry of readdirSync(domainRoot, { withFileTypes: true })) {
+    if (entry.name !== "README.md") premature.push(`packages/domain-modules/${entry.name}`);
+  }
+}
 
 const workspacePackages = contractsOnly
   ? []

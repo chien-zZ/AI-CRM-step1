@@ -1,5 +1,5 @@
 import type { CircuitBreaker } from "./circuit-breaker.js";
-import { createDeadlineBudget, type DeadlineLimits } from "./deadline.js";
+import { createDeadlineBudget, runWithDeadline, type DeadlineLimits } from "./deadline.js";
 import { IntegrationRuntimeError } from "./errors.js";
 import type { ConcurrencyLimiter, RateLimiter } from "./limits.js";
 import { calculateBackoffMs, shouldRetry, validateRetryPolicy, type RetryPolicy } from "./retry.js";
@@ -122,13 +122,15 @@ export function createIntegrationExecutor(options: {
             const value = await options.concurrencyLimiter.run(
               async () => options.circuitBreaker.execute(async () => {
                 try {
-                  const result = await operation({
+                  const remaining = budget.remainingMs();
+                  if (remaining < 1) throw new IntegrationRuntimeError("timeout", { retryable: true });
+                  const result = await runWithDeadline(remaining, () => operation({
                     attempt,
                     deadlineAt: budget.deadlineAt,
                     runConnect: (phase) => budget.runPhase("connect", phase),
                     runResponse: (phase) => budget.runPhase("response", phase),
                     signal: budget.signal,
-                  });
+                  }), budget.signal);
                   if (budget.signal.aborted && !signal?.aborted) {
                     throw new IntegrationRuntimeError("timeout", { retryable: true });
                   }

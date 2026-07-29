@@ -347,4 +347,22 @@ describe("Worker composition root", () => {
       vi.useRealTimers();
     }
   });
+
+  it("fatally drains when periodic readiness publication fails", async () => {
+    const stop = vi.fn(); let reports = 0;
+    const app = createWorkerApplication({
+      handlers: [{ name: "reported", ready: () => undefined, run: runUntilAbort, stop }],
+      healthRefreshIntervalMs: 1_000,
+      healthReporter: { report: () => { reports += 1; if (reports >= 3) throw new Error("synthetic_write_failure"); } },
+      logger,
+    });
+    await app.start();
+    vi.useFakeTimers();
+    try {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(app.waitForExit()).resolves.toBe(1);
+      expect(stop).toHaveBeenCalledOnce();
+      expect(app.health()).toEqual({ status: "unavailable" });
+    } finally { vi.useRealTimers(); }
+  });
 });

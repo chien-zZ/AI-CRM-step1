@@ -21,13 +21,13 @@ async function assertPortAvailable(value) {
   });
 }
 
+const pnpmCli = process.env.npm_execpath;
+if (!pnpmCli) throw new Error("pnpm CLI path is unavailable.");
 await Promise.all([assertPortAvailable(port), assertPortAvailable(missingRolePort)]);
 
 const secretDirectory = await mkdtemp(resolve(tmpdir(), "ai-crm-g1-"));
 const project = `ai-crm-test-g1-postgres-${randomUUID().slice(0, 8)}`;
 const missingRoleContainer = `${project}-missing-role`;
-const pnpmCli = process.env.npm_execpath;
-if (!pnpmCli) throw new Error("pnpm CLI path is unavailable.");
 const environment = {
   ...process.env,
   AI_CRM_COMPOSE_SECRET_DIR: secretDirectory,
@@ -39,10 +39,17 @@ const environment = {
   TEST_DATABASE_RUNTIME_PASSWORD_FILE: resolve(secretDirectory, "postgres_app_password"),
   TEST_DATABASE_WORKER_RUNTIME_PASSWORD_FILE: resolve(secretDirectory, "postgres_worker_password"),
 };
+const commandTimeoutMs = Number(process.env.AI_CRM_DATABASE_INTEGRATION_COMMAND_TIMEOUT_MS ?? "300000");
+if (!Number.isSafeInteger(commandTimeoutMs) || commandTimeoutMs < 10_000 || commandTimeoutMs > 900_000) {
+  throw new Error("Invalid database integration command timeout.");
+}
 
 function run(command, args) {
-  const result = spawnSync(command, args, { env: environment, shell: false, stdio: "inherit" });
-  if (result.status !== 0) throw new Error(`${command} ${args[0] ?? ""} failed.`);
+  const result = spawnSync(command, args, { env: environment, shell: false, stdio: "inherit", timeout: commandTimeoutMs });
+  if (result.error || result.status !== 0) {
+    const reason = result.error?.code === "ETIMEDOUT" ? "timed out" : "failed";
+    throw new Error(`${command} ${args[0] ?? ""} ${reason}.`);
+  }
 }
 
 async function waitForPort(value) {
@@ -81,6 +88,7 @@ const compose = [
   "-f", "deploy/compose/compose.postgres-test.yml",
 ];
 
+let primaryFailure;
 try {
   run(process.execPath, ["scripts/bootstrap/compose-secrets.mjs", "test"]);
   run("docker", [...compose, "up", "-d", "--wait", "postgres"]);
@@ -108,12 +116,23 @@ try {
   run(process.execPath, ["packages/database/scripts/wait-postgres-ready.mjs"]);
   run(process.execPath, [pnpmCli, "--filter", "@ai-crm/database", "build"]);
   run(process.execPath, [pnpmCli, "--filter", "@ai-crm/database", "test"]);
-} finally {
-  spawnSync("docker", ["rm", "--force", missingRoleContainer], { env: environment, shell: false, stdio: "inherit" });
-  spawnSync("docker", [...compose, "down", "--volumes", "--remove-orphans"], {
-    env: environment,
-    shell: false,
-    stdio: "inherit",
-  });
+} catch (error) {
+  primaryFailure = error;
+}
+
+const cleanupFailures = [];
+for (const args of [
+  ["rm", "--force", missingRoleContainer],
+  [...compose, "down", "--volumes", "--remove-orphans"],
+]) {
+  const result = spawnSync("docker", args, { env: environment, shell: false, stdio: "inherit", timeout: 30_000 });
+  if (result.error || result.status !== 0) cleanupFailures.push(new Error(`docker ${args[0]} cleanup failed.`));
+}
+try {
   await rm(secretDirectory, { force: true, recursive: true });
+} catch (error) {
+  cleanupFailures.push(error);
+}
+if (primaryFailure || cleanupFailures.length > 0) {
+  throw new AggregateError([...(primaryFailure ? [primaryFailure] : []), ...cleanupFailures], "Database integration run or cleanup failed.");
 }

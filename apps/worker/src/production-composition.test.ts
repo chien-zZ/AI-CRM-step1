@@ -116,6 +116,21 @@ describe("production Task projection Worker resources", () => {
     await resources.close();
   });
 
+  it("bounds an unresponsive runtime-role startup probe", async () => {
+    vi.useFakeTimers();
+    try {
+      const value = fixture();
+      vi.mocked(value.dependencies.createRuntimeRoleProbe).mockReturnValue({ check: () => new Promise(() => undefined) });
+      const resources = await createProductionWorkerResources(value.dependencies);
+      const checking = resources.assertDatabaseCompatible(new AbortController().signal);
+      const outcome = checking.then(() => undefined, (error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(100);
+      await expect(outcome).resolves.toEqual(expect.objectContaining({ message: "worker_database_runtime_role_probe_cancelled" }));
+      expect(resources.readiness()[1]?.healthy).toBe(false);
+      await resources.close();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("maps runtime DB loss and Rabbit blocked/channel-close state into readiness", async () => {
     let healthCalls = 0;
     const value = fixture({ health: () => Promise.resolve({ latencyMs: 1, status: ++healthCalls === 1 ? "ready" : "unavailable" }) });

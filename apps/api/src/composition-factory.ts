@@ -426,6 +426,7 @@ export async function createProductionApiPlatformBindings(
   const activeDatabase = database;
   const activeSessions = sessions;
   const activeOidc = oidc;
+  try {
   const authorizationTrace = new AsyncLocalStorage<string>();
   const authorizationPersistence = createPostgresAuthorizationPersistence(activeDatabase);
   const authorization = createAuthorizationService({
@@ -509,7 +510,7 @@ export async function createProductionApiPlatformBindings(
       }
       const traceId = authorizationTrace.getStore() ?? createTraceContext().traceId;
       const decision = await authorizationTrace.run(traceId, () => authorization.check(
-        { activeAssignmentIds: [], workforcePersonId: actor.principalId },
+        { activeAssignmentIds: actor.activeAssignmentIds ?? [], workforcePersonId: actor.principalId },
         {
           action: "list",
           resource: "platform.task-center.task-projection",
@@ -527,7 +528,7 @@ export async function createProductionApiPlatformBindings(
       if (action === undefined) throw new Error("notification_mutation_authorization_unavailable");
       const traceId = authorizationTrace.getStore() ?? createTraceContext().traceId;
       const decision = await authorizationTrace.run(traceId, () => authorization.check(
-        { activeAssignmentIds: [], workforcePersonId: actor.principalId },
+        { activeAssignmentIds: actor.activeAssignmentIds ?? [], workforcePersonId: actor.principalId },
         { action, resource: "platform.notifications.in-app-notification" },
       ));
       queryDecisionTraces.set(decision.decisionId, traceId);
@@ -785,6 +786,14 @@ export async function createProductionApiPlatformBindings(
     ],
     sessions: { resolvePrincipal: sessionService.resolvePrincipal, sessionForMutation: sessionService.sessionForMutation },
   });
+  } catch (error) {
+    try {
+      await closeResources(activeSessions, activeDatabase, cleanupTimeoutMs);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "api_production_composition_cleanup_failed");
+    }
+    throw error;
+  }
 }
 
 export const defaultApiPlatformBindingFactory: ApiPlatformBindingFactory = Object.freeze({

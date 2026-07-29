@@ -28,8 +28,9 @@ describe("Webhook acceptance", () => {
         },
       },
       verifier: {
-        verify: ({ rawBody }) => {
+        verify: ({ eventId, rawBody }) => {
           order.push("verify");
+          expect(eventId).toBe("event-1");
           expect(new TextDecoder().decode(rawBody)).toBe('{"synthetic":true}');
           return Promise.resolve(true);
         },
@@ -132,5 +133,14 @@ describe("Webhook acceptance", () => {
       .rejects.toMatchObject({ category: "upstream_unavailable", retryable: true });
     await expect(acceptVerifiedWebhook(envelope, { ...base, replayStore: { reserve: () => Promise.resolve({ accepted: "yes" } as never) } }))
       .rejects.toMatchObject({ category: "upstream_unavailable", retryable: true });
+  });
+
+  it("requires replay retention to cover the full accepted signature window", async () => {
+    const reserve = vi.fn(() => Promise.resolve({ accepted: true, reservationId: "unused" }));
+    await expect(acceptVerifiedWebhook(envelope, {
+      allowedClockSkewMs: 1_000, maxBodyBytes: 1024, now: () => new Date(receivedAt), replayRetentionMs: 1_999,
+      replayStore: { reserve }, verifier: { verify: () => Promise.resolve(true) },
+    })).rejects.toMatchObject({ category: "invalid_input" });
+    expect(reserve).not.toHaveBeenCalled();
   });
 });

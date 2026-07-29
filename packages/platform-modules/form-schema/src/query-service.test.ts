@@ -26,6 +26,7 @@ describe("createPostgresFormSchemaQueryService", () => {
     await expect(service.validateSubmission({ context: requestContext, data: { synthetic_value: "ok" }, definitionId: "platform.synthetic.form", releaseVersion: 1 })).resolves.toMatchObject({ valid: true });
     await expect(service.validateSubmission({ context: requestContext, data: {}, definitionId: "platform.synthetic.form", releaseVersion: 1 })).resolves.toMatchObject({ valid: false });
   });
+  it("does not accept an inactive release for new validation",async()=>{const execute:FormPersistenceRuntime["execute"]=vi.fn(()=>Promise.resolve({rowCount:1,rows:[{...release,active:false}]} as never));const service=createPostgresFormSchemaQueryService({execute,withTransaction:work=>work()},{authorize:()=>Promise.resolve({allowed:true,decisionId:"30000000-0000-4000-8000-000000000001"})});await expect(service.validateSubmission({context:requestContext,data:{synthetic_value:"blocked"},definitionId:"platform.synthetic.form",releaseVersion:1})).rejects.toMatchObject({code:"form_not_found"});});
 
   it("fails denial and contradictory assignment context before PostgreSQL", async () => {
     const deniedDb = runtime();

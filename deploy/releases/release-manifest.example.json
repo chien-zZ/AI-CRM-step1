@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "releaseId": "2026.07.26.1",
-  "environment": "staging",
+  "environment": "production",
   "operatorRef": "synthetic-operator",
   "approverRef": "synthetic-approver",
   "images": {
     "api": "registry.example.invalid/ai-crm/api:2026.07.26.1@sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "edge": "registry.example.invalid/ai-crm/edge:2026.07.26.1@sha256:2222222222222222222222222222222222222222222222222222222222222222",
     "worker": "registry.example.invalid/ai-crm/worker:2026.07.26.1@sha256:3333333333333333333333333333333333333333333333333333333333333333",
-    "postgres": "postgres:17.5-bookworm",
-    "redis": "redis:7.4.5-alpine",
-    "rabbitmq": "rabbitmq:4.2.9-management",
-    "keycloak": "quay.io/keycloak/keycloak:26.3.1",
-    "flowable": "flowable/flowable-rest:7.2.0",
-    "clamav": "clamav/clamav:1.4.5-debian"
+    "postgres": "postgres:17.5-bookworm@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "redis": "redis:7.4.5-alpine@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "rabbitmq": "rabbitmq:4.2.9-management@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "keycloak": "quay.io/keycloak/keycloak:26.3.1@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "flowable": "flowable/flowable-rest:7.2.0@sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "clamav": "clamav/clamav:1.4.5-debian@sha256:9999999999999999999999999999999999999999999999999999999999999999"
   },
   "artifacts": {
     "contracts": "sha256:4444444444444444444444444444444444444444444444444444444444444444",

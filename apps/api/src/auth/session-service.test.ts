@@ -42,6 +42,7 @@ class MemoryStore implements BrowserSessionStore {
   readonly sessions = new Map<string, StoredBrowserSession>();
   readonly transactions = new Map<string, LoginTransaction>();
   allowLease = true;
+  releaseLeaseFailure: Error | undefined;
 
   acquireRefreshLease(sessionId: string, owner: string): Promise<boolean> {
     if (!this.allowLease || this.leases.has(sessionId)) return Promise.resolve(false);
@@ -76,6 +77,7 @@ class MemoryStore implements BrowserSessionStore {
   }
 
   releaseRefreshLease(sessionId: string, owner: string): Promise<void> {
+    if (this.releaseLeaseFailure !== undefined) return Promise.reject(this.releaseLeaseFailure);
     if (this.leases.get(sessionId) === owner) this.leases.delete(sessionId);
     return Promise.resolve();
   }
@@ -256,6 +258,16 @@ describe("createPcBffSessionService", () => {
     });
     await expect(service.currentSession(refreshed.credential)).resolves.toMatchObject({ client: "pc-web" });
     expect(oidc.refreshCalls).toBe(1);
+  });
+
+  it("does not replace a successful refresh when bounded lease cleanup fails", async () => {
+    const service = createPcBffSessionService(options);
+    await service.beginLogin("/tasks");
+    const completed = await service.completeLogin(`https://workbench.example.test/auth/pc/callback?code=synthetic&state=${state}`);
+    store.releaseLeaseFailure = new Error("synthetic lease cleanup failure");
+
+    const refreshed = await service.refresh(completed.credential);
+    await expect(service.currentSession(refreshed.credential)).resolves.toMatchObject({ client: "pc-web" });
   });
 
   it("reads an old encryption key and writes the current key during a bounded rotation window", async () => {

@@ -75,7 +75,7 @@ describe("PostgresRuntime", () => {
     const query = runtime.execute("select pending", [], controller.signal);
     await new Promise<void>((resolve) => { setImmediate(resolve); });
     controller.abort();
-    await expect(query).rejects.toThrow("connection destroyed");
+    await expect(query).rejects.toMatchObject({ name: "AbortError" });
     expect(state.ends()).toBe(1);
     expect(state.releases).toEqual([true]);
   });
@@ -88,7 +88,7 @@ describe("PostgresRuntime", () => {
     }, controller.signal);
     await new Promise<void>((resolve) => { setImmediate(resolve); });
     controller.abort();
-    await expect(transaction).rejects.toThrow("connection destroyed");
+    await expect(transaction).rejects.toMatchObject({ name: "AbortError" });
     expect(state.statements).toEqual(["begin:[]", "select pending:[]"]);
     expect(state.ends()).toBe(1);
     expect(state.releases).toEqual([true]);
@@ -102,7 +102,7 @@ describe("PostgresRuntime", () => {
       controller.abort();
       await query;
     });
-    await expect(transaction).rejects.toThrow("connection destroyed");
+    await expect(transaction).rejects.toMatchObject({ name: "AbortError" });
     expect(state.statements).toEqual(["begin:[]", "select pending:[]"]);
     expect(state.ends()).toBe(1);
     expect(state.releases).toEqual([true]);
@@ -125,5 +125,23 @@ describe("PostgresRuntime", () => {
     expect(state.statements).toEqual(["begin:[]"]);
     expect(state.ends()).toBe(1);
     expect(state.releases).toEqual([true]);
+  });
+
+  it("cannot commit when work catches a failed query", async () => {
+    const statements: string[] = [];
+    const connection = {
+      query(sql: string) {
+        statements.push(sql);
+        return sql === "select broken" ? Promise.reject(new Error("query failed")) : Promise.resolve({ rowCount: 0, rows: [] });
+      },
+      release() {},
+    };
+    const pool = { connect: () => Promise.resolve(connection), end: () => Promise.resolve(), query: () => Promise.resolve({ rowCount: 0, rows: [] }) };
+    const runtime = new PostgresRuntime(config, pool);
+    await expect(runtime.withTransaction(async () => {
+      await runtime.execute("select broken").catch(() => undefined);
+      return "incorrect-success";
+    })).rejects.toThrow("query failed");
+    expect(statements).toEqual(["begin", "select broken", "rollback"]);
   });
 });
