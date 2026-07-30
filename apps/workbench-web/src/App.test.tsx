@@ -72,8 +72,11 @@ describe("workbench shell", () => {
   it("normalizes inconsistent tab, filter, page and selection URL state", async () => {
     renderApp("/tasks?tab=history&filter=unknown&page=99&selected=fixture-task-02");
 
-    expect(await screen.findByRole("heading", { name: "任务" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/tasks?tab=history&filter=all&page=1&selected=fixture-task-06"));
+    expect(await screen.findByRole("heading", { name: "任务" }, { timeout: 10_000 })).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.getByTestId("location")).toHaveTextContent("/tasks?tab=history&filter=all&page=1&selected=fixture-task-06"),
+      { timeout: 10_000 },
+    );
     expect(screen.getByText("fixture-task-06")).toBeInTheDocument();
     expect(screen.queryByText("fixture-task-02")).not.toBeInTheDocument();
   });

@@ -13,11 +13,16 @@ const waitForAbort = (signal) => new Promise((resolve) => {
   else signal.addEventListener("abort", resolve, { once: true });
 });
 
+const waitForStartupAbort = (signal) => {
+  if (process.connected) process.send("startup-waiting");
+  return waitForAbort(signal);
+};
+
 const code = await bootstrapWorker({
   composition: {
     handlers: [{
       name: "synthetic.signal",
-      ready: mode === "startup" ? waitForAbort : () => undefined,
+      ready: mode === "startup" ? waitForStartupAbort : () => undefined,
       run: mode === "stuck" ? () => new Promise(() => undefined) : waitForAbort,
     }],
   },

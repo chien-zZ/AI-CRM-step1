@@ -9,10 +9,12 @@ const runners = [
   "packages/platform-modules/app-registry/scripts/run-integration.mjs",
   "packages/platform-modules/audit/scripts/run-integration.mjs",
   "packages/platform-modules/business-configuration/scripts/run-integration.mjs",
+  "packages/platform-modules/eventing-outbox/scripts/run-integration.mjs",
   "packages/platform-modules/file-center/scripts/run-integration.mjs",
   "packages/platform-modules/form-schema/scripts/run-integration.mjs",
   "packages/platform-modules/notifications/scripts/run-integration.mjs",
   "packages/platform-modules/organization/scripts/run-integration.mjs",
+  "packages/platform-modules/task-center/scripts/run-integration.mjs",
 ];
 
 test("PostgreSQL integration runners use bounded stable TCP readiness", async () => {
@@ -30,5 +32,26 @@ test("PostgreSQL integration runners use bounded stable TCP readiness", async ()
       assert.match(compact, /pg_postmaster_start_time/u, `${path} must identify the postmaster generation.`);
       assert.match(compact, /currentStart===previousStart/u, `${path} must require a stable postmaster generation.`);
     }
+  }
+});
+
+test("Compose-backed PostgreSQL integration runners surface cleanup failures and retain Secret evidence", async () => {
+  for (const path of [
+    "packages/platform-modules/eventing-outbox/scripts/run-integration.mjs",
+    "packages/platform-modules/task-center/scripts/run-integration.mjs",
+  ]) {
+    const source = await readFile(resolve(root, path), "utf8");
+    const compact = source.replaceAll(/\s/gu, "");
+    const pnpmValidation = compact.indexOf("if(!pnpmCli)thrownewError");
+    const secretCreation = compact.indexOf("awaitmkdtemp(");
+    assert.ok(
+      pnpmValidation >= 0 && secretCreation >= 0 && pnpmValidation < secretCreation,
+      `${path} must validate the pnpm execution context before creating a Secret directory.`,
+    );
+    assert.match(compact, /catch\(error\)\{primaryFailure=error;/u, `${path} must preserve the primary failure.`);
+    assert.match(compact, /if\(composeCleanup\.error\|\|composeCleanup\.status!==0\)/u, `${path} must reject failed Compose cleanup.`);
+    assert.match(compact, /\}else\{try\{awaitrm\(secretDirectory/u, `${path} must remove Secrets only after Compose cleanup succeeds.`);
+    assert.match(compact, /temporarySecretdirectoryretainedat/u, `${path} must identify retained cleanup evidence.`);
+    assert.match(compact, /newAggregateError\(\[primaryFailure,cleanupFailure\]/u, `${path} must report primary and cleanup failures together.`);
   }
 });

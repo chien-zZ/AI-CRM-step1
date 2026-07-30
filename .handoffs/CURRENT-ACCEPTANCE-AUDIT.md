@@ -3,8 +3,8 @@
 - 审计日期：2026-07-30
 - 审计对象：`docs/06-质量验收/第一阶段Walking-Skeleton验收清单.md` 的 199 个复选项
 - 审计性质：仓库证据盘点，不修改权威验收清单，不构成第一阶段签收
-- 候选分支/当前 HEAD 基线：`57a6d30`
-- 当前结论：`VERIFIED_REPO 126 / PARTIAL 38 / EXTERNAL_BLOCKED 12 / CONTRACT_BLOCKED 5 / NOT_IMPLEMENTED 18`，合计 199
+- 当前仓库代码证据基线：`f42d8ea`
+- 当前结论：`VERIFIED_REPO 138 / PARTIAL 27 / EXTERNAL_BLOCKED 12 / CONTRACT_BLOCKED 5 / NOT_IMPLEMENTED 17`，合计 199
 
 ## 1. 任务边界
 
@@ -45,7 +45,7 @@
 
 ## 3. 本次候选分支新鲜执行证据
 
-以下结果以候选分支/当前 HEAD 基线 `57a6d30` 为对象，由本次并行执行线实际运行后汇总；它们提升本地候选版本的可信度，但不是远程受保护 CI、预发布或生产签收证据。
+以下结果以当前仓库代码证据基线 `f42d8ea` 为对象，由本次并行执行线实际运行后汇总；它们提升本地候选版本的可信度，但不是远程受保护 CI、预发布或生产签收证据。
 
 | 范围 | 本次新鲜结果 | 审计影响 |
 |---|---|---|
@@ -55,6 +55,10 @@
 | RabbitMQ TLS | 10/10 通过 | 加强第 7 章仓库/本地集成证据；不等于生产 TLS、VHost、CAM、账号轮换或消费者激活证据。 |
 | 数据库总门 | 40/40 通过 | 加强迁移、运行角色与隔离 PostgreSQL 的仓库证据。 |
 | 模块 PostgreSQL 集成 | Organization 4/4、Notifications 3/3、Authorization 5/5、App Registry 5/5、Audit 3/3、Business Configuration 4/4、Form Schema 3/3、File Center 5/5、Outbox 3/3、Task Center 4/4，全部通过 | 加强第 5～13 章的仓库持久化证据；不补齐真实 COS、缺失消费者合同或主 E2E。 |
+| Eventing/Task 后续闭环 | Eventing PostgreSQL 6/6、Task Center PostgreSQL 4/4；10 条 PostgreSQL Runner 的稳定 TCP Readiness 门和 Eventing/Task Cleanup 门 2/2 | `07-07` 与 `09-04` 获得直接仓库级重放/对账证据；测试基础设施不再把裸端口或静默清理失败当作成功。 |
+| PC 工作台视觉复验 | 1366x768、1440x900、1920x1080、390x844 四视口；状态恢复；页面 Console warning/error 均为 0 | `14-07～14-08` 获得当前树的直接浏览器证据；不等于真实 BFF/Keycloak 或主 E2E。 |
+| 当前候选独立 Review | 八维问题清单、处置和新鲜测试引用已记录；最终增量复审无 P0-P3 | `21-01～21-08` 获得当前仓库代码候选的直接 Review 证据；不覆盖尚未执行的 G3 外部证据、E2E-01 或 OPS-02。 |
+| 最终全仓门 | `pnpm check` 140/140；120 项缓存命中、20 项按最终候选文档树执行 | 当前候选的仓库门通过；本地缓存结果不冒充远程受保护 CI。 |
 | API / Worker | API 176 通过、5 项外部环境测试跳过；Worker 专项通过 | 证明候选版本组合专项通过；5 项 skip 明确保留为外部证据缺口，不能按通过计。 |
 | 镜像与部署载荷静态门 | P1 修复后的镜像门 14/14；artifact 卫生器覆盖应用根和部署制品内全部 `@ai-crm` 运行时依赖；deploy 载荷禁止项 0；迁移联合校验通过 | 加强 Dockerfile、应用/Workspace 依赖卫生、部署载荷和迁移制品的仓库门证据。直接证据为 `scripts/deploy/application-artifact-hygiene.mjs`、`sanitize-application-artifact.mjs`、`scripts/check/application-images.test.mjs` 与两个应用 Dockerfile。 |
 | 真实 Docker build | 未完成：访问 `auth.docker.io` 超时 | 卫生器 14/14 只证明合成制品和静态接线；不升级受信镜像/整镜验收，实际层内容、non-root 运行态、本地 digest 及真实依赖树仍是残余风险。 |
@@ -70,22 +74,22 @@
 | 04 身份与会话 | 13 | 9 | 4 | 0 | 0 | 0 |
 | 05 授权 | 9 | 7 | 2 | 0 | 0 | 0 |
 | 06 数据库与迁移 | 8 | 5 | 3 | 0 | 0 | 0 |
-| 07 Outbox/RabbitMQ/Inbox | 10 | 8 | 0 | 0 | 1 | 1 |
+| 07 Outbox/RabbitMQ/Inbox | 10 | 9 | 0 | 0 | 1 | 0 |
 | 08 Workflow | 8 | 5 | 1 | 0 | 2 | 0 |
-| 09 Task Center | 8 | 5 | 2 | 0 | 1 | 0 |
+| 09 Task Center | 8 | 6 | 1 | 0 | 1 | 0 |
 | 10 Notification | 9 | 8 | 0 | 0 | 1 | 0 |
 | 11 Audit/App Registry | 8 | 6 | 2 | 0 | 0 | 0 |
 | 12 Form/Configuration | 11 | 11 | 0 | 0 | 0 | 0 |
 | 13 File Center | 10 | 8 | 1 | 1 | 0 | 0 |
-| 14 客户端 | 19 | 17 | 2 | 0 | 0 | 0 |
+| 14 客户端 | 19 | 19 | 0 | 0 | 0 | 0 |
 | 15 Integration Runtime | 8 | 7 | 1 | 0 | 0 | 0 |
 | 16 AI Gateway Fake | 8 | 8 | 0 | 0 | 0 | 0 |
 | 17 主 E2E | 17 | 0 | 0 | 0 | 0 | 17 |
 | 18 可观测与健康 | 10 | 6 | 3 | 1 | 0 | 0 |
 | 19 Secret 与主机安全 | 9 | 3 | 2 | 4 | 0 | 0 |
 | 20 部署、备份与恢复 | 11 | 1 | 4 | 6 | 0 | 0 |
-| 21 独立 Review | 8 | 0 | 8 | 0 | 0 | 0 |
-| **合计** | **199** | **126** | **38** | **12** | **5** | **18** |
+| 21 独立 Review | 8 | 8 | 0 | 0 | 0 | 0 |
+| **合计** | **199** | **138** | **27** | **12** | **5** | **17** |
 
 ## 5. 逐项可审计映射
 
@@ -142,7 +146,7 @@
 | 编号 | 状态 | 直接证据 | 尚缺 |
 |---|---|---|---|
 | 07-01～07-06 | VERIFIED_REPO | `eventing-outbox/src/eventing.test.ts`、`postgres-store.integration.test.ts`、`apps/worker/src/rabbit-adapter.test.ts`、`task-projection-composition.test.ts`、`tests/integration/rabbitmq-tls.mjs` | 仓库/本地集成机制存在；生产 RabbitMQ 另属外部证据。 |
-| 07-07 | NOT_IMPLEMENTED | `eventing-outbox` 仅提供中立操作/存储；未发现已审人工重放命令与审计闭环 | 需已授权的人工重放操作、理由、审计及测试。 |
+| 07-07 | VERIFIED_REPO | `eventing-outbox/src/operations.ts` 的既有 `replayOutbox` 强制授权、受控原因和审计先于条件重放；单元与 PostgreSQL 集成覆盖允许、拒绝、审计失败、非隔离和缺失记录 | 仓库级操作与失败关闭证据已存在；没有新增通用 HTTP/CLI、DLQ 重放或生产权限 Assignment。 |
 | 07-08 | VERIFIED_REPO | Outbox/Inbox PostgreSQL store 与测试不依赖 Redis | 仓库结构和测试可验证事实源边界。 |
 | 07-09 | CONTRACT_BLOCKED | `contracts/jobs/README.md`、`apps/worker/src/handler-registry.ts` | 没有获批的具体 Worker Job 合同/权威状态 Owner，不能实现通用重新检查。 |
 | 07-10 | VERIFIED_REPO | event envelope schema、`eventing-outbox/src/eventing.test.ts`、worker Rabbit/投影测试 | 消息上下文传播有合同和局部测试。 |
@@ -162,7 +166,7 @@
 | 编号 | 状态 | 直接证据 | 尚缺 |
 |---|---|---|---|
 | 09-01～09-03 | VERIFIED_REPO | `task-center/src/service.test.ts`、`postgres-store.integration.test.ts`、`apps/worker/src/task-projection-composition.test.ts` | 投影、幂等和乱序测试存在。 |
-| 09-04 | PARTIAL | `task-center` store/service、`docs/04-工程手册/Task投影消费者生产运行手册.md` | 有对账设计/运行说明，缺实际漂移检测与修复演练证据。 |
+| 09-04 | VERIFIED_REPO | `task-center` 的授权 `reconcile`、权威 `sourceReader`、同版本漂移修复和旧版本保护均有 Memory/Service/PostgreSQL tests；Worker reconciliation handler 受测；本轮 PostgreSQL 4/4 | 仓库级漂移检测、修复、重复/旧快照与失败关闭证据存在；生产对账运行记录仍属于外部激活证据。 |
 | 09-05 | CONTRACT_BLOCKED | Task Center 为只读投影；未发现已审来源完成命令 | 需来源模块合同后才能路由正式完成命令。 |
 | 09-06 | VERIFIED_REPO | `contracts/app-registry/deep-link.v1.schema.json`、`task-center/src/contracts.test.ts` | 稳定 App/Route ID 合同受测。 |
 | 09-07 | PARTIAL | `apps/api/src/composition-factory.test.ts`、Task HTTP 查询组合 | 有查询授权，缺任务详情深链全链重新授权 E2E。 |
@@ -204,7 +208,7 @@
 | 编号 | 状态 | 直接证据 | 尚缺 |
 |---|---|---|---|
 | 14-01～14-06 | VERIFIED_REPO | `apps/workbench-web/package.json`、App/navigation/styles tests、`scripts/check-bundle.mjs`、generated `packages/api-client` | 技术栈、路由/Query、页面、状态与禁止依赖均可自动验证。 |
-| 14-07～14-08 | PARTIAL | `apps/workbench-web/src/styles.test.ts`、`.handoffs/CLI-01.md` | 有样式测试和历史四视口/Review 记录，但本次未重做可复现视觉验收，handoff 不替代运行证据。 |
+| 14-07～14-08 | VERIFIED_REPO | `apps/workbench-web/src/styles.test.ts`、`.handoffs/CURRENT-WORKBENCH-VISUAL-REVIEW.md`；当前树四视口、路由恢复、状态恢复与 Console 抽样通过 | 当前业务中立 Fixture 的可复现浏览器证据存在；不替代真实身份、BFF 或跨组件 E2E。 |
 | 14-09～14-19 | VERIFIED_REPO | Workbench bundle gate；Internal Mobile/External Portal build、artifact、adapter、route/session/contract tests | 业务中立性、Taro H5/weapp、隔离 Adapter、allowlist 和秘密排除均有仓库级门。 |
 
 ### 15 Integration Runtime 验收
@@ -262,15 +266,15 @@
 
 | 编号 | 状态 | 直接证据 | 尚缺 |
 |---|---|---|---|
-| 21-01～21-08 | PARTIAL | `.handoffs/*.md` 与 `docs/04-工程手册/第一阶段多线并行执行总表.md` 中存在按八维度记录的历史独立 review/finding/复审线索 | 历史文字不是当前 HEAD 的可运行证据；E2E、外部 G3 与 OPS-02 尚未接受独立 review。最终签收前需针对当前候选版本形成一份带问题清单、处置结论和新鲜测试引用的汇总 review。 |
+| 21-01～21-08 | VERIFIED_REPO | `.handoffs/CURRENT-INDEPENDENT-REVIEW.md` 绑定当前仓库代码证据基线，记录八维问题清单、处置和新鲜测试；最终增量复审无 P0-P3 | 只闭合当前仓库代码候选的 Review；G3 外部证据、E2E-01 与 OPS-02 尚未执行，完成后仍须分别独立 Review。 |
 
 ## 6. 关键阻断
 
 1. **主 E2E 缺失：17 项。** `tests/e2e` 只有 README，业务中立全链与故障/重复/拒绝路径尚未形成可运行测试和报告。
-2. **合同阻断：5 项。** 人工重放/通用 Worker Job、Workflow 来源正式命令、Task 完成路由和 Notification RabbitMQ 消费链不能在合同缺失时实现。
+2. **合同阻断：5 项。** 通用 Worker Job、Workflow 来源正式命令、Task 完成路由和 Notification RabbitMQ 消费链不能在合同缺失时实现。
 3. **真实外部证据：12 项。** 真实 COS、日志轮转、主机 SSH、Secret 演练、灾备/恢复、预发布发布回滚等必须在受控环境执行。
-4. **仓库证据仍非生产签收。** 126 项标为 `VERIFIED_REPO` 只说明存在直接的仓库级可重复验证机制；本轮已有多组新鲜专项结果，但仍没有远程受保护 CI/制品证据，也没有最终签收所需的完整证据包。
-5. **38 项仅部分闭环。** 除跨组件浏览器/E2E、真实运行抽样、视觉复验、预发布接线和当前 HEAD 汇总独立 review 外，还包括历史 Organization `0003` 是否进入外部非临时环境的迁移审计。
+4. **仓库证据仍非生产签收。** 138 项标为 `VERIFIED_REPO` 只说明存在直接的仓库级可重复验证机制；本轮已有多组新鲜专项结果，但仍没有远程受保护 CI/制品证据，也没有最终签收所需的完整证据包。
+5. **27 项仅部分闭环。** 主要是跨组件浏览器/E2E、真实运行抽样、预发布接线，以及历史 Organization `0003` 是否进入外部非临时环境的迁移审计。
 6. **真实镜像未构建完成。** `auth.docker.io` 超时阻断了真实 Docker build；P1 修复后的卫生器已覆盖应用根和全部 `@ai-crm` 运行时依赖且静态门 14/14 通过，但不能消除真实镜像层、运行态和实际依赖树风险。
 
 ## 7. 建议的证据闭环顺序
@@ -284,10 +288,10 @@
 
 ## 8. 审计自检
 
-- 编号计数：20 个章节，199 项；五类状态为 126/38/12/5/18，合计 199。
-- 证据基线：已注明候选分支/当前 HEAD `57a6d30`；5 项 API external skip 与 Docker build 超时未被计为通过。
-- 原验收清单：未修改。
-- 代码、合同、其他 handoff：未修改。
+- 编号计数：20 个章节，199 项；五类状态为 138/27/12/5/17，合计 199。
+- 证据基线：已注明当前仓库代码证据基线 `f42d8ea`；5 项 API external skip 与 Docker build 超时未被计为通过。
+- 原验收清单与合同：未修改。
+- 当前代码增量、视觉复验和独立 Review handoff 均已在本审计中列出直接证据。
 - `output/`：未读取、未修改。
 - 生产/外部系统：未访问。
 - 本文件未写入 Secret、个人数据、真实 Provider Payload 或生产标识。
