@@ -27,6 +27,28 @@ async function waitForExit(child: ChildProcess, timeoutMs = 20_000): Promise<{ r
   });
 }
 
+async function waitForMessage(child: ChildProcess, expected: string, timeoutMs = 10_000): Promise<void> {
+  return new Promise((resolveMessage, rejectMessage) => {
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      child.off("message", onMessage);
+    };
+    const onError = (error: Error): void => { cleanup(); rejectMessage(error); };
+    const onExit = (): void => { cleanup(); rejectMessage(new Error("child_exited_before_message")); };
+    const onMessage = (message: unknown): void => {
+      if (message !== expected) return;
+      cleanup();
+      resolveMessage();
+    };
+    const timer = setTimeout(() => { cleanup(); rejectMessage(new Error("child_message_timeout")); }, timeoutMs);
+    child.once("error", onError);
+    child.once("exit", onExit);
+    child.on("message", onMessage);
+  });
+}
+
 async function runNode(script: string, env: NodeJS.ProcessEnv): Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }> {
   const child = spawn(process.execPath, [resolve(script)], { env, stdio: "ignore" });
   return waitForExit(child);
@@ -40,7 +62,7 @@ async function signalChild(mode: "startup" | "steady" | "stuck", signal: "SIGINT
     env: { ...process.env, AI_CRM_TEST_HEALTH_FILE: healthFile, AI_CRM_TEST_SIGNAL_MODE: mode },
     silent: true,
   });
-  if (mode === "startup") await new Promise<void>((resolveWait) => { setTimeout(resolveWait, 100); });
+  if (mode === "startup") await waitForMessage(child, "startup-waiting");
   else await waitFor(() => existsSync(healthFile), 10_000, child);
   const exited = waitForExit(child);
   if (process.platform === "win32") child.send(signal);
