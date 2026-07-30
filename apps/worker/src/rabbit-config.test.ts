@@ -1,11 +1,19 @@
 import { rootCertificates } from "node:tls";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadRabbitConnectionConfiguration, type RabbitSecretFileAccess } from "./rabbit-config.js";
 
+const secretPath = (name: string) => resolve(import.meta.dirname, "__synthetic-secrets__", name);
+const secretPaths = {
+  ca: secretPath("ca.pem"),
+  consumerPassword: secretPath("consumer-password"),
+  consumerUsername: secretPath("consumer-username"),
+} as const;
+
 const baseEnvironment = (): NodeJS.ProcessEnv => ({
-  AI_CRM_RABBIT_CA_FILE: "D:\\secrets\\ca.pem",
-  AI_CRM_RABBIT_CONSUMER_PASSWORD_FILE: "D:\\secrets\\consumer-password",
-  AI_CRM_RABBIT_CONSUMER_USERNAME_FILE: "D:\\secrets\\consumer-username",
+  AI_CRM_RABBIT_CA_FILE: secretPaths.ca,
+  AI_CRM_RABBIT_CONSUMER_PASSWORD_FILE: secretPaths.consumerPassword,
+  AI_CRM_RABBIT_CONSUMER_USERNAME_FILE: secretPaths.consumerUsername,
   AI_CRM_RABBIT_HEARTBEAT_SECONDS: "30",
   AI_CRM_RABBIT_HOST: "rabbit.internal",
   AI_CRM_RABBIT_PORT: "5671",
@@ -16,9 +24,9 @@ const baseEnvironment = (): NodeJS.ProcessEnv => ({
 
 function files(overrides: Readonly<Record<string, Buffer>> = {}, mode = 0o100600, uid = 0): RabbitSecretFileAccess {
   const values: Readonly<Record<string, Buffer>> = {
-    "D:\\secrets\\ca.pem": Buffer.from(rootCertificates[0] ?? ""),
-    "D:\\secrets\\consumer-password": Buffer.from("synthetic-password\n"),
-    "D:\\secrets\\consumer-username": Buffer.from("synthetic-consumer\n"),
+    [secretPaths.ca]: Buffer.from(rootCertificates[0] ?? ""),
+    [secretPaths.consumerPassword]: Buffer.from("synthetic-password\n"),
+    [secretPaths.consumerUsername]: Buffer.from("synthetic-consumer\n"),
     ...overrides,
   };
   return {
@@ -48,9 +56,9 @@ describe("Rabbit file configuration", () => {
   });
 
   it.each([
-    ["missing Secret", {}, files({ "D:\\secrets\\consumer-password": undefined as never })],
-    ["empty Secret", {}, files({ "D:\\secrets\\consumer-password": Buffer.alloc(0) })],
-    ["embedded newline", {}, files({ "D:\\secrets\\consumer-password": Buffer.from("bad\nvalue") })],
+    ["missing Secret", {}, files({ [secretPaths.consumerPassword]: undefined as never })],
+    ["empty Secret", {}, files({ [secretPaths.consumerPassword]: Buffer.alloc(0) })],
+    ["embedded newline", {}, files({ [secretPaths.consumerPassword]: Buffer.from("bad\nvalue") })],
     ["group-writable mode", {}, files({}, 0o100660)],
     ["group-executable mode", {}, files({}, 0o100450)],
     ["other-readable mode", {}, files({}, 0o100644)],
