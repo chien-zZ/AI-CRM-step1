@@ -6,9 +6,13 @@
   "exports": {
     ".": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "dev": "tsc -b --watch --preserveWatchOutput",
-    "build": "tsc -b && node -e \"require('node:fs').copyFileSync('worker-healthcheck.mjs','dist/worker-healthcheck.mjs')\"",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -b tsconfig.build.json --force && node -e \"require('node:fs').copyFileSync('worker-healthcheck.mjs','dist/worker-healthcheck.mjs')\"",
     "start": "node dist/main.js",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",

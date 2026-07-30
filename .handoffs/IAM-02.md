@@ -113,3 +113,10 @@
 - 独立 Review 已完成并由项目负责人确认通过。
 - Review 覆盖 Authorization、Idempotency、Transactions、Migrations、Observability、Backward Compatibility、Secrets 与 Failure Modes；修复已包含在 `IAM-02: harden organization review findings`。
 - IAM-02 公共入口、合同、迁移和测试证据已接受，工作包通过 G2，可进入后续 IAM-03 工作包。
+
+## 2026-07-30 Temporary Migration Compatibility Notice
+
+- Git history proves `0000000003_eventing_outbox_inbox_core` was introduced by `acc1675` before `444af9c` introduced `0000000003_recheck_placement_parent_updates`; commit `57a6d30` contains both paths through the merged history.
+- The migration loader present in `444af9c` rejects globally duplicated versions, and the Organization metadata in that commit also marked SQL containing `DROP TRIGGER` as non-destructive even though the loader rejects that combination. Therefore the complete repository migration catalog containing the Organization `0000000003` could not pass the reviewed global loader from the moment that file was introduced.
+- This repository evidence does not prove whether an operator bypassed the global catalog. The historical single-module integration path loaded the database and Organization directories separately, so only disposable module-test databases could legitimately have recorded the Organization `0000000003` outside the complete catalog. Such test databases must be destroyed and rebuilt from the corrected global catalog; they must not be upgraded by editing `ai_crm_migrations.applied_migrations`.
+- If any staging, production, shared development, backup, or other non-disposable database shows the Organization `0000000003` as applied, rollout is blocked. Preserve the database and migration evidence, identify the exact SQL checksum and execution path, and require a human migration audit and reviewed forward repair. No runner or migration tooling may automatically rename, delete, insert, or rewrite an applied-registry row.

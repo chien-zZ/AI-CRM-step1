@@ -7,6 +7,10 @@ COPY . .
 RUN pnpm install --frozen-lockfile \
     && pnpm build \
     && pnpm --filter @ai-crm/api deploy --prod /opt/application \
+    && node scripts/deploy/sanitize-application-artifact.mjs /opt/application \
+    && test -f /opt/application/dist/main.js \
+    && test ! -e /opt/application/src \
+    && test ! -e /opt/application/coverage \
     && mkdir -p /opt/application/packages/database \
     && cp -R packages/database/migrations /opt/application/packages/database/migrations \
     && for migration_dir in packages/platform-modules/*/migrations; do \

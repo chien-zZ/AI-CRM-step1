@@ -1,0 +1,12 @@
+{
+  "moduleOwner": "organization",
+  "purpose": "Re-run hierarchy overlap and cycle validation whenever an effective-dated placement changes its parent organization unit.",
+  "applicationCompatibility": ">=0.0.0",
+  "lockImpact": "Takes the table lock required to drop and recreate one trigger definition in the same migration transaction; no rows or indexes are rewritten. Runtime hierarchy writes retain the existing transaction-scoped advisory lock.",
+  "dataImpact": "Destructively replaces one trigger object in the same transaction but does not delete or rewrite organization facts.",
+  "backfill": "Not required because existing writes could not change the parent through the module store; operators should run the documented hierarchy integrity checks before applying if direct SQL access was previously used.",
+  "destructive": true,
+  "destructiveApproval": "Approved only for the transactional replacement of organization_unit_placements_no_overlap; the migration drops no table, row, index, schema, or persisted organization fact.",
+  "recovery": "A failure rolls back both trigger statements. After a committed migration, forward-fix the trigger definition in a later reviewed migration; do not remove hierarchy validation after application writes resume.",
+  "forwardFix": "Append a reviewed organization-owned migration for any later trigger or hierarchy-constraint repair."
+}

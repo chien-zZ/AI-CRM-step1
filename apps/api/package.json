@@ -6,10 +6,14 @@
   "exports": {
     ".": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "start": "node dist/main.js",
     "dev": "tsc -b --watch --preserveWatchOutput",
-    "build": "tsc -b",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -b tsconfig.build.json --force",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "test": "vitest run --config ../../vitest.config.ts --testTimeout=10000",

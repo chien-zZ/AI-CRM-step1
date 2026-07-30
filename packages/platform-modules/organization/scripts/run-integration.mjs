@@ -1,14 +1,18 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 const container = `ai-crm-iam02-${randomUUID().slice(0, 8)}`;
+const pnpmCli = process.env.npm_execpath;
+if (!pnpmCli) throw new Error("pnpm CLI path is unavailable.");
 const directory = await mkdtemp(join(tmpdir(), "ai-crm-iam02-"));
 const passwordFile = join(directory, "postgres_password");
 const urlFile = join(directory, "migration_url");
 const password = randomBytes(32).toString("base64url");
+const repositoryRoot = resolve(import.meta.dirname, "../../../..");
 
 let cleanupError;
 let primaryError;
@@ -23,17 +27,21 @@ try {
     "postgres:17.5-alpine",
   ]);
 
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const ready = spawnSync("docker", ["exec", container, "pg_isready", "--username", "ai_crm_migration", "--dbname", "ai_crm_iam02"], { encoding: "utf8" });
-    if (ready.status === 0) break;
-    if (attempt === 59) throw new Error("The IAM-02 PostgreSQL container did not become ready.");
-    await new Promise((done) => setTimeout(done, 500));
-  }
+  await waitForStablePostgres();
 
   const port = run("docker", ["port", container, "5432/tcp"], true).trim().split(":").at(-1);
   if (!port || !/^\d+$/u.test(port)) throw new Error("The IAM-02 PostgreSQL port could not be resolved.");
   await writeFile(urlFile, `postgresql://ai_crm_migration:${password}@127.0.0.1:${port}/ai_crm_iam02\n`, { encoding: "utf8", mode: 0o600 });
   await chmod(urlFile, 0o600);
+  run("docker", [
+    "exec", container, "psql", "--username", "ai_crm_migration", "--dbname", "ai_crm_iam02",
+    "--set", "ON_ERROR_STOP=1",
+    "--command", "CREATE ROLE ai_crm_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT; CREATE ROLE ai_crm_worker_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;",
+  ]);
+  run(process.execPath, [pnpmCli, "db:migrate"], false, {
+    ...process.env,
+    DATABASE_MIGRATION_URL_FILE: urlFile,
+  });
   const vitest = resolve(import.meta.dirname, "../../../../node_modules/vitest/vitest.mjs");
   const result = spawnSync(process.execPath, [vitest, "run", "--config", "../../../vitest.config.ts", "src/postgres-store.integration.test.ts"], {
     cwd: resolve(import.meta.dirname, ".."),
@@ -53,8 +61,24 @@ if (primaryError && cleanupError) throw new AggregateError([primaryError, cleanu
 if (primaryError) throw primaryError;
 if (cleanupError) throw cleanupError;
 
-function run(command, arguments_, capture = false) {
-  const result = spawnSync(command, arguments_, { encoding: "utf8", stdio: capture ? "pipe" : ["ignore", "ignore", "inherit"] });
+async function waitForStablePostgres() {
+  const deadline = Date.now() + 30_000;
+  let previousStart = "";
+  while (Date.now() < deadline) {
+    const probe = spawnSync("docker", [
+      "exec", container, "psql", "--host", "127.0.0.1", "--username", "ai_crm_migration", "--dbname", "ai_crm_iam02",
+      "--tuples-only", "--no-align", "--command", "select pg_postmaster_start_time()::text",
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2_000 });
+    const currentStart = !probe.error && probe.status === 0 ? probe.stdout.trim() : "";
+    if (currentStart && currentStart === previousStart) return;
+    previousStart = currentStart;
+    await delay(250);
+  }
+  throw new Error("The IAM-02 PostgreSQL container did not become ready.");
+}
+
+function run(command, arguments_, capture = false, environment = process.env) {
+  const result = spawnSync(command, arguments_, { cwd: repositoryRoot, encoding: "utf8", env: environment, stdio: capture ? "pipe" : ["ignore", "ignore", "inherit"] });
   if (result.status !== 0) throw new Error(`${command} failed with exit code ${String(result.status)}.`);
   return result.stdout ?? "";
 }
