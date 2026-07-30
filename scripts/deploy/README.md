@@ -12,6 +12,8 @@ These scripts validate evidence metadata and content bindings; they do not execu
 
 The API and Worker production images are defined by `apps/api/Dockerfile` and `apps/worker/Dockerfile`. The application-image workflow builds both exact commit artifacts, exports their filesystems, and invokes the joint migration verifier before a non-PR run may publish commit-addressed images. Registry-returned digests, rather than tags alone, are the production Compose and release-manifest inputs.
 
+Before embedding migrations, both application Dockerfiles invoke `sanitize-application-artifact.mjs`. It removes and then rejects `src`, `coverage`, `test-fixtures`, `.turbo`, `*.test.*`, `*.map`, and `*.tsbuildinfo` only in the application payload and the real package directories for pnpm-deployed `@ai-crm` runtime dependencies. Third-party package contents are not traversed or modified. Forbidden names on symbolic links remove only the link itself; other links are never followed for cleanup, and unresolved links or package links outside the artifact fail closed.
+
 ## OPS-G3 Migration Artifact Integrity
 
 - `generate-migration-manifest.mjs` recursively inventories every file in the reviewed repository `packages/database/migrations` and `packages/platform-modules/*/migrations` directories. It writes a deterministic version 1 manifest with safe relative paths, sizes and SHA-256 digests and refuses to overwrite an existing output.

@@ -76,7 +76,7 @@ describe.skipIf(!migrationUrlFile || !runtimePasswordFile || !workerRuntimePassw
       );
 
       await expect(runtime.query("select version from ai_crm_migrations.applied_migrations order by version desc limit 1"))
-        .resolves.toMatchObject({ rows: [{ version: "0000000014" }] });
+        .resolves.toMatchObject({ rows: [{ version: "0000000015" }] });
       await expect(runtime.query(
         "select has_database_privilege(current_user,current_database(),'CONNECT') as connect,has_database_privilege(current_user,current_database(),'TEMP') as temporary,has_schema_privilege(current_user,'public','USAGE') as public_usage,has_function_privilege(current_user,'pg_catalog.hashtextextended(text,bigint)','EXECUTE') as hash_execute,has_function_privilege(current_user,'pg_catalog.pg_advisory_xact_lock(bigint)','EXECUTE') as lock_execute",
       )).resolves.toMatchObject({
